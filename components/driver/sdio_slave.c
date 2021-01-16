@@ -93,8 +93,8 @@ The driver of FIFOs works as below:
 #include "freertos/FreeRTOS.h"
 #include "soc/soc_memory_layout.h"
 #include "soc/gpio_periph.h"
+#include "hal/cpu_hal.h"
 #include "freertos/semphr.h"
-#include "xtensa/core-macros.h"
 #include "driver/periph_ctrl.h"
 #include "driver/gpio.h"
 #include "hal/sdio_slave_hal.h"
@@ -548,7 +548,7 @@ static void sdio_intr_send(void* arg)
             assert(ret == pdTRUE);
         }
         //get_next_finished_arg returns the total amount of returned descs.
-        for(int i = 0; i < returned_cnt; i++) {
+        for(size_t i = 0; i < returned_cnt; i++) {
             portBASE_TYPE ret = xSemaphoreGiveFromISR(context.remain_cnt, &yield);
             assert(ret == pdTRUE);
         }
@@ -587,7 +587,7 @@ esp_err_t sdio_slave_send_get_finished(void** out_arg, TickType_t wait)
 
 esp_err_t sdio_slave_transmit(uint8_t* addr, size_t len)
 {
-    uint32_t timestamp = XTHAL_GET_CCOUNT();
+    uint32_t timestamp = cpu_hal_get_cycle_count();
     uint32_t ret_stamp;
 
     esp_err_t err = sdio_slave_send_queue(addr, len, (void*)timestamp, portMAX_DELAY);
@@ -611,7 +611,7 @@ static esp_err_t send_flush_data(void)
         if (err == ESP_OK) {
             portBASE_TYPE ret = xQueueSend(context.ret_queue, &finished_arg, portMAX_DELAY);
             assert(ret == pdTRUE);
-            for (int i = 0; i < return_cnt; i++) {
+            for (size_t i = 0; i < return_cnt; i++) {
                 portBASE_TYPE ret = xSemaphoreGive(context.remain_cnt);
                 assert(ret == pdTRUE);
             }

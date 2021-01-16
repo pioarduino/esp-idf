@@ -23,8 +23,10 @@
 #include "esp_wpa.h"
 #include "esp_netif.h"
 #include "tcpip_adapter_compatible/tcpip_adapter_compat.h"
+#include "driver/adc.h"
 #include "driver/adc2_wifi_private.h"
 #include "esp_coexist_internal.h"
+#include "esp_phy_init.h"
 
 #if (CONFIG_ESP32_WIFI_RX_BA_WIN > CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM)
 #error "WiFi configuration check: WARNING, WIFI_RX_BA_WIN should not be larger than WIFI_DYNAMIC_RX_BUFFER_NUM!"
@@ -55,6 +57,8 @@ uint64_t g_wifi_feature_caps =
     CONFIG_FEATURE_CACHE_TX_BUF_BIT |
 #endif
 0;
+
+static bool s_wifi_adc_xpd_flag;
 
 static const char* TAG = "wifi_init";
 
@@ -136,8 +140,8 @@ esp_err_t esp_wifi_deinit(void)
 #if CONFIG_ESP_NETIF_TCPIP_ADAPTER_COMPATIBLE_LAYER
     tcpip_adapter_clear_default_wifi_handlers();
 #endif
-#if CONFIG_IDF_TARGET_ESP32S2
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+#if SOC_WIFI_HW_TSF
     esp_pm_unregister_skip_light_sleep_callback(esp_wifi_internal_is_tsf_active);
 #endif
 #endif
@@ -191,8 +195,8 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
         }
     }
 #endif
-#if CONFIG_IDF_TARGET_ESP32S2
 #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+#if SOC_WIFI_HW_TSF
     esp_err_t ret = esp_pm_register_skip_light_sleep_callback(esp_wifi_internal_is_tsf_active);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register skip light sleep callback (0x%x)", ret);
@@ -200,6 +204,10 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
     }
     esp_sleep_enable_wifi_wakeup();
 #endif
+#endif
+#if CONFIG_MAC_BB_PD
+    esp_mac_bb_pd_mem_init();
+    esp_wifi_internal_set_mac_sleep(true);
 #endif
 #if CONFIG_ESP_NETIF_TCPIP_ADAPTER_COMPATIBLE_LAYER
     esp_err_t err = tcpip_adapter_set_default_wifi_handlers();
@@ -251,3 +259,19 @@ void wifi_apb80m_release(void)
     esp_pm_lock_release(s_wifi_modem_sleep_lock);
 }
 #endif //CONFIG_PM_ENABLE
+
+/* Coordinate ADC power with other modules. This overrides the function from PHY lib. */
+void set_xpd_sar(bool en)
+{
+    if (s_wifi_adc_xpd_flag == en) {
+        /* ignore repeated calls to set_xpd_sar when the state is already correct */
+        return;
+    }
+
+    s_wifi_adc_xpd_flag = en;
+    if (en) {
+        adc_power_acquire();
+    } else {
+        adc_power_release();
+    }
+}

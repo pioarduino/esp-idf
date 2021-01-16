@@ -18,6 +18,7 @@ import threading
 import functools
 
 import netifaces
+import traceback
 
 from . import EnvConfig
 
@@ -43,6 +44,7 @@ class Env(object):
     :keyword env_config_file: test env config file path
     :keyword test_name: test suite name, used when generate log folder name
     """
+    CURRENT_LOG_FOLDER = ""
 
     def __init__(self,
                  app=None,
@@ -57,6 +59,8 @@ class Env(object):
         self.log_path = self.app_cls.get_log_folder(test_suite_name)
         if not os.path.exists(self.log_path):
             os.makedirs(self.log_path)
+
+        Env.CURRENT_LOG_FOLDER = self.log_path
 
         self.allocated_duts = dict()
         self.lock = threading.RLock()
@@ -190,6 +194,7 @@ class Env(object):
                     dut.print_debug_info()
                 dut.close()
             except Exception as e:
+                traceback.print_exc()
                 dut_close_errors.append(e)
         self.allocated_duts = dict()
         return dut_close_errors

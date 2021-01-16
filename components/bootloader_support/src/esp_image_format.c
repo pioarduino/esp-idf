@@ -35,6 +35,9 @@
 #elif CONFIG_IDF_TARGET_ESP32S3
 #include "esp32s3/rom/rtc.h"
 #include "esp32s3/rom/secure_boot.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rom/rtc.h"
+#include "esp32c3/rom/secure_boot.h"
 #endif
 
 /* Checking signatures as part of verifying images is necessary:
@@ -232,6 +235,7 @@ static esp_err_t image_load(esp_image_load_mode_t mode, const esp_partition_pos_
             if (true) {
 #endif // end checking for JTAG
                 err = verify_secure_boot_signature(sha_handle, data, image_digest, verified_digest);
+                sha_handle = NULL; // verify_secure_boot_signature finishes sha_handle
             }
 #else // SECURE_BOOT_CHECK_SIGNATURE
             // No secure boot, but SHA-256 can be appended for basic corruption detection
@@ -297,7 +301,7 @@ static esp_err_t image_load(esp_image_load_mode_t mode, const esp_partition_pos_
             uint32_t load_addr = data->segments[i].load_addr;
             if (should_load(load_addr)) {
                 uint32_t *loaded = (uint32_t *)load_addr;
-                for (int j = 0; j < data->segments[i].data_len / sizeof(uint32_t); j++) {
+                for (size_t j = 0; j < data->segments[i].data_len / sizeof(uint32_t); j++) {
                     loaded[j] ^= (j & 1) ? ram_obfs_value[0] : ram_obfs_value[1];
                 }
             }
@@ -532,7 +536,7 @@ static esp_err_t process_segment(int index, uint32_t flash_addr, esp_image_segme
     do_load = do_load && should_load(load_addr);
 
     if (!silent) {
-        ESP_LOGI(TAG, "segment %d: paddr=0x%08x vaddr=0x%08x size=0x%05x (%6d) %s",
+        ESP_LOGI(TAG, "segment %d: paddr=%08x vaddr=%08x size=%05xh (%6d) %s",
                  index, data_addr, load_addr,
                  data_len, data_len,
                  (do_load) ? "load" : (is_mapping) ? "map" : "");
@@ -551,7 +555,7 @@ static esp_err_t process_segment(int index, uint32_t flash_addr, esp_image_segme
     uint32_t free_page_count = bootloader_mmap_get_free_pages();
     ESP_LOGD(TAG, "free data page_count 0x%08x", free_page_count);
 
-    int32_t data_len_remain = data_len;
+    uint32_t data_len_remain = data_len;
     while (data_len_remain > 0) {
 #if SECURE_BOOT_CHECK_SIGNATURE && defined(BOOTLOADER_BUILD)
         /* Double check the address verification done above */
@@ -604,13 +608,18 @@ static esp_err_t process_segment_data(intptr_t load_addr, uint32_t data_addr, ui
     // Set up the obfuscation value to use for loading
     while (ram_obfs_value[0] == 0 || ram_obfs_value[1] == 0) {
         bootloader_fill_random(ram_obfs_value, sizeof(ram_obfs_value));
+#if CONFIG_IDF_ENV_FPGA
+        /* FPGA doesn't always emulate the RNG */
+        ram_obfs_value[0] ^= 0x33;
+        ram_obfs_value[1] ^= 0x66;
+#endif
     }
     uint32_t *dest = (uint32_t *)load_addr;
 #endif
 
     const uint32_t *src = data;
 
-    for (int i = 0; i < data_len; i += 4) {
+    for (size_t i = 0; i < data_len; i += 4) {
         int w_i = i / 4; // Word index
         uint32_t w = src[w_i];
         if (checksum != NULL) {

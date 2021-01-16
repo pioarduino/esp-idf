@@ -9,17 +9,16 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
-#include "freertos/xtensa_api.h"
 #include "unity.h"
 #include "soc/uart_periph.h"
-#include "soc/dport_reg.h"
 #include "soc/gpio_periph.h"
 #include "esp_intr_alloc.h"
 #include "driver/periph_ctrl.h"
 #include "driver/timer.h"
 #include "sdkconfig.h"
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3,ESP32C3)
+// TODO ESP32-C3 IDF-2585
 
 #define TIMER_DIVIDER   16               /*!< Hardware timer clock divider */
 #define TIMER_SCALE    (TIMER_BASE_CLK / TIMER_DIVIDER)  /*!< used to calculate counter value */
@@ -356,4 +355,4 @@ TEST_CASE("alloc and free isr handle on different core", "[intr_alloc]")
 }
 
 #endif
-#endif // #if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
+#endif // #if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3, ESP32C3)

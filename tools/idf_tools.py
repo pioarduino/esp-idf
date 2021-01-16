@@ -121,6 +121,8 @@ PLATFORM_FROM_NAME = {
     'osx': PLATFORM_MACOS,
     'darwin': PLATFORM_MACOS,
     'Darwin-x86_64': PLATFORM_MACOS,
+    # pretend it is x86_64 until Darwin-arm64 tool builds are available:
+    'Darwin-arm64': PLATFORM_MACOS,
     # Linux
     PLATFORM_LINUX64: PLATFORM_LINUX64,
     'linux64': PLATFORM_LINUX64,
@@ -224,7 +226,7 @@ def run_cmd_check_output(cmd, input_text=None, extra_paths=None):
     try:
         if input_text:
             input_text = input_text.encode()
-        result = subprocess.run(cmd, capture_output=True, check=True, input=input_text)
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, input=input_text)
         return result.stdout + result.stderr
     except (AttributeError, TypeError):
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -1163,6 +1165,11 @@ def action_export(args):
         raise SystemExit(1)
 
 
+def apply_url_mirrors(args, tool_download_obj):
+    apply_mirror_prefix_map(args, tool_download_obj)
+    apply_github_assets_option(tool_download_obj)
+
+
 def apply_mirror_prefix_map(args, tool_download_obj):
     """Rewrite URL for given tool_obj, given tool_version, and current platform,
        if --mirror-prefix-map flag or IDF_MIRROR_PREFIX_MAP environment variable is given.
@@ -1188,6 +1195,32 @@ def apply_mirror_prefix_map(args, tool_download_obj):
                 info('Changed download URL: {} => {}'.format(old_url, new_url))
                 tool_download_obj.url = new_url
                 break
+
+
+def apply_github_assets_option(tool_download_obj):
+    """ Rewrite URL for given tool_obj if the download URL is an https://github.com/ URL and the variable
+    IDF_GITHUB_ASSETS is set. The github.com part of the URL will be replaced.
+    """
+    try:
+        github_assets = os.environ["IDF_GITHUB_ASSETS"].strip()
+    except KeyError:
+        return  # no IDF_GITHUB_ASSETS
+    if not github_assets:  # variable exists but is empty
+        return
+
+    # check no URL qualifier in the mirror URL
+    if '://' in github_assets:
+        fatal("IDF_GITHUB_ASSETS shouldn't include any URL qualifier, https:// is assumed")
+        raise SystemExit(1)
+
+    # Strip any trailing / from the mirror URL
+    github_assets = github_assets.rstrip('/')
+
+    old_url = tool_download_obj.url
+    new_url = re.sub(r'^https://github.com/', 'https://{}/'.format(github_assets), old_url)
+    if new_url != old_url:
+        info('Using GitHub assets mirror for URL: {} => {}'.format(old_url, new_url))
+        tool_download_obj.url = new_url
 
 
 def action_download(args):
@@ -1232,7 +1265,7 @@ def action_download(args):
         tool_spec = '{}@{}'.format(tool_name, tool_version)
 
         info('Downloading {}'.format(tool_spec))
-        apply_mirror_prefix_map(args, tool_obj.versions[tool_version].get_download_for_platform(platform))
+        apply_url_mirrors(args, tool_obj.versions[tool_version].get_download_for_platform(platform))
 
         tool_obj.download(tool_version)
 
@@ -1273,7 +1306,7 @@ def action_install(args):
             continue
 
         info('Installing {}'.format(tool_spec))
-        apply_mirror_prefix_map(args, tool_obj.versions[tool_version].get_download_for_platform(PYTHON_PLATFORM))
+        apply_url_mirrors(args, tool_obj.versions[tool_version].get_download_for_platform(PYTHON_PLATFORM))
 
         tool_obj.download(tool_version)
         tool_obj.install(tool_version)

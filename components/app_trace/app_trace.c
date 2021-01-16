@@ -156,9 +156,12 @@
 
 #include <string.h>
 #include <sys/param.h>
+#include "sdkconfig.h"
 #include "soc/soc.h"
+#include "soc/dport_access.h"
+#if CONFIG_IDF_TARGET_ESP32
 #include "soc/dport_reg.h"
-#if CONFIG_IDF_TARGET_ESP32S2
+#elif CONFIG_IDF_TARGET_ESP32S2
 #include "soc/sensitive_reg.h"
 #endif
 #if __XTENSA__
@@ -877,7 +880,7 @@ static esp_err_t esp_apptrace_trax_status_reg_get(uint32_t *val)
 
 static esp_err_t esp_apptrace_trax_dest_init(void)
 {
-    for (int i = 0; i < ESP_APPTRACE_TRAX_BLOCKS_NUM; i++) {
+    for (size_t i = 0; i < ESP_APPTRACE_TRAX_BLOCKS_NUM; i++) {
         s_trace_buf.trax.blocks[i].start = (uint8_t *)s_trax_blocks[i];
         s_trace_buf.trax.blocks[i].sz = ESP_APPTRACE_TRAX_BLOCK_SIZE;
         s_trace_buf.trax.state.markers[i] = 0;

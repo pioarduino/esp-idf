@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from collections import defaultdict
+from copy import deepcopy
 
 from find_apps import find_apps
 from find_build_apps import BUILD_SYSTEMS, BUILD_SYSTEM_CMAKE
@@ -13,7 +14,10 @@ from idf_py_actions.constants import SUPPORTED_TARGETS, PREVIEW_TARGETS
 TEST_LABELS = {
     'example_test': 'BOT_LABEL_EXAMPLE_TEST',
     'test_apps': 'BOT_LABEL_CUSTOM_TEST',
-    'component_ut': ['BOT_LABEL_UNIT_TEST', 'BOT_LABEL_UNIT_TEST_S2'],
+    'component_ut': ['BOT_LABEL_UNIT_TEST',
+                     'BOT_LABEL_UNIT_TEST_32',
+                     'BOT_LABEL_UNIT_TEST_S2',
+                     'BOT_LABEL_UNIT_TEST_C3'],
 }
 
 BUILD_ALL_LABELS = [
@@ -45,11 +49,10 @@ def _judge_build_or_not(action, build_all):  # type: (str, bool) -> (bool, bool)
 
     for label in labels:
         if os.getenv(label):
-            logging.info('Build test cases apps')
+            logging.info('Build only test cases apps')
             return True, False
-        else:
-            logging.info('Skip all')
-            return False, False
+    logging.info('Skip all')
+    return False, False
 
 
 def output_json(apps_dict_list, target, build_system, output_dir):
@@ -123,7 +126,7 @@ def main():
     scan_info_dict = defaultdict(dict)
     # store the test cases dir, exclude these folders when scan for standalone apps
     default_exclude = args.exclude if args.exclude else []
-    exclude_apps = default_exclude
+    exclude_apps = deepcopy(default_exclude)
 
     build_system = args.build_system.lower()
     build_system_class = BUILD_SYSTEMS[build_system]

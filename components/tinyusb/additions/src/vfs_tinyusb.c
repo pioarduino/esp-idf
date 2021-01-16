@@ -153,7 +153,7 @@ static ssize_t tusb_write(int fd, const void *data, size_t size)
         }
 
     }
-    tinyusb_cdcacm_write_flush(s_vfstusb.cdc_intf, 0);
+    tud_cdc_n_write_flush(s_vfstusb.cdc_intf);
     _lock_release(&(s_vfstusb.write_lock));
     return written_sz;
 }
@@ -207,6 +207,7 @@ static ssize_t tusb_read(int fd, void *data, size_t size)
 static int tusb_fstat(int fd, struct stat *st)
 {
     FD_CHECK(fd, -1);
+    memset(st, 0, sizeof(*st));
     st->st_mode = S_IFCHR;
     return 0;
 }

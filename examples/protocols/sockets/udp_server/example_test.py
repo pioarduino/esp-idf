@@ -27,11 +27,12 @@ def udp_client(address, payload):
         family_addr, socktype, proto, canonname, addr = res
     try:
         sock = socket.socket(family_addr, socket.SOCK_DGRAM)
+        sock.settimeout(60.0)
     except socket.error as msg:
         print('Could not create socket: ' + str(msg[0]) + ': ' + msg[1])
         raise
     try:
-        sock.sendto(payload, addr)
+        sock.sendto(payload.encode(), addr)
         reply, addr = sock.recvfrom(128)
         if not reply:
             return
@@ -40,11 +41,11 @@ def udp_client(address, payload):
         print('Error Code : ' + str(msg[0]) + ' Message: ' + msg[1])
         sock.close()
         raise
-    return reply
+    return reply.decode()
 
 
 @ttfw_idf.idf_example_test(env_tag="Example_WIFI")
-def test_examples_protocol_socket(env, extra_data):
+def test_examples_protocol_socket_udpserver(env, extra_data):
     MESSAGE = "Data to ESP"
     """
     steps:
@@ -57,7 +58,6 @@ def test_examples_protocol_socket(env, extra_data):
     binary_file = os.path.join(dut1.app.binary_path, "udp_server.bin")
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("udp_server_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("udp_server_bin_size", bin_size // 1024, dut1.TARGET)
 
     # start test
     dut1.start_app()
@@ -84,4 +84,4 @@ if __name__ == '__main__':
         # Usage: example_test.py <server_address> <message_to_send_to_server>
         udp_client(sys.argv[1], sys.argv[2])
     else:               # otherwise run standard example test as in the CI
-        test_examples_protocol_socket()
+        test_examples_protocol_socket_udpserver()

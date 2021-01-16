@@ -22,6 +22,7 @@
  */
 
 #include "soc/hwcrypto_periph.h"
+#include "soc/dport_reg.h"
 #include "driver/periph_ctrl.h"
 #include <mbedtls/bignum.h>
 #include "bignum_impl.h"
@@ -75,12 +76,12 @@ static inline void mpi_to_mem_block(uint32_t mem_base, const mbedtls_mpi *mpi, s
     uint32_t copy_words = MIN(hw_words, mpi->n);
 
     /* Copy MPI data to memory block registers */
-    for (int i = 0; i < copy_words; i++) {
+    for (uint32_t i = 0; i < copy_words; i++) {
         pbase[i] = mpi->p[i];
     }
 
     /* Zero any remaining memory block data */
-    for (int i = copy_words; i < hw_words; i++) {
+    for (uint32_t i = copy_words; i < hw_words; i++) {
         pbase[i] = 0;
     }
 }
@@ -92,7 +93,7 @@ static inline void mpi_to_mem_block(uint32_t mem_base, const mbedtls_mpi *mpi, s
    Bignum 'x' should already be grown to at least num_words by caller (can be done while
    calculation is in progress, to save some cycles)
 */
-static inline void mem_block_to_mpi(mbedtls_mpi *x, uint32_t mem_base, int num_words)
+static inline void mem_block_to_mpi(mbedtls_mpi *x, uint32_t mem_base, size_t num_words)
 {
     assert(x->n >= num_words);
 
@@ -245,7 +246,7 @@ void esp_mpi_mult_mpi_failover_mod_mult_hw_op(const mbedtls_mpi *X, const mbedtl
     size_t hw_words = num_words;
 
     /* M = 2^num_words - 1, so block is entirely FF */
-    for (int i = 0; i < hw_words; i++) {
+    for (size_t i = 0; i < hw_words; i++) {
         DPORT_REG_WRITE(RSA_MEM_M_BLOCK_BASE + i * 4, UINT32_MAX);
     }
     /* Mprime = 1 */
@@ -261,7 +262,7 @@ void esp_mpi_mult_mpi_failover_mod_mult_hw_op(const mbedtls_mpi *X, const mbedtl
     DPORT_REG_WRITE(RSA_MEM_RB_BLOCK_BASE, 1);
 
     /* Zero out rest of the Rinv words */
-    for (int i = 1; i < hw_words; i++) {
+    for (size_t i = 1; i < hw_words; i++) {
         DPORT_REG_WRITE(RSA_MEM_RB_BLOCK_BASE + i * 4, 0);
     }
 

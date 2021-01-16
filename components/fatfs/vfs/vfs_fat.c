@@ -330,7 +330,7 @@ static int vfs_fat_open(void* ctx, const char * path, int flags, int mode)
             ESP_LOGE(TAG, "open: Failed to pre-allocate CLMT buffer for fast-seek");
             errno = ENOMEM;
             return -1;
-        } 
+        }
 
         file->cltbl = clmt_mem;
         file->cltbl[0] = CONFIG_FATFS_FAST_SEEK_BUFFER_SIZE;
@@ -347,7 +347,7 @@ static int vfs_fat_open(void* ctx, const char * path, int flags, int mode)
         }
     } else {
         file->cltbl = NULL;
-    } 
+    }
 #endif
 
     // O_APPEND need to be stored because it is not compatible with FA_OPEN_APPEND:
@@ -552,6 +552,7 @@ static int vfs_fat_fstat(void* ctx, int fd, struct stat * st)
 {
     vfs_fat_ctx_t* fat_ctx = (vfs_fat_ctx_t*) ctx;
     FIL* file = &fat_ctx->files[fd];
+    memset(st, 0, sizeof(*st));
     st->st_size = f_size(file);
     st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO | S_IFREG;
     st->st_mtime = 0;
@@ -881,11 +882,17 @@ static int vfs_fat_access(void* ctx, const char *path, int amode)
 static int vfs_fat_truncate(void* ctx, const char *path, off_t length)
 {
     FRESULT res;
-    FIL* file;
+    FIL* file = NULL;
 
     int ret = 0;
 
     vfs_fat_ctx_t* fat_ctx = (vfs_fat_ctx_t*) ctx;
+
+    if (length < 0) {
+        errno = EINVAL;
+        ret = -1;
+        goto out;
+    }
 
     _lock_acquire(&fat_ctx->lock);
     prepend_drive_to_path(fat_ctx, &path, NULL);
@@ -910,9 +917,8 @@ static int vfs_fat_truncate(void* ctx, const char *path, off_t length)
         goto out;
     }
 
-    res = f_size(file);
-
-    if (res < length) {
+    long sz = f_size(file);
+    if (sz < length) {
         _lock_release(&fat_ctx->lock);
         ESP_LOGD(TAG, "truncate does not support extending size");
         errno = EPERM;

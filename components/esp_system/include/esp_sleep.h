@@ -20,6 +20,8 @@
 #include "hal/touch_sensor_types.h"
 #include "hal/gpio_types.h"
 
+#include "soc/soc_caps.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,6 +70,7 @@ typedef enum {
     ESP_SLEEP_WAKEUP_WIFI,              //!< Wakeup caused by WIFI (light sleep only)
     ESP_SLEEP_WAKEUP_COCPU,             //!< Wakeup caused by COCPU int
     ESP_SLEEP_WAKEUP_COCPU_TRAP_TRIG,   //!< Wakeup caused by COCPU crash
+    ESP_SLEEP_WAKEUP_BT,           //!< Wakeup caused by BT (light sleep only)
 } esp_sleep_source_t;
 
 /* Leave this type define for compatibility */
@@ -139,6 +142,17 @@ esp_err_t esp_sleep_enable_touchpad_wakeup(void);
  * @return touch pad which caused wakeup
  */
 touch_pad_t esp_sleep_get_touchpad_wakeup_status(void);
+
+/**
+ * @brief Returns true if a GPIO number is valid for use as wakeup source.
+ *
+ * @note For SoCs with RTC IO capability, this can be any valid RTC IO input pin.
+ *
+ * @param gpio_num Number of the GPIO to test for wakeup source capability
+ *
+ * @return True if this GPIO number will be accepted as a sleep wakeup source.
+ */
+bool esp_sleep_is_valid_wakeup_gpio(gpio_num_t gpio_num);
 
 /**
  * @brief Enable wakeup using a pin
@@ -370,6 +384,19 @@ void esp_default_wake_deep_sleep(void);
  */
 void esp_deep_sleep_disable_rom_logging(void);
 
+#if SOC_GPIO_SUPPORT_SLP_SWITCH
+/**
+ *  @brief Disable all GPIO pins at slept status.
+ *
+ */
+void esp_sleep_gpio_status_init(void);
+
+/**
+ *  @brief Configure GPIO pins status switching between slept status and waked status.
+ *  @param enable decide whether to switch status or not
+ */
+void esp_sleep_gpio_status_switch_configure(bool enable);
+#endif
 #ifdef __cplusplus
 }
 #endif

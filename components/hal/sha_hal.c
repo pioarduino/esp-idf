@@ -26,7 +26,7 @@
 #include "hal/crypto_dma_ll.h"
 #elif SOC_SHA_GENERAL_DMA
 #include "hal/gdma_ll.h"
-#define DMA_PERIPH_SHA 7
+#include "soc/gdma_channel.h"
 #endif
 
 #define SHA1_STATE_LEN_WORDS    (160 / 32)
@@ -61,12 +61,20 @@ inline static size_t state_length(esp_sha_type type)
     case SHA2_224:
     case SHA2_256:
         return SHA256_STATE_LEN_WORDS;
+#if SOC_SHA_SUPPORT_SHA384
     case SHA2_384:
+        return SHA512_STATE_LEN_WORDS;
+#endif
+#if SOC_SHA_SUPPORT_SHA512
     case SHA2_512:
+        return SHA512_STATE_LEN_WORDS;
+#endif
+#if SOC_SHA_SUPPORT_SHA512_T
     case SHA2_512224:
     case SHA2_512256:
     case SHA2_512T:
         return SHA512_STATE_LEN_WORDS;
+#endif
     default:
         return 0;
     }
@@ -99,11 +107,13 @@ static inline void sha_hal_dma_init(lldesc_t *input)
     gdma_ll_tx_enable_data_burst(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, false);
     gdma_ll_tx_enable_auto_write_back(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, false);
 
-    gdma_ll_tx_connect_to_periph(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, DMA_PERIPH_SHA);
+    gdma_ll_tx_connect_to_periph(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, SOC_GDMA_TRIG_PERIPH_SHA0);
 
+#if SOC_GDMA_SUPPORT_EXTMEM
     /* Atleast 40 bytes when accessing external RAM */
     gdma_ll_tx_extend_fifo_size_to(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, 40);
     gdma_ll_tx_set_block_size_psram(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, GDMA_OUT_EXT_MEM_BK_SIZE_16B);
+#endif //SOC_GDMA_SUPPORT_EXTMEM
 
     /* Set descriptors */
     gdma_ll_tx_set_desc_addr(&GDMA, SOC_GDMA_SHA_DMA_CHANNEL, (uint32_t)input);
@@ -122,7 +132,7 @@ static inline void sha_hal_dma_init(lldesc_t *input)
 static inline void sha_hal_dma_init(lldesc_t *input)
 {
     crypto_dma_ll_set_mode(CRYPTO_DMA_SHA);
-    crypto_dma_ll_outlink_reset();
+    crypto_dma_ll_reset();
 
     crypto_dma_ll_outlink_set((uint32_t)input);
     crypto_dma_ll_outlink_start();
@@ -168,7 +178,7 @@ void sha_hal_read_digest(esp_sha_type sha_type, void *digest_state)
     /* Fault injection check: verify SHA engine actually ran,
        state is not all zeroes.
     */
-    for (int i = 0; i < word_len; i++) {
+    for (size_t i = 0; i < word_len; i++) {
         if (digest_state_words[i] != 0) {
             return;
         }

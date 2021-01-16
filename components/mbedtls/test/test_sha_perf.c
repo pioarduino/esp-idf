@@ -20,7 +20,7 @@ TEST_CASE("mbedtls SHA performance", "[aes]")
     unsigned char sha256[32];
 
     // allocate internal memory
-    uint8_t *buf = heap_caps_malloc(CALL_SZ, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    uint8_t *buf = heap_caps_malloc(CALL_SZ, MALLOC_CAP_DMA | MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
     TEST_ASSERT_NOT_NULL(buf);
     memset(buf, 0x55, CALL_SZ);
 
@@ -50,6 +50,6 @@ TEST_CASE("mbedtls SHA performance", "[aes]")
     printf("SHA256 rate %.3fMB/sec\n", mb_sec);
 #ifdef CONFIG_MBEDTLS_HARDWARE_SHA
     // Don't put a hard limit on software SHA performance
-    TEST_PERFORMANCE_GREATER_THAN(SHA256_THROUGHPUT_MBSEC, "%.3fMB/sec", mb_sec);
+    TEST_PERFORMANCE_CCOMP_GREATER_THAN(SHA256_THROUGHPUT_MBSEC, "%.3fMB/sec", mb_sec);
 #endif
 }

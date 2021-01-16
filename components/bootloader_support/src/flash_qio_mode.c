@@ -27,6 +27,8 @@
 #include "esp32s2/rom/spi_flash.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
 #include "esp32s3/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rom/spi_flash.h"
 #endif
 #include "soc/efuse_periph.h"
 #include "soc/io_mux_reg.h"
@@ -121,7 +123,7 @@ void bootloader_enable_qio_mode(void)
     uint32_t raw_flash_id;
     uint8_t mfg_id;
     uint16_t flash_id;
-    int i;
+    size_t i;
 
     ESP_LOGD(TAG, "Probing for QIO mode enable...");
     esp_rom_spiflash_wait_idle(&g_rom_flashchip);
@@ -195,7 +197,7 @@ static esp_err_t enable_qio_mode(read_status_fn_t read_status_fn,
 #if CONFIG_IDF_TARGET_ESP32
     int wp_pin = bootloader_flash_get_wp_pin();
     esp_rom_spiflash_select_qio_pins(wp_pin, spiconfig);
-#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+#else
     esp_rom_spiflash_select_qio_pins(esp_rom_efuse_get_flash_wp_gpio(), spiconfig);
 #endif
     return ESP_OK;

@@ -91,6 +91,12 @@ def check_environment():
         print_warning("Setting IDF_PATH environment variable: %s" % detected_idf_path)
         os.environ["IDF_PATH"] = detected_idf_path
 
+    # check Python version
+    if sys.version_info[0] < 3:
+        print_warning("WARNING: Support for Python 2 is deprecated and will be removed in future versions.")
+    elif sys.version_info[0] == 3 and sys.version_info[1] < 6:
+        print_warning("WARNING: Python 3 versions older than 3.6 are not supported.")
+
     # check Python dependencies
     checks_output.append("Checking Python dependencies...")
     try:
@@ -459,7 +465,7 @@ def init_cli(verbose_output=None):
         def _print_closing_message(self, args, actions):
             # print a closing message of some kind
             #
-            if "flash" in str(actions) or "dfu" in str(actions):
+            if any(t in str(actions) for t in ("flash", "dfu", "uf2", "uf2-app")):
                 print("Done")
                 return
 

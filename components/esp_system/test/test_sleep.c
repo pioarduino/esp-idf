@@ -19,6 +19,7 @@
 #include "sdkconfig.h"
 #include "esp_rom_sys.h"
 
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3, ESP32S3)
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
@@ -30,8 +31,6 @@
 #include "esp32s3/clk.h"
 #include "esp32s3/rom/rtc.h"
 #endif
-
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
 
 #define ESP_EXT0_WAKEUP_LEVEL_LOW 0
 #define ESP_EXT0_WAKEUP_LEVEL_HIGH 1
@@ -63,7 +62,7 @@ TEST_CASE("wake up from deep sleep using timer", "[deepsleep][reset=DEEPSLEEP_RE
     esp_deep_sleep_start();
 }
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32C3)
 TEST_CASE("light sleep followed by deep sleep", "[deepsleep][reset=DEEPSLEEP_RESET]")
 {
     esp_sleep_enable_timer_wakeup(1000000);
@@ -82,7 +81,7 @@ TEST_CASE("wake up from light sleep using timer", "[deepsleep]")
                (tv_stop.tv_usec - tv_start.tv_usec) * 1e-3f;
     TEST_ASSERT_INT32_WITHIN(500, 2000, (int) dt);
 }
-#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2)
+#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32C3)
 
 static void test_light_sleep(void* arg)
 {
@@ -191,7 +190,8 @@ TEST_CASE("light sleep duration is correct", "[deepsleep][ignore]")
 TEST_CASE("light sleep and frequency switching", "[deepsleep]")
 {
 #ifndef CONFIG_PM_ENABLE
-    uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), UART_SCLK_REF_TICK, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
+    uart_ll_set_sclk(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), UART_SCLK_REF_TICK);
+    uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), CONFIG_ESP_CONSOLE_UART_BAUDRATE);
 #endif
 
     rtc_cpu_freq_config_t config_xtal, config_default;
@@ -288,9 +288,7 @@ TEST_CASE_MULTIPLE_STAGES("can set sleep wake stub", "[deepsleep][reset=DEEPSLEE
         check_wake_stub);
 
 
-#if CONFIG_ESP32_ALLOW_RTC_FAST_MEM_AS_HEAP || CONFIG_ESP32S2_ALLOW_RTC_FAST_MEM_AS_HEAP \
-    || CONFIG_ESP32S3_ALLOW_RTC_FAST_MEM_AS_HEAP
-#if CONFIG_FREERTOS_SUPPORT_STATIC_ALLOCATION
+#if CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP
 
 /* Version of prepare_wake_stub() that sets up the deep sleep call while running
    from RTC memory as stack, with a high frequency timer also writing RTC FAST
@@ -346,8 +344,7 @@ TEST_CASE_MULTIPLE_STAGES("can set sleep wake stub from stack in RTC RAM", "[dee
         prepare_wake_stub_from_rtc,
         check_wake_stub);
 
-#endif // CONFIG_FREERTOS_SUPPORT_STATIC_ALLOCATION
-#endif // CONFIG_xyz_ALLOW_RTC_FAST_MEM_AS_HEAP
+#endif // CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP
 
 TEST_CASE("wake up using ext0 (13 high)", "[deepsleep][ignore]")
 {
@@ -419,7 +416,7 @@ __attribute__((unused)) static uint32_t get_cause(void)
     return wakeup_cause;
 }
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32C3)
 // This test case verifies deactivation of trigger for wake up sources
 TEST_CASE("disable source trigger behavior", "[deepsleep]")
 {
@@ -492,7 +489,7 @@ TEST_CASE("disable source trigger behavior", "[deepsleep]")
     // Disable ext0 wakeup source, as this might interfere with other tests
     ESP_ERROR_CHECK(esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0));
 }
-#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2)
+#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32C3)
 
 static RTC_DATA_ATTR struct timeval start;
 static void trigger_deepsleep(void)
@@ -529,4 +526,4 @@ static void check_time_deepsleep(void)
 
 TEST_CASE_MULTIPLE_STAGES("check a time after wakeup from deep sleep", "[deepsleep][reset=DEEPSLEEP_RESET]", trigger_deepsleep, check_time_deepsleep);
 
-#endif // #if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
+#endif // #if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3, ESP32S3)

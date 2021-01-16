@@ -31,6 +31,8 @@
 #include "esp32/rom/gpio.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/gpio.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rom/gpio.h"
 #endif
 
 #ifdef CONFIG_LEGACY_INCLUDE_COMMON_HEADERS
@@ -93,9 +95,11 @@ esp_err_t gpio_set_intr_type(gpio_num_t gpio_num, gpio_int_type_t intr_type);
 /**
  * @brief  Enable GPIO module interrupt signal
  *
- * @note Please do not use the interrupt of GPIO36 and GPIO39 when using ADC.
+ * @note Please do not use the interrupt of GPIO36 and GPIO39 when using ADC or Wi-Fi with sleep mode enabled.
  *       Please refer to the comments of `adc1_get_raw`.
  *       Please refer to section 3.11 of 'ECO_and_Workarounds_for_Bugs_in_ESP32' for the description of this issue.
+ *       As a workaround, call adc_power_acquire() in the app. This will result in higher power consumption (by ~1mA),
+ *       but will remove the glitches on GPIO36 and GPIO39.
  *
  * @param  gpio_num GPIO number. If you want to enable an interrupt on e.g. GPIO16, gpio_num should be GPIO_NUM_16 (16);
  *
@@ -439,6 +443,82 @@ esp_err_t gpio_force_hold_all(void);
   * @note GPIO force unhold, whether the chip in sleep mode or wakeup mode.
   * */
 esp_err_t gpio_force_unhold_all(void);
+#endif
+
+#if SOC_GPIO_SUPPORT_SLP_SWITCH
+/**
+  * @brief Enable SLP_SEL to change GPIO status automantically in lightsleep.
+  * @param gpio_num GPIO number of the pad.
+  *
+  * @return
+  *     - ESP_OK Success
+  *
+  */
+esp_err_t gpio_sleep_sel_en(gpio_num_t gpio_num);
+
+/**
+  * @brief Disable SLP_SEL to change GPIO status automantically in lightsleep.
+  * @param gpio_num GPIO number of the pad.
+  *
+  * @return
+  *     - ESP_OK Success
+  *
+  */
+esp_err_t gpio_sleep_sel_dis(gpio_num_t gpio_num);
+
+/**
+ * @brief	 GPIO set direction at sleep
+ *
+ * Configure GPIO direction,such as output_only,input_only,output_and_input
+ *
+ * @param  gpio_num  Configure GPIO pins number, it should be GPIO number. If you want to set direction of e.g. GPIO16, gpio_num should be GPIO_NUM_16 (16);
+ * @param  mode GPIO direction
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_ERR_INVALID_ARG GPIO error
+ *
+ */
+esp_err_t gpio_sleep_set_direction(gpio_num_t gpio_num, gpio_mode_t mode);
+
+/**
+ * @brief  Configure GPIO pull-up/pull-down resistors at sleep
+ *
+ * Only pins that support both input & output have integrated pull-up and pull-down resistors. Input-only GPIOs 34-39 do not.
+ *
+ * @param  gpio_num GPIO number. If you want to set pull up or down mode for e.g. GPIO16, gpio_num should be GPIO_NUM_16 (16);
+ * @param  pull GPIO pull up/down mode.
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_ERR_INVALID_ARG : Parameter error
+ *
+ */
+esp_err_t gpio_sleep_set_pull_mode(gpio_num_t gpio_num, gpio_pull_mode_t pull);
+
+#if CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL
+/**
+  * @brief Emulate ESP32S2 behaviour to backup FUN_PU, FUN_PD information
+  *
+  * @note Need to be called before sleep.
+  *
+  * @return
+  *      - ESP_OK Success
+  *
+  * */
+esp_err_t gpio_sleep_pupd_config_apply(gpio_num_t gpio_num);
+
+/**
+  * @brief Emulate ESP32S2 behaviour to restore FUN_PU, FUN_PD information
+  *
+  * @note Need to be called after sleep.
+  *
+  * @return
+  *      - ESP_OK Success
+  *
+  * */
+esp_err_t gpio_sleep_pupd_config_unapply(gpio_num_t gpio_num);
+#endif
 #endif
 
 #ifdef __cplusplus

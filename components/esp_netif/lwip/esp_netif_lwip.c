@@ -33,8 +33,8 @@
 #include "lwip/dns.h"
 #endif
 
-#if CONFIG_LWIP_TCP_ISN_HOOK
-#include "tcp_isn.h"
+#if CONFIG_LWIP_HOOK_TCP_ISN_DEFAULT
+#include "lwip_default_hooks.h"
 #endif
 
 #include "esp_netif_lwip_ppp.h"
@@ -273,7 +273,7 @@ esp_err_t esp_netif_init(void)
 {
     if (tcpip_initialized == false) {
         tcpip_initialized = true;
-#if CONFIG_LWIP_TCP_ISN_HOOK
+#if CONFIG_LWIP_HOOK_TCP_ISN_DEFAULT
         uint8_t rand_buf[16];
         /*
          * This is early startup code where WiFi/BT is yet to be enabled and hence
@@ -1133,19 +1133,20 @@ static esp_err_t esp_netif_set_hostname_api(esp_netif_api_msg_t *msg)
 #if LWIP_NETIF_HOSTNAME
 
     struct netif *p_netif = esp_netif->lwip_netif;
-    if (esp_netif->hostname) {
-        free(esp_netif->hostname);
-    }
-    esp_netif->hostname = strdup(hostname);
-    if (esp_netif->hostname == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
 
     if (strlen(hostname) > ESP_NETIF_HOSTNAME_MAX_SIZE) {
         return ESP_ERR_ESP_NETIF_INVALID_PARAMS;
     }
 
     if (p_netif != NULL) {
+        if (esp_netif->hostname) {
+            free(esp_netif->hostname);
+        }
+        esp_netif->hostname = strdup(hostname);
+        if (esp_netif->hostname == NULL) {
+            p_netif->hostname = CONFIG_LWIP_LOCAL_HOSTNAME;
+            return ESP_ERR_NO_MEM;
+        }
         p_netif->hostname = esp_netif->hostname;
         return ESP_OK;
     } else {

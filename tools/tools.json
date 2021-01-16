@@ -24,34 +24,34 @@
           "linux-amd64": {
             "sha256": "674080a12f9c5ebe5a3a5ce51c6deaeffe6dfb06d6416233df86f25b574e9279",
             "size": 85731226,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz"
           },
           "linux-armel": {
             "sha256": "6771e011dffa2438ef84ff3474538b4a69df8f9d4cfae3b3707ca31c782ed7db",
             "size": 83888892,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-armel.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-armel.tar.gz"
           },
           "linux-i686": {
             "sha256": "076b7e05304e26aa6ec105c9e0dc74addca079bc2cae6e42ee7575c5ded29877",
             "size": 87715092,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-i686.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-linux-i686.tar.gz"
           },
           "macos": {
             "sha256": "6845f786303b26c4a55ede57487ba65bd25737232fe6104be03f25bb62f4631c",
             "size": 92424226,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-macos.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-macos.tar.gz"
           },
           "name": "esp-2020r3-8.4.0",
           "status": "recommended",
           "win32": {
             "sha256": "81cecd5493a3fcf2118977f3fd60bd0a13a4aeac8fe6760d912f96d2c34fab66",
             "size": 104226379,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-win32.zip"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-win32.zip"
           },
           "win64": {
             "sha256": "58419852fefb7111fdec056ac2fd7c4bd09c1f4c17610a761a97b788413527cf",
             "size": 106855139,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-win64.zip"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32-elf-gcc8_4_0-esp-2020r3-win64.zip"
           }
         }
       ]
@@ -80,34 +80,34 @@
           "linux-amd64": {
             "sha256": "40fafa47045167feda0cd07827db5207ebfeb4a3b6b24475957a921bc92805ed",
             "size": 86069526,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-amd64.tar.gz"
           },
           "linux-armel": {
             "sha256": "6c1efec4c7829202279388ccb388e8a17a34464bc351d677c4f04d95ea4b4ce0",
             "size": 84254468,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-armel.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-armel.tar.gz"
           },
           "linux-i686": {
             "sha256": "bd3a91166206a1a7ff7c572e15389e1938c3cdce588032a5e915be677a945638",
             "size": 88053499,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-i686.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-linux-i686.tar.gz"
           },
           "macos": {
             "sha256": "fe19b0c873879d8d89ec040f4db04a3ab27d769d3fd5f55fe59a28b6b111d09c",
             "size": 92817351,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-macos.tar.gz"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-macos.tar.gz"
           },
           "name": "esp-2020r3-8.4.0",
           "status": "recommended",
           "win32": {
             "sha256": "d078d614ae864ae4a37fcb5b83323af0a5cfdbd8243607664becdd0f977a1e33",
             "size": 104659541,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-win32.zip"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-win32.zip"
           },
           "win64": {
             "sha256": "6ea78b72ec52330b69af91dbe6c77c22bdc827817f044aa30306270453032bb4",
             "size": 107228353,
-            "url": "https://dl.espressif.com/dl/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-win64.zip"
+            "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-2020r3/xtensa-esp32s2-elf-gcc8_4_0-esp-2020r3-win64.zip"
           }
         }
       ]
@@ -169,54 +169,52 @@
       ]
     },
     {
-      "description": "Toolchain for RISC-V",
+      "description": "Toolchain for 32-bit RISC-V based on GCC",
       "export_paths": [
         [
-          "xPacks",
-          "riscv-none-embed-gcc",
-          "8.2.0-3.1",
+          "riscv32-esp-elf",
           "bin"
         ]
       ],
       "export_vars": {},
-      "info_url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack",
-      "install": "on_request",
-      "license": "MIT",
-      "name": "riscv-none-embed-gcc",
+      "info_url": "https://github.com/espressif/crosstool-NG",
+      "install": "always",
+      "license": "GPL-3.0-with-GCC-exception",
+      "name": "riscv32-esp-elf",
       "version_cmd": [
-        "riscv-none-embed-gcc",
+        "riscv32-esp-elf-gcc",
         "--version"
       ],
-      "version_regex": "(riscv-none-embed-gcc) \\(xPack GNU RISC-V Embedded GCC, 64-bit\\) (8.2.0)",
+      "version_regex": "\\(crosstool-NG\\s+(?:crosstool-ng-)?([0-9a-zA-Z\\.\\-_]+)\\)\\s*([0-9\\.]+)",
       "version_regex_replace": "\\1-\\2",
       "versions": [
         {
           "linux-amd64": {
-            "sha256": "3d40fab50ebad8424ff85748f25d2eaee50f86a5d5222abd7a45a2e490f1e4f5",
-            "size": 216042047,
-            "url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v8.2.0-3.1/xpack-riscv-none-embed-gcc-8.2.0-3.1-linux-x64.tgz"
+            "sha256": "425454c5c4e2cde5dd2dd3a1d398befc70addf71547840fb6d0ec4b307b08894",
+            "size": 152042971,
+            "url": "https://dl.espressif.com/dl/toolchains/preview/riscv32-esp-elf-gcc8_4_0-crosstool-ng-1.24.0-123-g64eb9ff-linux-amd64.tar.gz"
           },
-          "linux-i686": {
-            "sha256": "2e856ee33ef544a2405183366cdf299da2cca697e8cc57627dfaad8ab4460a99",
-            "size": 219854326,
-            "url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v8.2.0-3.1/xpack-riscv-none-embed-gcc-8.2.0-3.1-linux-x32.tgz"
+          "linux-armel": {
+            "sha256": "8ae098751b5196ca8a80d832cc9930bc4d639762a6cb22be3cfe0a8d71b2f230",
+            "size": 150801079,
+            "url": "https://dl.espressif.com/dl/toolchains/preview/riscv32-esp-elf-gcc8_4_0-crosstool-ng-1.24.0-123-g64eb9ff-linux-armel.tar.gz"
           },
           "macos": {
-            "sha256": "48ece50b7272a8e49e56e37f54f9962f93dce4ca44f1bb4c8113fab0230fbdf1",
-            "size": 214715632,
-            "url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v8.2.0-3.1/xpack-riscv-none-embed-gcc-8.2.0-3.1-darwin-x64.tgz"
+            "sha256": "35b1aef85b7e6b4268774f627e8e835d087bcf8b9972cfb6436614aa2e40d4a9",
+            "size": 158594401,
+            "url": "https://dl.espressif.com/dl/toolchains/preview/riscv32-esp-elf-gcc8_4_0-crosstool-ng-1.24.0-123-g64eb9ff-macos.tar.gz"
           },
-          "name": "riscv-none-embed-gcc-8.2.0",
+          "name": "1.24.0.123_64eb9ff-8.4.0",
           "status": "recommended",
           "win32": {
-            "sha256": "78bcd52f7b404133de3b2f9568e7101c1de747f98db3a7b0d6251b75a1754867",
-            "size": 232387519,
-            "url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v8.2.0-3.1/xpack-riscv-none-embed-gcc-8.2.0-3.1-win32-x32.zip"
+            "sha256": "4f576b08620f57c270ac677cc94dce2767fff72d27a539e348d448f63b480d1f",
+            "size": 190014086,
+            "url": "https://dl.espressif.com/dl/toolchains/preview/riscv32-esp-elf-gcc8_4_0-crosstool-ng-1.24.0-123-g64eb9ff-win32.zip"
           },
           "win64": {
-            "sha256": "98b60720607f1400081806d60d70796b30399f8b426e2c790a4abb0bffb9e5ec",
-            "size": 241927614,
-            "url": "https://github.com/xpack-dev-tools/riscv-none-embed-gcc-xpack/releases/download/v8.2.0-3.1/xpack-riscv-none-embed-gcc-8.2.0-3.1-win32-x64.zip"
+            "sha256": "51e392ed88498f3fc4ad07e9ff4b5225f6533b1c363ecd7dd67c10d8d31b6b23",
+            "size": 191565525,
+            "url": "https://dl.espressif.com/dl/toolchains/preview/riscv32-esp-elf-gcc8_4_0-crosstool-ng-1.24.0-123-g64eb9ff-win64.zip"
           }
         }
       ]

@@ -1605,7 +1605,7 @@ static void _mdns_init_pcb_probe(mdns_if_t tcpip_if, mdns_ip_protocol_t ip_proto
         mdns_srv_item_t * new_probe_services[len];
         int new_probe_service_len = 0;
         bool found;
-        for (int j=0; j < len; ++j) {
+        for (size_t j=0; j < len; ++j) {
             found = false;
             for (int i=0; i < pcb->probe_services_len; ++i) {
                 if (pcb->probe_services[i] == services[j]) {
@@ -2158,7 +2158,7 @@ static int _mdns_check_txt_collision(mdns_service_t * service, const uint8_t * d
 
     mdns_txt_linked_item_t * txt = service->txt;
     while (txt) {
-        data_len += 2 + strlen(service->txt->key) + strlen(service->txt->value);
+        data_len += 2 + strlen(txt->key) + strlen(txt->value);
         txt = txt->next;
     }
 
@@ -2508,11 +2508,10 @@ static int _mdns_txt_items_count_get(const uint8_t * data, size_t len)
  */
 static int _mdns_txt_item_name_get_len(const uint8_t * data, size_t len)
 {
-    int i;
     if (*data == '=') {
         return -1;
     }
-    for (i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         if (data[i] == '=') {
             return i;
         }
@@ -2753,7 +2752,7 @@ void mdns_parse_packet(mdns_rx_packet_t * packet)
         }
     }
 
-    if (header.questions && !parsed_packet->questions && !parsed_packet->discovery) {
+    if (header.questions && !parsed_packet->questions && !parsed_packet->discovery && !header.answers) {
         goto clear_rx_packet;
     } else if (header.answers || header.servers || header.additional) {
         uint16_t recordIndex = 0;
@@ -2796,13 +2795,14 @@ void mdns_parse_packet(mdns_rx_packet_t * packet)
 
             if (parsed_packet->discovery && _mdns_name_is_discovery(name, type)) {
                 discovery = true;
-            } else if (!name->sub && _mdns_name_is_ours(name)) {
-                ours = true;
-                if (name->service && name->service[0] && name->proto && name->proto[0]) {
-                    service = _mdns_get_service_item(name->service, name->proto);
-                }
             } else {
-                if (header.questions || !parsed_packet->authoritative || record_type == MDNS_NS) {
+                if (!name->sub && _mdns_name_is_ours(name)) {
+                    ours = true;
+                    if (name->service && name->service[0] && name->proto && name->proto[0]) {
+                        service = _mdns_get_service_item(name->service, name->proto);
+                    }
+                }
+                if (!parsed_packet->authoritative || record_type == MDNS_NS) {
                     //skip this record
                     continue;
                 }
@@ -3482,7 +3482,6 @@ static void _mdns_search_result_add_srv(mdns_search_once_t * search, const char 
  */
 static void _mdns_search_result_add_txt(mdns_search_once_t * search, mdns_txt_item_t * txt, size_t txt_count, mdns_if_t tcpip_if, mdns_ip_protocol_t ip_protocol)
 {
-    int i;
     mdns_result_t * r = search->result;
     while (r) {
         if (r->tcpip_if == tcpip_if && r->ip_protocol == ip_protocol) {
@@ -3514,7 +3513,7 @@ static void _mdns_search_result_add_txt(mdns_search_once_t * search, mdns_txt_it
     return;
 
 free_txt:
-    for (i=0; i<txt_count; i++) {
+    for (size_t i=0; i<txt_count; i++) {
         free((char *)(txt[i].key));
         free((char *)(txt[i].value));
     }
@@ -4701,7 +4700,6 @@ void mdns_query_results_free(mdns_result_t * results)
 {
     mdns_result_t * r;
     mdns_ip_addr_t * a;
-    int i;
 
     while (results) {
         r = results;
@@ -4709,7 +4707,7 @@ void mdns_query_results_free(mdns_result_t * results)
         free((char *)(r->hostname));
         free((char *)(r->instance_name));
 
-        for (i=0; i<r->txt_count; i++) {
+        for (size_t i=0; i<r->txt_count; i++) {
             free((char *)(r->txt[i].key));
             free((char *)(r->txt[i].value));
         }

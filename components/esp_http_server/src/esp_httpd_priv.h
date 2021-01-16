@@ -69,6 +69,7 @@ struct sock_db {
     httpd_recv_func_t recv_fn;              /*!< Receive function for this socket */
     httpd_pending_func_t pending_fn;        /*!< Pending function for this socket */
     uint64_t lru_counter;                   /*!< LRU Counter indicating when the socket was last used */
+    bool lru_socket;                        /*!< Flag indicating LRU socket */
     char pending_data[PARSER_BLOCK_SIZE];   /*!< Buffer for pending data to be received */
     size_t pending_len;                     /*!< Length of pending data to be received */
 #ifdef CONFIG_HTTPD_WS_SUPPORT
@@ -492,7 +493,8 @@ int httpd_default_recv(httpd_handle_t hd, int sockfd, char *buf, size_t buf_len,
 /**
  * @brief   This function is for responding a WebSocket handshake
  *
- * @param[in] req    Pointer to handshake request that will be handled
+ * @param[in] req                       Pointer to handshake request that will be handled
+ * @param[in] supported_subprotocol     Pointer to the subprotocol supported by this URI
  * @return
  *  - ESP_OK                        : When handshake is sucessful
  *  - ESP_ERR_NOT_FOUND             : When some headers (Sec-WebSocket-*) are not found
@@ -501,7 +503,7 @@ int httpd_default_recv(httpd_handle_t hd, int sockfd, char *buf, size_t buf_len,
  *  - ESP_ERR_INVALID_ARG           : Argument is invalid (null or non-WebSocket)
  *  - ESP_FAIL                      : Socket failures
  */
-esp_err_t httpd_ws_respond_server_handshake(httpd_req_t *req);
+esp_err_t httpd_ws_respond_server_handshake(httpd_req_t *req, const char *supported_subprotocol);
 
 /**
  * @brief   This function is for getting a frame type

@@ -201,7 +201,12 @@ static esp_err_t set_client_config(const char *hostname, size_t hostlen, esp_tls
         return ESP_ERR_INVALID_STATE;
 #endif
     } else {
+#ifdef CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY
         wolfSSL_CTX_set_verify( (WOLFSSL_CTX *)tls->priv_ctx, WOLFSSL_VERIFY_NONE, NULL);
+#else
+        ESP_LOGE(TAG, "No server verification option set in esp_tls_cfg_t structure. Check esp_tls API reference");
+        return ESP_ERR_WOLFSSL_SSL_SETUP_FAILED;
+#endif
     }
 
     if (cfg->clientcert_buf != NULL && cfg->clientkey_buf != NULL) {
@@ -241,8 +246,8 @@ static esp_err_t set_client_config(const char *hostname, size_t hostlen, esp_tls
             return ESP_ERR_NO_MEM;
         }
         /* Hostname set here should match CN in server certificate */
-        if ((ret = wolfSSL_set_tlsext_host_name( (WOLFSSL *)tls->priv_ssl, use_host))!= WOLFSSL_SUCCESS) {
-            ESP_LOGE(TAG, "wolfSSL_set_tlsext_host_name returned -0x%x", -ret);
+        if ((ret = (wolfSSL_check_domain_name( (WOLFSSL *)tls->priv_ssl, use_host))) != WOLFSSL_SUCCESS) {
+            ESP_LOGE(TAG, "wolfSSL_check_domain_name returned -0x%x", -ret);
             ESP_INT_EVENT_TRACKER_CAPTURE(tls->error_handle, ESP_TLS_ERR_TYPE_WOLFSSL, -ret);
             free(use_host);
             return ESP_ERR_WOLFSSL_SSL_SET_HOSTNAME_FAILED;

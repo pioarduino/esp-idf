@@ -1,4 +1,4 @@
-{ Copyright 2019 Espressif Systems (Shanghai) PTE LTD
+{ Copyright 2019-2020 Espressif Systems (Shanghai) CO LTD
   SPDX-License-Identifier: Apache-2.0 }
 
 { ------------------------------ Custom steps before the main installation flow ------------------------------ }
@@ -116,6 +116,11 @@ begin
 
     if not IDFUseExisting then
       IDFDownload();
+
+    if WizardIsTaskSelected('idf_tools_use_mirror') then
+    begin
+      SetEnvironmentVariable('IDF_GITHUB_ASSETS', 'dl.espressif.com/github_assets')
+    end;
 
     IDFToolsSetup();
 

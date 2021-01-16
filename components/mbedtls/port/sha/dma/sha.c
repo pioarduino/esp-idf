@@ -32,7 +32,6 @@
 #include "esp_log.h"
 #include "esp_crypto_lock.h"
 #include "soc/lldesc.h"
-#include "soc/dport_reg.h"
 #include "soc/cache_memory.h"
 #include "soc/periph_defs.h"
 
@@ -49,6 +48,8 @@
 #if CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/cache.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/cache.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32s3/rom/cache.h"
 #endif
 
@@ -83,11 +84,17 @@ inline static size_t block_length(esp_sha_type type)
     case SHA2_224:
     case SHA2_256:
         return 64;
+#if SOC_SHA_SUPPORT_SHA384
     case SHA2_384:
+#endif
+#if SOC_SHA_SUPPORT_SHA512
     case SHA2_512:
+#endif
+#if SOC_SHA_SUPPORT_SHA512_T
     case SHA2_512224:
     case SHA2_512256:
     case SHA2_512T:
+#endif
         return 128;
     default:
         return 0;
@@ -226,7 +233,7 @@ int esp_sha_dma(esp_sha_type sha_type, const void *input, uint32_t ilen,
 
     /* Copy to internal buf if buf is in non DMA capable memory */
     if (!esp_ptr_dma_ext_capable(buf) && !esp_ptr_dma_capable(buf) && (buf_len != 0)) {
-        dma_cap_buf = heap_caps_malloc(sizeof(unsigned char) * buf_len, MALLOC_CAP_DMA);
+        dma_cap_buf = heap_caps_malloc(sizeof(unsigned char) * buf_len, MALLOC_CAP_8BIT|MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
         if (dma_cap_buf == NULL) {
             ESP_LOGE(TAG, "Failed to allocate buf memory");
             ret = -1;
@@ -301,6 +308,7 @@ static esp_err_t esp_sha_dma_process(esp_sha_type sha_type, const void *input, u
 
     sha_hal_hash_dma(sha_type, dma_descr_head, num_blks, is_first_block);
 
+    sha_hal_wait_idle();
 
     return ret;
 }

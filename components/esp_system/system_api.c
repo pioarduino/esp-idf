@@ -12,10 +12,12 @@
 #include "esp32s2/memprot.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
 #include "esp32s3/memprot.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/memprot.h"
 #endif
 
 
-#define SHUTDOWN_HANDLERS_NO 3
+#define SHUTDOWN_HANDLERS_NO 4
 static shutdown_handler_t shutdown_handlers[SHUTDOWN_HANDLERS_NO];
 
 esp_err_t esp_register_shutdown_handler(shutdown_handler_t handler)

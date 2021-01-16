@@ -1,8 +1,8 @@
 // RMT driver unit test is based on extended NEC protocol
-// Please don't use channel number: SOC_RMT_CHANNELS_NUM - 1
 #include <stdio.h>
 #include <string.h>
 #include "sdkconfig.h"
+#include "hal/cpu_hal.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -16,7 +16,7 @@
 #define RMT_TX_CHANNEL_ENCODING_END   (SOC_RMT_TX_CHANNELS_NUM-1)
 
 // CI ONLY: Don't connect any other signals to this GPIO
-#define RMT_DATA_IO (12) // bind signal RMT_SIG_OUT0_IDX and RMT_SIG_IN0_IDX on the same GPIO
+#define RMT_DATA_IO (4) // bind signal RMT_SIG_OUT0_IDX and RMT_SIG_IN0_IDX on the same GPIO
 
 #define RMT_TESTBENCH_FLAGS_ALWAYS_ON (1<<0)
 #define RMT_TESTBENCH_FLAGS_CARRIER_ON (1<<1)
@@ -103,7 +103,7 @@ static void rmt_clean_testbench(int tx_channel, int rx_channel)
     }
 }
 
-TEST_CASE("RMT wrong configuration", "[rmt][error]")
+TEST_CASE("RMT wrong configuration", "[rmt]")
 {
     rmt_config_t correct_config = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 0);
     rmt_config_t wrong_config = correct_config;
@@ -179,25 +179,30 @@ TEST_CASE("RMT miscellaneous functions", "[rmt]")
 
 TEST_CASE("RMT multiple channels", "[rmt]")
 {
-    rmt_config_t tx_cfg1 = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 0);
+    rmt_config_t tx_cfg = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 0);
+    for (int i = 0; i < SOC_RMT_TX_CHANNELS_NUM; i++) {
+        tx_cfg.channel = i;
+        TEST_ESP_OK(rmt_config(&tx_cfg));
+        TEST_ESP_OK(rmt_driver_install(tx_cfg.channel, 0, 0));
+    }
 
-    TEST_ESP_OK(rmt_config(&tx_cfg1));
-    TEST_ESP_OK(rmt_driver_install(tx_cfg1.channel, 0, 0));
+    for (int i = 0; i < SOC_RMT_TX_CHANNELS_NUM; i++) {
+        TEST_ESP_OK(rmt_driver_uninstall(i));
+    }
 
-    rmt_config_t tx_cfg2 = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 1);
-    TEST_ESP_OK(rmt_config(&tx_cfg2));
-    TEST_ESP_OK(rmt_driver_install(tx_cfg2.channel, 0, 0));
+    rmt_config_t rx_cfg = RMT_DEFAULT_CONFIG_RX(RMT_DATA_IO, RMT_RX_CHANNEL_ENCODING_START);
+    for (int i = RMT_RX_CHANNEL_ENCODING_START; i < SOC_RMT_CHANNELS_NUM; i++) {
+        rx_cfg.channel = i;
+        TEST_ESP_OK(rmt_config(&rx_cfg));
+        TEST_ESP_OK(rmt_driver_install(rx_cfg.channel, 0, 0));
+    }
 
-    rmt_config_t tx_cfg3 = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 2);
-    TEST_ESP_OK(rmt_config(&tx_cfg3));
-    TEST_ESP_OK(rmt_driver_install(tx_cfg3.channel, 0, 0));
-
-    TEST_ESP_OK(rmt_driver_uninstall(2));
-    TEST_ESP_OK(rmt_driver_uninstall(1));
-    TEST_ESP_OK(rmt_driver_uninstall(0));
+    for (int i = RMT_RX_CHANNEL_ENCODING_START; i < SOC_RMT_CHANNELS_NUM; i++) {
+        TEST_ESP_OK(rmt_driver_uninstall(i));
+    }
 }
 
-TEST_CASE("RMT install/uninstall test", "[rmt][pressure]")
+TEST_CASE("RMT install/uninstall test", "[rmt]")
 {
     rmt_config_t tx_cfg = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, RMT_TX_CHANNEL_ENCODING_END);
     TEST_ESP_OK(rmt_config(&tx_cfg));
@@ -213,11 +218,57 @@ TEST_CASE("RMT install/uninstall test", "[rmt][pressure]")
     }
 }
 
+static void test_rmt_translator(const void *src, rmt_item32_t *dest, size_t src_size,
+                                size_t wanted_num, size_t *translated_size, size_t *item_num)
+{
+    const rmt_item32_t bit0 = {{{ 10, 1, 20, 0 }}}; //Logical 0
+    const rmt_item32_t bit1 = {{{ 20, 1, 10, 0 }}}; //Logical 1
+    size_t size = 0;
+    size_t num = 0;
+    uint8_t *psrc = (uint8_t *)src;
+    rmt_item32_t *pdest = dest;
+    while (size < src_size && num < wanted_num) {
+        for (int i = 0; i < 8; i++) {
+            // MSB first
+            if (*psrc & (1 << (7 - i))) {
+                pdest->val =  bit1.val;
+            } else {
+                pdest->val =  bit0.val;
+            }
+            num++;
+            pdest++;
+        }
+        size++;
+        psrc++;
+    }
+    *translated_size = size;
+    *item_num = num;
+    int *user_data = NULL;
+    rmt_translator_get_context(item_num, (void **)&user_data);
+    esp_rom_printf("user data=%d\r\n", *user_data);
+    *user_data = 100;
+}
+
+TEST_CASE("RMT translator with user context", "[rmt]")
+{
+    rmt_config_t tx_cfg = RMT_DEFAULT_CONFIG_TX(RMT_DATA_IO, 0);
+    TEST_ESP_OK(rmt_config(&tx_cfg));
+    TEST_ESP_OK(rmt_driver_install(tx_cfg.channel, 0, 0));
+    rmt_translator_init(tx_cfg.channel, test_rmt_translator);
+    int user_data = 999;
+    rmt_translator_set_context(tx_cfg.channel, &user_data);
+    uint8_t test_buf[] = {1, 2, 3, 4, 5, 6};
+    rmt_write_sample(tx_cfg.channel, test_buf, sizeof(test_buf), true);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    TEST_ASSERT_EQUAL(100, user_data);
+    TEST_ESP_OK(rmt_driver_uninstall(tx_cfg.channel));
+}
+
 static void do_nec_tx_rx(uint32_t flags)
 {
     RingbufHandle_t rb = NULL;
     rmt_item32_t *items = NULL;
-    uint32_t length = 0;
+    size_t length = 0;
     uint32_t addr = 0x10;
     uint32_t cmd = 0x20;
     bool repeat = false;
@@ -313,7 +364,7 @@ TEST_CASE("RMT TX stop", "[rmt]")
 {
     RingbufHandle_t rb = NULL;
     rmt_item32_t *frames = NULL;
-    uint32_t length = 0;
+    size_t length = 0;
     uint32_t count = 10;
     uint32_t addr = 0x10;
     uint32_t cmd = 0x20;
@@ -409,7 +460,7 @@ TEST_CASE("RMT Ping-Pong operation", "[rmt]")
         TEST_ESP_OK(rmt_write_items(tx_channel, frames, size, true));
 
         // parse received data
-        uint32_t length = 0;
+        size_t length = 0;
         rmt_item32_t *items = (rmt_item32_t *) xRingbufferReceive(rb, &length, 1000);
         if (items) {
             vRingbufferReturnItem(rb, (void *) items);
@@ -425,9 +476,9 @@ static uint32_t tx_end_time0, tx_end_time1;
 static void rmt_tx_end_cb(rmt_channel_t channel, void *arg)
 {
     if (channel == 0) {
-        tx_end_time0 = esp_cpu_get_ccount();
+        tx_end_time0 = cpu_hal_get_cycle_count();
     } else {
-        tx_end_time1 = esp_cpu_get_ccount();
+        tx_end_time1 = cpu_hal_get_cycle_count();
     }
 }
 TEST_CASE("RMT TX simultaneously", "[rmt]")
@@ -449,8 +500,8 @@ TEST_CASE("RMT TX simultaneously", "[rmt]")
     frames[i].level1 = 0;
     frames[i].duration1 = 0;
 
-    rmt_config_t tx_config0 = RMT_DEFAULT_CONFIG_TX(12, channel0);
-    rmt_config_t tx_config1 = RMT_DEFAULT_CONFIG_TX(13, channel1);
+    rmt_config_t tx_config0 = RMT_DEFAULT_CONFIG_TX(4, channel0);
+    rmt_config_t tx_config1 = RMT_DEFAULT_CONFIG_TX(5, channel1);
     TEST_ESP_OK(rmt_config(&tx_config0));
     TEST_ESP_OK(rmt_config(&tx_config1));
 
@@ -490,7 +541,7 @@ TEST_CASE("RMT TX loop", "[rmt]")
 {
     RingbufHandle_t rb = NULL;
     rmt_item32_t *items = NULL;
-    uint32_t length = 0;
+    size_t length = 0;
     uint32_t addr = 0x10;
     uint32_t cmd = 0x20;
     bool repeat = false;

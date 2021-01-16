@@ -74,9 +74,9 @@ typedef enum {
 typedef struct {
     cdcacm_event_type_t type; /*!< Event type */
     union {
-        cdcacm_event_rx_wanted_char_data_t rx_wanted_char_data;
-        cdcacm_event_line_state_changed_data_t line_state_changed_data;
-        cdcacm_event_line_coding_changed_data_t line_coding_changed_data;
+        cdcacm_event_rx_wanted_char_data_t rx_wanted_char_data; /*!< Data input of the `callback_rx_wanted_char` callback */
+        cdcacm_event_line_state_changed_data_t line_state_changed_data; /*!< Data input of the `callback_line_state_changed` callback */
+        cdcacm_event_line_coding_changed_data_t line_coding_changed_data; /*!< Data input of the `line_coding_changed` callback */
     };
 } cdcacm_event_t;
 
@@ -160,7 +160,12 @@ size_t tinyusb_cdcacm_write_queue_char(tinyusb_cdcacm_itf_t itf, char ch);
 size_t tinyusb_cdcacm_write_queue(tinyusb_cdcacm_itf_t itf, uint8_t *in_buf, size_t in_size);
 
 /**
- * @brief Send all data from a write buffer. Use `tinyusb_cdcacm_write_queue` to add data to the buffer
+ * @brief Send all data from a write buffer. Use `tinyusb_cdcacm_write_queue` to add data to the buffer.
+ *
+ *        WARNING! TinyUSB can block output Endpoint for several RX callbacks, after will do additional flush
+ *        after the each trasfer. That can leads to the situation when you requested a flush, but it will fail until
+ *        ont of the next callbacks ends.
+ *        SO USING OF THE FLUSH WITH TIMEOUTS IN CALLBACKS IS NOT RECOMENDED - YOU CAN GET A LOCK FOR THE TIMEOUT
  *
  * @param itf - number of a CDC object
  * @param timeout_ticks - waiting until flush will be considered as failed

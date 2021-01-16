@@ -16,19 +16,21 @@ import json
 import logging
 import os
 import re
+from copy import deepcopy
 
 import junit_xml
 
 from tiny_test_fw import TinyFW, Utility
 from .DebugUtils import OCDBackend, GDBBackend, CustomProcess  # noqa: export DebugUtils for users
 from .IDFApp import IDFApp, Example, LoadableElfTestApp, UT, TestApp, ComponentUTApp  # noqa: export all Apps for users
-from .IDFDUT import IDFDUT, ESP32DUT, ESP32S2DUT, ESP8266DUT, ESP32QEMUDUT  # noqa: export DUTs for users
+from .IDFDUT import IDFDUT, ESP32DUT, ESP32S2DUT, ESP32C3DUT, ESP8266DUT, ESP32QEMUDUT  # noqa: export DUTs for users
 from .unity_test_parser import TestResults, TestFormat
 
 # pass TARGET_DUT_CLS_DICT to Env.py to avoid circular dependency issue.
 TARGET_DUT_CLS_DICT = {
     'ESP32': ESP32DUT,
     'ESP32S2': ESP32S2DUT,
+    'ESP32C3': ESP32C3DUT,
 }
 
 
@@ -73,11 +75,11 @@ def local_test_check(decorator_target):
         try:
             idf_target = sdkconfig['IDF_TARGET'].upper()
         except KeyError:
-            logging.warning('IDF_TARGET not in {}. IDF_TARGET set to esp32'.format(os.path.abspath(expected_json_path)))
+            logging.debug('IDF_TARGET not in {}. IDF_TARGET set to esp32'.format(os.path.abspath(expected_json_path)))
         else:
-            logging.info('IDF_TARGET: {}'.format(idf_target))
+            logging.debug('IDF_TARGET: {}'.format(idf_target))
     else:
-        logging.warning('{} not found. IDF_TARGET set to esp32'.format(os.path.abspath(expected_json_path)))
+        logging.debug('{} not found. IDF_TARGET set to esp32'.format(os.path.abspath(expected_json_path)))
 
     if isinstance(decorator_target, list):
         if idf_target not in decorator_target:
@@ -88,11 +90,11 @@ def local_test_check(decorator_target):
     return idf_target
 
 
-def get_dut_class(target, erase_nvs=None):
-    if target not in TARGET_DUT_CLS_DICT:
-        raise Exception('target can only be {%s} (case insensitive)' % ', '.join(TARGET_DUT_CLS_DICT.keys()))
+def get_dut_class(target, dut_class_dict, erase_nvs=None):
+    if target not in dut_class_dict:
+        raise Exception('target can only be {%s} (case insensitive)' % ', '.join(dut_class_dict.keys()))
 
-    dut = TARGET_DUT_CLS_DICT[target.upper()]
+    dut = dut_class_dict[target.upper()]
     if erase_nvs:
         dut.ERASE_NVS = 'erase_nvs'
     return dut
@@ -111,16 +113,19 @@ def ci_target_check(func):
     return wrapper
 
 
-def test_func_generator(func, app, target, ci_target, module, execution_time, level, erase_nvs, drop_kwargs_dut=False, **kwargs):
+def test_func_generator(func, app, target, ci_target, module, execution_time, level, erase_nvs, **kwargs):
+    target = upper_list_or_str(target)
     test_target = local_test_check(target)
-    dut = get_dut_class(test_target, erase_nvs)
-    if drop_kwargs_dut and 'dut' in kwargs:  # panic_test() will inject dut, resolve conflicts here
-        dut = kwargs['dut']
-        del kwargs['dut']
+    if 'additional_duts' in kwargs:
+        dut_classes = deepcopy(TARGET_DUT_CLS_DICT)
+        dut_classes.update(kwargs['additional_duts'])
+    else:
+        dut_classes = TARGET_DUT_CLS_DICT
+    dut = get_dut_class(test_target, dut_classes, erase_nvs)
     original_method = TinyFW.test_method(
-        app=app, dut=dut, target=upper_list_or_str(target), ci_target=upper_list_or_str(ci_target),
+        app=app, dut=dut, target=target, ci_target=upper_list_or_str(ci_target),
         module=module, execution_time=execution_time, level=level, erase_nvs=erase_nvs,
-        dut_dict=TARGET_DUT_CLS_DICT, **kwargs
+        dut_dict=dut_classes, **kwargs
     )
     test_func = original_method(func)
     test_func.case_info["ID"] = format_case_id(target, test_func.case_info["name"])
@@ -188,7 +193,7 @@ def idf_custom_test(app=TestApp, target="ESP32", ci_target=None, module="misc", 
     :return: test method
     """
     def test(func):
-        return test_func_generator(func, app, target, ci_target, module, execution_time, level, erase_nvs, drop_kwargs_dut=True, **kwargs)
+        return test_func_generator(func, app, target, ci_target, module, execution_time, level, erase_nvs, **kwargs)
     return test
 
 
@@ -286,14 +291,16 @@ def check_performance(item, value, target):
 
     for performance_file in performance_files:
         try:
-            op, value = _find_perf_item(performance_file)
+            op, standard = _find_perf_item(performance_file)
         except (IOError, AttributeError):
             # performance file doesn't exist or match is not found in it
             continue
 
-        _check_perf(op, value)
+        _check_perf(op, standard)
         # if no exception was thrown then the performance is met and no need to continue
         break
+    else:
+        raise AssertionError("Failed to get performance standard for {}".format(item))
 
 
 MINIMUM_FREE_HEAP_SIZE_RE = re.compile(r'Minimum free heap size: (\d+) bytes')

@@ -374,6 +374,8 @@ SOC_RESERVE_MEMORY_REGION(SOC_MEM_BT_DATA_START, SOC_MEM_BT_DATA_END,           
 
 static DRAM_ATTR struct osi_funcs_t *osi_funcs_p;
 
+static uint8_t own_bda[6];
+
 #if CONFIG_SPIRAM_USE_MALLOC
 static DRAM_ATTR btdm_queue_item_t btdm_queue_table[BTDM_MAX_QUEUE_NUM];
 static DRAM_ATTR SemaphoreHandle_t btdm_queue_table_mux = NULL;
@@ -1256,6 +1258,7 @@ esp_err_t esp_bt_controller_init(esp_bt_controller_config_t *cfg)
     cfg->bt_max_sync_conn = CONFIG_BTDM_CTRL_BR_EDR_MAX_SYNC_CONN_EFF;
     cfg->magic  = ESP_BT_CONTROLLER_CONFIG_MAGIC_VAL;
 
+    read_mac_wrapper(own_bda);
     if (((cfg->mode & ESP_BT_MODE_BLE) && (cfg->ble_max_conn <= 0 || cfg->ble_max_conn > BTDM_CONTROLLER_BLE_MAX_CONN_LIMIT))
             || ((cfg->mode & ESP_BT_MODE_CLASSIC_BT) && (cfg->bt_max_acl_conn <= 0 || cfg->bt_max_acl_conn > BTDM_CONTROLLER_BR_EDR_MAX_ACL_CONN_LIMIT))
             || ((cfg->mode & ESP_BT_MODE_CLASSIC_BT) && (cfg->bt_max_sync_conn > BTDM_CONTROLLER_BR_EDR_MAX_SYNC_CONN_LIMIT))) {
@@ -1439,6 +1442,23 @@ esp_err_t esp_bt_controller_deinit(void)
     return ESP_OK;
 }
 
+static void bt_shutdown(void)
+{
+    esp_err_t ret = ESP_OK;
+    ESP_LOGD(BTDM_LOG_TAG, "stop/deinit bt");
+
+    ret = esp_bt_controller_disable();
+    if (ESP_OK != ret) {
+        ESP_LOGW(BTDM_LOG_TAG, "controller disable ret=%d", ret);
+    }
+    ret = esp_bt_controller_deinit();
+    if (ESP_OK != ret) {
+        ESP_LOGW(BTDM_LOG_TAG, "controller deinit ret=%d", ret);
+    }
+    return;
+}
+
+
 esp_err_t esp_bt_controller_enable(esp_bt_mode_t mode)
 {
     int ret;
@@ -1488,6 +1508,10 @@ esp_err_t esp_bt_controller_enable(esp_bt_mode_t mode)
     }
 
     btdm_controller_status = ESP_BT_CONTROLLER_STATUS_ENABLED;
+    ret = esp_register_shutdown_handler(bt_shutdown);
+    if (ret != ESP_OK) {
+        ESP_LOGW(BTDM_LOG_TAG, "Register shutdown handler failed, ret = 0x%x", ret);
+    }
 
     return ESP_OK;
 }
@@ -1515,6 +1539,7 @@ esp_err_t esp_bt_controller_disable(void)
 
     esp_phy_disable();
     btdm_controller_status = ESP_BT_CONTROLLER_STATUS_INITED;
+    esp_unregister_shutdown_handler(bt_shutdown);
 
 #ifdef CONFIG_PM_ENABLE
     if (!s_btdm_allow_light_sleep) {
@@ -1529,6 +1554,11 @@ esp_err_t esp_bt_controller_disable(void)
 esp_bt_controller_status_t esp_bt_controller_get_status(void)
 {
     return btdm_controller_status;
+}
+
+uint8_t* esp_bt_get_mac(void)
+{
+    return own_bda;
 }
 
 

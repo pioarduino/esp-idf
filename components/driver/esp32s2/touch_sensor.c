@@ -75,7 +75,7 @@ static void touch_pad_workaround_isr_internal(void *arg)
 {
     uint16_t ch_mask = 0;
     uint32_t intr_mask = touch_hal_read_intr_status_mask();
-    uint32_t pad_num = touch_hal_get_current_meas_channel();
+    int pad_num = touch_hal_get_current_meas_channel();
     /* Make sure that the scan done interrupt is generated after the last channel measurement is completed. */
     if (intr_mask & TOUCH_PAD_INTR_MASK_SCAN_DONE) {
         touch_hal_get_channel_mask(&ch_mask);
@@ -197,19 +197,23 @@ touch_pad_t IRAM_ATTR touch_pad_get_current_meas_channel(void)
 
 esp_err_t touch_pad_intr_enable(touch_pad_intr_mask_t int_mask)
 {
-    TOUCH_INTR_MASK_CHECK(int_mask);
-    TOUCH_ENTER_CRITICAL();
+    if (!(int_mask & TOUCH_PAD_INTR_MASK_ALL)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    TOUCH_ENTER_CRITICAL_SAFE();
     touch_hal_intr_enable(int_mask);
-    TOUCH_EXIT_CRITICAL();
+    TOUCH_EXIT_CRITICAL_SAFE();
     return ESP_OK;
 }
 
 esp_err_t touch_pad_intr_disable(touch_pad_intr_mask_t int_mask)
 {
-    TOUCH_INTR_MASK_CHECK(int_mask);
-    TOUCH_ENTER_CRITICAL();
+    if (!(int_mask & TOUCH_PAD_INTR_MASK_ALL)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    TOUCH_ENTER_CRITICAL_SAFE();
     touch_hal_intr_disable(int_mask);
-    TOUCH_EXIT_CRITICAL();
+    TOUCH_EXIT_CRITICAL_SAFE();
     return ESP_OK;
 }
 

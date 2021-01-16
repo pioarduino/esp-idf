@@ -139,6 +139,13 @@ function run_tests()
     rm -f sdkconfig
     rm -f ${TESTDIR}/template/version.txt
 
+    print_status "Use IDF version variables in component CMakeLists.txt file"
+    clean_build_dir
+    (echo -e "if (NOT IDF_VERSION_MAJOR)\n message(FATAL_ERROR \"IDF version not set\")\n endif()" \
+        && cat main/CMakeLists.txt) > main/CMakeLists.new && mv main/CMakeLists.new main/CMakeLists.txt
+    idf.py reconfigure || failure "Failed to use IDF_VERSION_MAJOR in component CMakeLists.txt"
+    git checkout -- main/CMakeLists.txt
+
     print_status "Moving BUILD_DIR_BASE out of tree"
     clean_build_dir
     OUTOFTREE_BUILD=${TESTDIR}/alt_build
@@ -218,7 +225,7 @@ function run_tests()
     assert_rebuilt config/sdkconfig.h
     # pick one each of .c, .cpp, .S that #includes sdkconfig.h
     # and therefore should rebuild
-    assert_rebuilt esp-idf/newlib/CMakeFiles/${IDF_COMPONENT_PREFIX}_newlib.dir/syscall_table.c.obj
+    assert_rebuilt esp-idf/newlib/CMakeFiles/${IDF_COMPONENT_PREFIX}_newlib.dir/newlib_init.c.obj
     assert_rebuilt esp-idf/nvs_flash/CMakeFiles/${IDF_COMPONENT_PREFIX}_nvs_flash.dir/src/nvs_api.cpp.obj
     assert_rebuilt esp-idf/freertos/CMakeFiles/${IDF_COMPONENT_PREFIX}_freertos.dir/port/xtensa/xtensa_vectors.S.obj
     mv sdkconfig.bak sdkconfig
@@ -233,7 +240,7 @@ function run_tests()
     idf.py build || failure "Build failed"
     mv CMakeLists.bak CMakeLists.txt
     # similar to previous test
-    assert_rebuilt esp-idf/newlib/CMakeFiles/${IDF_COMPONENT_PREFIX}_newlib.dir/syscall_table.c.obj
+    assert_rebuilt esp-idf/newlib/CMakeFiles/${IDF_COMPONENT_PREFIX}_newlib.dir/newlib_init.c.obj
     assert_rebuilt esp-idf/nvs_flash/CMakeFiles/${IDF_COMPONENT_PREFIX}_nvs_flash.dir/src/nvs_api.cpp.obj
     assert_rebuilt esp-idf/freertos/CMakeFiles/${IDF_COMPONENT_PREFIX}_freertos.dir/port/xtensa/xtensa_vectors.S.obj
     mv sdkconfig.bak sdkconfig
@@ -734,6 +741,21 @@ endmenu\n" >> ${IDF_PATH}/Kconfig
     grep "build/dfu.bin\" has been written. You may proceed with DFU flashing." tmp.log || (tail -n 100 tmp.log ; failure "DFU build should succeed for esp32s2")
     rm tmp.log
     assert_built ${APP_BINS} ${BOOTLOADER_BINS} ${PARTITION_BIN} "dfu.bin"
+    rm -rf build sdkconfig
+
+    print_status "UF2 build works"
+    rm -f -r build sdkconfig
+    idf.py uf2 &> tmp.log
+    grep "build/uf2.bin\" has been written." tmp.log || (tail -n 100 tmp.log ; failure "UF2 build works for esp32")
+    assert_built ${APP_BINS} ${BOOTLOADER_BINS} ${PARTITION_BIN} "uf2.bin"
+    idf.py uf2-app &> tmp.log
+    grep "build/uf2-app.bin\" has been written." tmp.log || (tail -n 100 tmp.log ; failure "UF2 build works for application binary")
+    assert_built "uf2-app.bin"
+    idf.py set-target esp32s2
+    idf.py uf2 &> tmp.log
+    grep "build/uf2.bin\" has been written." tmp.log || (tail -n 100 tmp.log ; failure "UF2 build works for esp32s2")
+    rm tmp.log
+    assert_built ${APP_BINS} ${BOOTLOADER_BINS} ${PARTITION_BIN} "uf2.bin"
     rm -rf build sdkconfig
 
     print_status "Loadable ELF build works"

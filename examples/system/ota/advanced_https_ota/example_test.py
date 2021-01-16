@@ -1,5 +1,6 @@
 import re
 import os
+import struct
 import socket
 import http.server
 from threading import Thread
@@ -187,7 +188,6 @@ def test_examples_protocol_advanced_https_ota_example(env, extra_data):
     binary_file = os.path.join(dut1.app.binary_path, bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):
@@ -242,7 +242,6 @@ def test_examples_protocol_advanced_https_ota_example_truncated_bin(env, extra_d
     binary_file = os.path.join(dut1.app.binary_path, truncated_bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):
@@ -293,7 +292,6 @@ def test_examples_protocol_advanced_https_ota_example_truncated_header(env, extr
     binary_file = os.path.join(dut1.app.binary_path, truncated_bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):
@@ -334,16 +332,15 @@ def test_examples_protocol_advanced_https_ota_example_random(env, extra_data):
     random_bin_size = 32000
     # check and log bin size
     binary_file = os.path.join(dut1.app.binary_path, random_bin_name)
-    fo = open(binary_file, "w+")
+    fo = open(binary_file, "wb+")
     # First byte of binary file is always set to zero. If first byte is generated randomly,
     # in some cases it may generate 0xE9 which will result in failure of testcase.
-    fo.write(str(0))
+    fo.write(struct.pack("B", 0))
     for i in range(random_bin_size - 1):
-        fo.write(str(random.randrange(0,255,1)))
+        fo.write(struct.pack("B", random.randrange(0,255,1)))
     fo.close()
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):
@@ -382,7 +379,6 @@ def test_examples_protocol_advanced_https_ota_example_chunked(env, extra_data):
     binary_file = os.path.join(dut1.app.binary_path, bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     chunked_server = start_chunked_server(dut1.app.binary_path, 8070)
@@ -425,7 +421,6 @@ def test_examples_protocol_advanced_https_ota_example_redirect_url(env, extra_da
     binary_file = os.path.join(dut1.app.binary_path, bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):
@@ -484,7 +479,6 @@ def test_examples_protocol_advanced_https_ota_example_anti_rollback(env, extra_d
     binary_file = os.path.join(dut1.app.binary_path, anti_rollback_bin_name)
     bin_size = os.path.getsize(binary_file)
     ttfw_idf.log_performance("advanced_https_ota_bin_size", "{}KB".format(bin_size // 1024))
-    ttfw_idf.check_performance("advanced_https_ota_bin_size", bin_size // 1024, dut1.TARGET)
     # start test
     host_ip = get_my_ip()
     if (get_server_status(host_ip, server_port) is False):

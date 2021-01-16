@@ -76,11 +76,6 @@ menu "Driver configurations"
         config TWAI_ISR_IN_IRAM
             bool "Place TWAI ISR function into IRAM"
             default n
-            select FREERTOS_SUPPORT_STATIC_ALLOCATION
-            # We need to enable FREERTOS_SUPPORT_STATIC_ALLOCATION because the
-            # TWAI driver requires the use of FreeRTOS Queues and Semaphores from
-            # the driver ISR. These Queues and Semaphores need to be placed in
-            # DRAM thus FreeRTOS static allocation API is required.
             help
                 Place the TWAI ISR in to IRAM. This will allow the ISR to avoid
                 cache misses, and also be able to run whilst the cache is disabled
@@ -118,5 +113,19 @@ menu "Driver configurations"
                 If user use this array, please enable this configuration.
 
     endmenu # RTCIO Configuration
+
+    menu "GPIO Configuration"
+        visible if IDF_TARGET_ESP32
+
+        config GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL
+            bool "Support light sleep GPIO pullup/pulldown configuration for ESP32"
+            depends on IDF_TARGET_ESP32
+            help
+                This option is intended to fix the bug that ESP32 is not able to switch to configured
+                pullup/pulldown mode in sleep.
+                If this option is selected, chip will automatically emulate the behaviour of switching,
+                and about 450B of source codes would be placed into IRAM.
+
+    endmenu # GPIO Configuration
 
 endmenu  # Driver configurations

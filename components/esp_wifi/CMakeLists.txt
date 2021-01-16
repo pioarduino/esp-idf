@@ -34,20 +34,22 @@ idf_component_register(SRCS "src/coexist.c"
                             "src/wifi_netif.c"
                             "${idf_target}/esp_adapter.c"
                     INCLUDE_DIRS "include" "${idf_target}/include"
+                    PRIV_REQUIRES wpa_supplicant nvs_flash esp_netif driver ${extra_priv_requires}
                     REQUIRES esp_event
                     PRIV_REQUIRES esp_timer esp_pm wpa_supplicant nvs_flash esp_netif ${extra_priv_requires}
                     LDFRAGMENTS "${ldfragments}")
 
 idf_build_get_property(build_dir BUILD_DIR)
 
-# ToDo: Rename esp32s2beta to esp32s2 next time update wifi lib
 set(target_name "${idf_target}")
 target_link_libraries(${COMPONENT_LIB} PUBLIC "-L ${CMAKE_CURRENT_SOURCE_DIR}/lib/${target_name}")
 
 if(link_binary_libs)
     set(phy phy)
-    set(blobs coexist core espnow mesh net80211 pp rtc smartconfig ${phy})
-
+    set(blobs coexist core espnow mesh net80211 pp smartconfig ${phy})
+    if(${idf_target} STREQUAL "esp32")
+        list(APPEND blobs rtc)
+    endif()
     foreach(blob ${blobs})
         add_prebuilt_library(${blob} "${CMAKE_CURRENT_SOURCE_DIR}/lib/${target_name}/lib${blob}.a"
                             REQUIRES ${COMPONENT_NAME})

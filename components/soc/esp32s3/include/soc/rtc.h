@@ -106,6 +106,12 @@ extern "C" {
 #define RTC_CNTL_CK8M_WAIT_DEFAULT  20
 #define RTC_CK8M_ENABLE_WAIT_DEFAULT 5
 
+/* Various delays to be programmed into power control state machines */
+#define RTC_CNTL_PLL_BUF_WAIT_SLP_CYCLES    RTC_CNTL_PLL_BUF_WAIT_DEFAULT
+#define RTC_CNTL_XTL_BUF_WAIT_SLP_US    RTC_CNTL_XTL_BUF_WAIT_DEFAULT
+#define RTC_CNTL_CK8M_WAIT_SLP_CYCLES   RTC_CNTL_CK8M_WAIT_DEFAULT
+#define RTC_CNTL_WAKEUP_DELAY_CYCLES    (0)
+
 #define RTC_CNTL_CK8M_DFREQ_DEFAULT 100
 #define RTC_CNTL_SCK_DCAP_DEFAULT   255
 
@@ -563,6 +569,29 @@ uint64_t rtc_deep_slp_time_get(void);
 void rtc_clk_wait_for_slow_cycle(void);
 
 /**
+ * @brief Enable the rtc digital 8M clock
+ *
+ * This function is used to enable the digital rtc 8M clock to support peripherals.
+ * For enabling the analog 8M clock, using `rtc_clk_8M_enable` function above.
+ */
+void rtc_dig_clk8m_enable(void);
+
+/**
+ * @brief Disable the rtc digital 8M clock
+ *
+ * This function is used to disable the digital rtc 8M clock, which is only used to support peripherals.
+ */
+void rtc_dig_clk8m_disable(void);
+
+/**
+ * @brief Calculate the real clock value after the clock calibration
+ *
+ * @param cal_val Average slow clock period in microseconds, fixed point value as returned from `rtc_clk_cal`
+ * @return Frequency of the clock in Hz
+ */
+uint32_t rtc_clk_freq_cal(uint32_t cal_val);
+
+/**
  * @brief Power up flags for rtc_sleep_pd function
  */
 typedef struct {
@@ -664,6 +693,17 @@ typedef struct {
  */
 void rtc_sleep_init(rtc_sleep_config_t cfg);
 
+/**
+ * @brief Low level initialize for rtc state machine waiting cycles after waking up
+ *
+ * This function configures the cycles chip need to wait for internal 8MHz
+ * oscillator and external 40MHz crystal. As we configure fixed time for waiting
+ * crystal, we need to pass period to calculate cycles. Now this function only
+ * used in lightsleep mode.
+ *
+ * @param slowclk_period re-calibrated slow clock period
+ */
+void rtc_sleep_low_init(uint32_t slowclk_period);
 
 /**
  * @brief Set target value of RTC counter for RTC_TIMER_TRIG_EN wakeup source

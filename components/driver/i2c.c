@@ -20,10 +20,8 @@
 #include "malloc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/xtensa_api.h"
 #include "freertos/task.h"
 #include "freertos/ringbuf.h"
-#include "soc/dport_reg.h"
 #include "esp_pm.h"
 #include "soc/soc_memory_layout.h"
 #include "hal/i2c_hal.h"
@@ -176,7 +174,9 @@ typedef struct
 
 static i2c_context_t i2c_context[I2C_NUM_MAX] = {
     I2C_CONTEX_INIT_DEF(I2C_NUM_0),
+#if I2C_NUM_MAX > 1
     I2C_CONTEX_INIT_DEF(I2C_NUM_1),
+#endif
 };
 
 // i2c clock characteristic, The order is the same as i2c_sclk_t.
@@ -189,10 +189,10 @@ static i2c_clk_alloc_t i2c_clk_alloc[I2C_SCLK_MAX] = {
     {0, I2C_CLK_LIMIT_XTAL},                                                               /*!< I2C XTAL characteristic*/
 #endif
 #if SOC_I2C_SUPPORT_RTC
-    {I2C_SCLK_SRC_FLAG_LIGHT_SLEEP, I2C_CLK_LIMIT_RTC},                                    /*!< I2C 20M RTC characteristic*/
+    {I2C_SCLK_SRC_FLAG_LIGHT_SLEEP | I2C_SCLK_SRC_FLAG_AWARE_DFS, I2C_CLK_LIMIT_RTC},      /*!< I2C 20M RTC characteristic*/
 #endif
 #if SOC_I2C_SUPPORT_REF_TICK
-    {I2C_SCLK_SRC_FLAG_AWARE_DFS | I2C_SCLK_SRC_FLAG_LIGHT_SLEEP, I2C_CLK_LIMIT_REF_TICK}, /*!< I2C REF_TICK characteristic*/
+    {I2C_SCLK_SRC_FLAG_AWARE_DFS, I2C_CLK_LIMIT_REF_TICK},                                 /*!< I2C REF_TICK characteristic*/
 #endif
 };
 
@@ -628,7 +628,7 @@ static i2c_sclk_t i2c_get_clk_src(const i2c_config_t *i2c_conf)
             continue;
         }
 #endif
-        if (((i2c_conf->clk_flags | i2c_clk_alloc[clk].character) == i2c_clk_alloc[clk].character) && (i2c_conf->master.clk_speed <= i2c_clk_alloc[clk].clk_freq)) {
+        if (((i2c_conf->clk_flags & i2c_clk_alloc[clk].character) == i2c_conf->clk_flags) && (i2c_conf->master.clk_speed <= i2c_clk_alloc[clk].clk_freq)) {
             return clk;
         }
     }
@@ -640,6 +640,9 @@ esp_err_t i2c_param_config(i2c_port_t i2c_num, const i2c_config_t *i2c_conf)
     I2C_CHECK(i2c_num < I2C_NUM_MAX, I2C_NUM_ERROR_STR, ESP_ERR_INVALID_ARG);
     I2C_CHECK(i2c_conf != NULL, I2C_ADDR_ERROR_STR, ESP_ERR_INVALID_ARG);
     I2C_CHECK(i2c_conf->mode < I2C_MODE_MAX, I2C_MODE_ERR_STR, ESP_ERR_INVALID_ARG);
+    if (i2c_conf->mode == I2C_MODE_MASTER) {
+        I2C_CHECK(i2c_get_clk_src(i2c_conf) != I2C_SCLK_MAX, I2C_CLK_FLAG_ERR_STR, ESP_ERR_INVALID_ARG);
+    }
 
     esp_err_t ret = i2c_set_pin(i2c_num, i2c_conf->sda_io_num, i2c_conf->scl_io_num,
                                 i2c_conf->sda_pullup_en, i2c_conf->scl_pullup_en, i2c_conf->mode);
@@ -664,7 +667,6 @@ esp_err_t i2c_param_config(i2c_port_t i2c_num, const i2c_config_t *i2c_conf)
         i2c_hal_master_init(&(i2c_context[i2c_num].hal), i2c_num);
         //Default, we enable hardware filter
         i2c_hal_set_filter(&(i2c_context[i2c_num].hal), I2C_FILTER_CYC_NUM_DEF);
-        I2C_CHECK(i2c_get_clk_src(i2c_conf) != I2C_SCLK_MAX, I2C_CLK_FLAG_ERR_STR, ESP_ERR_INVALID_ARG);
         i2c_hal_set_bus_timing(&(i2c_context[i2c_num].hal), i2c_conf->master.clk_speed, i2c_get_clk_src(i2c_conf));
     }
     I2C_EXIT_CRITICAL(&(i2c_context[i2c_num].spinlock));
@@ -1178,12 +1180,12 @@ esp_err_t i2c_master_cmd_begin(i2c_port_t i2c_num, i2c_cmd_handle_t cmd_handle, 
     i2c_obj_t *p_i2c = p_i2c_obj[i2c_num];
     portTickType ticks_start = xTaskGetTickCount();
     portBASE_TYPE res = xSemaphoreTake(p_i2c->cmd_mux, ticks_to_wait);
-#ifdef CONFIG_PM_ENABLE
-    esp_pm_lock_acquire(p_i2c->pm_lock);
-#endif
     if (res == pdFALSE) {
         return ESP_ERR_TIMEOUT;
     }
+#ifdef CONFIG_PM_ENABLE
+    esp_pm_lock_acquire(p_i2c->pm_lock);
+#endif
     xQueueReset(p_i2c->cmd_evt_queue);
     if (p_i2c->status == I2C_STATUS_TIMEOUT
             || i2c_hal_is_bus_busy(&(i2c_context[i2c_num].hal))) {

@@ -104,6 +104,12 @@ extern "C" {
 #define RTC_CNTL_CK8M_WAIT_DEFAULT  20
 #define RTC_CK8M_ENABLE_WAIT_DEFAULT 1
 
+/* Various delays to be programmed into power control state machines */
+#define RTC_CNTL_PLL_BUF_WAIT_SLP_CYCLES    (1)
+#define RTC_CNTL_XTL_BUF_WAIT_SLP_US    (1000)
+#define RTC_CNTL_CK8M_WAIT_SLP_CYCLES   (4)
+#define RTC_CNTL_WAKEUP_DELAY_CYCLES    (4)
+
 #define RTC_CNTL_CK8M_DFREQ_DEFAULT 172
 #define RTC_CNTL_SCK_DCAP_DEFAULT   255
 
@@ -287,6 +293,10 @@ typedef struct {
     .rtc_mem_powerup_cycles = OTHER_BLOCKS_POWERUP, \
     .rtc_mem_wait_cycles = OTHER_BLOCKS_WAIT, \
 }
+
+/* Two different calibration mode for slow clock */
+#define RTC_TIME_CAL_ONEOFF_MODE 0
+#define RTC_TIME_CAL_CYCLING_MODE 1
 
 void rtc_clk_divider_set(uint32_t div);
 
@@ -518,7 +528,7 @@ void rtc_clk_apb_freq_update(uint32_t apb_freq);
  */
 uint32_t rtc_clk_apb_freq_get(void);
 
-uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles);
+uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles, uint32_t cal_mode);
 
 /**
  * @brief Measure RTC slow clock's period, based on main XTAL frequency
@@ -587,6 +597,29 @@ uint64_t rtc_deep_slp_time_get(void);
  * one RTC_SLOW_CLK cycle later.
  */
 void rtc_clk_wait_for_slow_cycle(void);
+
+/**
+ * @brief Enable the rtc digital 8M clock
+ *
+ * This function is used to enable the digital rtc 8M clock to support peripherals.
+ * For enabling the analog 8M clock, using `rtc_clk_8M_enable` function above.
+ */
+void rtc_dig_clk8m_enable(void);
+
+/**
+ * @brief Disable the rtc digital 8M clock
+ *
+ * This function is used to disable the digital rtc 8M clock, which is only used to support peripherals.
+ */
+void rtc_dig_clk8m_disable(void);
+
+/**
+ * @brief Calculate the real clock value after the clock calibration
+ *
+ * @param cal_val Average slow clock period in microseconds, fixed point value as returned from `rtc_clk_cal`
+ * @return Frequency of the clock in Hz
+ */
+uint32_t rtc_clk_freq_cal(uint32_t cal_val);
 
 /**
  * @brief Power down flags for rtc_sleep_pd function
@@ -686,6 +719,17 @@ typedef struct {
  */
 void rtc_sleep_init(rtc_sleep_config_t cfg);
 
+/**
+ * @brief Low level initialize for rtc state machine waiting cycles after waking up
+ *
+ * This function configures the cycles chip need to wait for internal 8MHz
+ * oscillator and external 40MHz crystal. As we configure fixed time for waiting
+ * crystal, we need to pass period to calculate cycles. Now this function only
+ * used in lightsleep mode.
+ *
+ * @param slowclk_period re-calibrated slow clock period
+ */
+void rtc_sleep_low_init(uint32_t slowclk_period);
 
 #define RTC_EXT0_TRIG_EN    BIT(0)  //!< EXT0 GPIO wakeup
 #define RTC_EXT1_TRIG_EN    BIT(1)  //!< EXT1 GPIO wakeup
@@ -827,7 +871,13 @@ rtc_vddsdio_config_t rtc_vddsdio_get_config(void);
  */
 void rtc_vddsdio_set_config(rtc_vddsdio_config_t config);
 
-
+/**
+ * Using valid hardware calibration value to calibrate slowclk
+ * If there is no hardware calibration in process, start hardware calibration and wait for calibration finished
+ * @param cal_clk clock to be measured
+ * @param slowclk_cycles if no hardware calibration in process, use this amount of slow cycles to calibrate slowclk.
+ */
+uint32_t rtc_clk_cal_cycling(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles);
 #ifdef __cplusplus
 }
 #endif

@@ -1,16 +1,23 @@
+
+idf_build_get_property(target IDF_TARGET)
+# Remove when sleep is brought up on master for C3 TODO ESP32-C3 IDF-2571
+if(NOT (${target} STREQUAL "esp32c3") )
+    list(APPEND sleep_src "sleep_modes.c")
+endif()
+
 idf_component_register(SRCS "intr_alloc.c"
                             "esp_async_memcpy.c"
                             "panic.c"
                             "system_api.c"
                             "startup.c"
-                            "sleep_modes.c"
                             "system_time.c"
+                            "${sleep_src}"
                     INCLUDE_DIRS include
                     PRIV_REQUIRES spi_flash
                                   # [refactor-todo] requirements due to init code,
                                   # should be removable once using component init functions
                                   # link-time registration is used.
-                                  esp_pm app_update nvs_flash pthread app_trace
+                                  esp_pm app_update nvs_flash pthread app_trace esp_gdbstub
                     LDFRAGMENTS "linker.lf")
 
 add_subdirectory(port)

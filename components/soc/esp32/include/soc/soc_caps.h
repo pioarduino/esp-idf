@@ -69,7 +69,9 @@
 #define SOC_EMAC_SUPPORTED          1
 #define SOC_RISCV_COPROC_SUPPORTED  0   //TODO: correct the caller and remove this line
 #define SOC_CPU_CORES_NUM           2
-
+#define SOC_ULP_SUPPORTED           1
+#define SOC_RTC_SLOW_MEM_SUPPORTED  1
+#define SOC_CCOMP_TIMER_SUPPORTED   1
 
 /*-------------------------- ADC CAPS ----------------------------------------*/
 #define SOC_ADC_PERIPH_NUM              (2)
@@ -113,6 +115,9 @@
 #define SOC_GPIO_VALID_GPIO_MASK        (0xFFFFFFFFFFULL & ~(0ULL | BIT20 | BIT24 | BIT28 | BIT29 | BIT30 | BIT31))
 // GPIO >= 34 are input only
 #define SOC_GPIO_VALID_OUTPUT_GPIO_MASK (SOC_GPIO_VALID_GPIO_MASK & ~(0ULL | BIT34 | BIT35 | BIT36 | BIT37 | BIT38 | BIT39))
+
+// Support to configure slept status
+#define SOC_GPIO_SUPPORT_SLP_SWITCH  (1)
 
 /*-------------------------- I2C CAPS ----------------------------------------*/
 // ESP32 have 2 I2C.
@@ -173,6 +178,9 @@
 
 /*-------------------------- RTCIO CAPS --------------------------------------*/
 #define SOC_RTCIO_PIN_COUNT 18
+#define SOC_RTCIO_INPUT_OUTPUT_SUPPORTED 1
+#define SOC_RTCIO_HOLD_SUPPORTED 1
+#define SOC_RTCIO_WAKE_SUPPORTED 1
 
 /*-------------------------- SIGMA DELTA CAPS --------------------------------*/
 #define SOC_SIGMADELTA_NUM            1
@@ -185,6 +193,7 @@
 #define SOC_SPI_PERIPH_CS_NUM(i)    3
 
 #define SOC_SPI_MAXIMUM_BUFFER_SIZE 64
+#define SOC_SPI_MAX_PRE_DIVIDER     8192
 
 #define SOC_SPI_SUPPORT_AS_CS       1 //Support to toggle the CS while the clock toggles
 
@@ -204,6 +213,7 @@
 
 #define SOC_TOUCH_PAD_MEASURE_WAIT_MAX      (0xFF)  /*!<The timer frequency is 8Mhz, the max value is 0xff */
 #define SOC_TOUCH_PAD_THRESHOLD_MAX         (0)     /*!<If set touch threshold max value, The touch sensor can't be in touched status */
+#define SOC_TOUCH_PAD_WAKE_SUPPORTED        (1)     /*!<Supports waking up from touch pad trigger */
 
 /*-------------------------- TWAI CAPS ---------------------------------------*/
 #define SOC_TWAI_BRP_MIN                        2
@@ -229,11 +239,14 @@
 
 /*-------------------------- UART CAPS ---------------------------------------*/
 // ESP32 have 3 UART.
-#define SOC_UART_NUM            (3)
+#define SOC_UART_NUM                (3)
+#define SOC_UART_SUPPORT_REF_TICK   (1)         /*!< Support REF_TICK as the clock source */
+#define SOC_UART_FIFO_LEN           (128)       /*!< The UART hardware FIFO length */
+#define SOC_UART_BITRATE_MAX        (5000000)   /*!< Max bit rate supported by UART */
 
-#define SOC_UART_FIFO_LEN       (128)      /*!< The UART hardware FIFO length */
-#define SOC_UART_BITRATE_MAX    (5000000)  /*!< Max bit rate supported by UART */
 
+/*-------------------------- SPIRAM CAPS -------------------------------------*/
+#define SOC_SPIRAM_SUPPORTED    1
 
 /*--------------------------- SHA CAPS ---------------------------------------*/
 /* ESP32 style SHA engine, where multiple states can be stored in parallel */
@@ -249,6 +262,11 @@
 /*--------------------------- RSA CAPS ---------------------------------------*/
 #define SOC_RSA_MAX_BIT_LEN    (4096)
 
+
+/*-------------------------- AES CAPS -----------------------------------------*/
+#define SOC_AES_SUPPORT_AES_128 (1)
+#define SOC_AES_SUPPORT_AES_192 (1)
+#define SOC_AES_SUPPORT_AES_256 (1)
 
 /* ---------------------------- Compatibility ------------------------------- */
 #define SOC_CAN_SUPPORTED                   SOC_TWAI_SUPPORTED

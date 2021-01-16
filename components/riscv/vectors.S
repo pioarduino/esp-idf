@@ -18,6 +18,8 @@
 
 	.equ SAVE_REGS, 32
 	.equ CONTEXT_SIZE, (SAVE_REGS * 4)
+	.equ panic_from_exception, xt_unhandled_exception
+	.equ panic_from_isr, panicHandler
 
 .macro save_regs
 	addi sp, sp, -CONTEXT_SIZE
@@ -95,11 +97,8 @@
 	csrw	mepc, t0
 .endm
 
-	.global vPortYieldFromISR
-	.global uxInterruptNesting
-	.global uxSchedulerRunning
-	.global xIsrStackTop
-	.global pxCurrentTCB
+	.global rtos_int_enter
+	.global rtos_int_exit
 	.global _global_interrupt_handler
 
 	.section .exception_vectors.text
@@ -119,15 +118,20 @@
 _vector_table:
 	.option push
 	.option norvc
-	j _panic_handler		/* exception handler, entry 0 */
-	.rept 31
-	j _interrupt_handler		/* 31 identical entries, all pointing to the interrupt handler */
+	j _panic_handler			/* exception handler, entry 0 */
+	.rept (ETS_T1_WDT_INUM - 1)
+	j _interrupt_handler		/* 24 identical entries, all pointing to the interrupt handler */
 	.endr
+	j _panic_handler			/* Call panic handler for ETS_T1_WDT_INUM interrupt (soc-level panic)*/
+	j _panic_handler			/* Call panic handler for ETS_CACHEERR_INUM interrupt (soc-level panic)*/
+	.rept (ETS_MAX_INUM - ETS_CACHEERR_INUM)
+	j _interrupt_handler		/* 6 identical entries, all pointing to the interrupt handler */
+	.endr
+
 	.option pop
 	.size _vector_table, .-_vector_table
 
 	/* Exception handler.*/
-	.global xt_unhandled_exception
 	.type _panic_handler, @function
 _panic_handler:
 	addi sp, sp, -RV_STK_FRMSZ /* allocate space on stack to store necessary registers */
@@ -170,19 +174,34 @@ _panic_handler:
 	sw t0,  RV_STK_MSTATUS(sp)
 	csrr t0, mtvec
 	sw t0,  RV_STK_MTVEC(sp)
-	csrr t0, mcause
-	sw t0,  RV_STK_MCAUSE(sp)
 	csrr t0, mtval
 	sw t0,  RV_STK_MTVAL(sp)
 	csrr t0, mhartid
 	sw t0,  RV_STK_MHARTID(sp)
 
-	/* call xt_unhandled_exception(sp,cause) */
+	/* Call panic_from_exception(sp) or panic_from_isr(sp)
+	 * depending on whether we have a pseudo excause or not.
+	 * If mcause's highest bit is 1, then an interrupt called this routine,
+	 * so we have a pseudo excause. Else, it is due to a exception, we don't
+         * have an pseudo excause */
 	mv a0, sp
 	csrr a1, mcause
-	jal zero, xt_unhandled_exception
-	/*	panicHandler never returns */
-	.size  _panic_handler, .-_panic_handler
+	/* Branches instructions don't accept immediates values, so use t1 to
+         * store our comparator */
+	li t0, 0x80000000
+	bgeu a1, t0, _call_panic_handler
+	sw a1,  RV_STK_MCAUSE(sp)
+	/* exception_from_panic never returns */
+	j panic_from_exception
+_call_panic_handler:
+	/* Remove highest bit from mcause (a1) register and save it in the
+	 * structure */
+	not t0, t0
+	and a1, a1, t0
+	sw a1, RV_STK_MCAUSE(sp)
+	/* exception_from_isr never returns */
+	j panic_from_isr
+	.size  panic_from_isr, .-panic_from_isr
 
 	/* This is the interrupt handler.
 	 * It saves the registers on the stack,
@@ -197,25 +216,11 @@ _interrupt_handler:
 	save_regs
 	save_mepc
 
-	/* scheduler not enabled, jump directly to ISR handler */
-	lw t0, uxSchedulerRunning
-	beq t0, zero, already_on_handler
+	/* Before doing anythig preserve the stack pointer */
+	/* It will be saved in current TCB, if needed */
+	mv a0, sp
+	call rtos_int_enter
 
-	/* increments the ISR nesting count */
-	la t0, uxInterruptNesting
-	lw t1, 0x0(t0)
-	addi t2,t1,1
-	sw  t2, 0x0(t0)
-
-	/* If reached here from another low priority ISR, skip stack pushing to TCB */
-	bne t1,zero, already_on_handler
-
-	/* Otherwise, save current sp, and use the isr stack from here */
-	lw  t0, pxCurrentTCB
-	sw 	sp, 0x0(t0)
-	lw  sp, xIsrStackTop
-
-already_on_handler:
 	/* Before dispatch c handler, restore interrupt to enable nested intr */
 	csrr s1, mcause
 	csrr s2, mstatus
@@ -256,29 +261,13 @@ already_on_handler:
 	sw s3, 0(t0)
 	fence
 
-	/* may skip RTOS aware interrupt since scheduler was not started */
-	lw t1, uxSchedulerRunning
-	beq t1,zero, isr_exit
+	/* Yield to the next task is needed: */
+	mv a0, sp
+	call rtos_int_exit
 
-	/* update nesting interrupts counter */
-	la t0, uxInterruptNesting
-	lw t1, 0x0(t0)
+	/* The next (or current) stack pointer is returned in a0 */
+	mv sp, a0
 
-	/* Already zero, protect against underflow */
-	beq t1, zero, isr_skip_decrement
-	addi t1,t1, -1
-	sw  t1, 0x0(t0)
-
-isr_skip_decrement:
-	/* may still have interrupts pending, skip section below and exit */
-	bne t1,zero,isr_exit
-
-	/* handled all the ISRs and scheduled the next task, take its stack */
-	/* load on sp, then exit. */
-	lw sp, pxCurrentTCB
-	lw sp, 0x0(sp)
-
-isr_exit:
 	/* restore the rest of the registers */
 	csrw mcause, s1
 	csrw mstatus, s2

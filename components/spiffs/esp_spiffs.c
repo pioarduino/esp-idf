@@ -29,7 +29,16 @@
 #include <sys/lock.h>
 #include "esp_vfs.h"
 #include "esp_err.h"
+#if CONFIG_IDF_TARGET_ESP32
 #include "esp32/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32S2
+#include "esp32s2/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rom/spi_flash.h"
+#endif
+
 #include "spiffs_api.h"
 
 static const char* TAG = "SPIFFS";
@@ -536,6 +545,7 @@ static int vfs_spiffs_fstat(void* ctx, int fd, struct stat * st)
         SPIFFS_clearerr(efs->fs);
         return -1;
     }
+    memset(st, 0, sizeof(*st));
     st->st_size = s.size;
     st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO | S_IFREG;
     st->st_mtime = vfs_spiffs_get_mtime(&s);
@@ -558,7 +568,7 @@ static int vfs_spiffs_stat(void* ctx, const char * path, struct stat * st)
         SPIFFS_clearerr(efs->fs);
         return -1;
     }
-
+    memset(st, 0, sizeof(*st));
     st->st_size = s.size;
     st->st_mode = S_IRWXU | S_IRWXG | S_IRWXO;
     st->st_mode |= (s.type == SPIFFS_TYPE_DIR)?S_IFDIR:S_IFREG;

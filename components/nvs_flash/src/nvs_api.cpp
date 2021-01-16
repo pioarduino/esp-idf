@@ -19,19 +19,20 @@
 #include "nvs_partition_manager.hpp"
 #include "esp_partition.h"
 #include "sdkconfig.h"
+#include <functional>
 #include "nvs_handle_simple.hpp"
 
-#ifdef ESP_PLATFORM
+#ifdef LINUX_TARGET
+#include "crc.h"
+#define ESP_LOGD(...)
+#else // LINUX_TARGET
 #include <esp32/rom/crc.h>
 
 // Uncomment this line to force output from this module
 // #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #include "esp_log.h"
 static const char* TAG = "nvs";
-#else
-#include "crc.h"
-#define ESP_LOGD(...)
-#endif
+#endif // ! LINUX_TARGET
 
 class NVSHandleEntry : public intrusive_list_node<NVSHandleEntry> {
 public:
@@ -55,9 +56,9 @@ uint32_t NVSHandleEntry::s_nvs_next_handle;
 
 extern "C" void nvs_dump(const char *partName);
 
-#ifdef ESP_PLATFORM
+#ifndef LINUX_TARGET
 SemaphoreHandle_t nvs::Lock::mSemaphore = nullptr;
-#endif
+#endif // ! LINUX_TARGET
 
 using namespace std;
 using namespace nvs;
@@ -84,8 +85,16 @@ extern "C" void nvs_dump(const char *partName)
 
 static esp_err_t close_handles_and_deinit(const char* part_name)
 {
-    // Delete all corresponding open handles
-    s_nvs_handles.clearAndFreeNodes();
+    auto belongs_to_part = [=](NVSHandleEntry& e) -> bool {
+        return strncmp(e.nvs_handle->get_partition_name(), part_name, NVS_PART_NAME_MAX_SIZE) == 0;
+    };
+
+    auto it = find_if(begin(s_nvs_handles), end(s_nvs_handles), belongs_to_part);
+
+    while (it != end(s_nvs_handles)) {
+        s_nvs_handles.erase(it);
+        it = find_if(begin(s_nvs_handles), end(s_nvs_handles), belongs_to_part);
+    }
 
     // Deinit partition
     return NVSPartitionManager::get_instance()->deinit_partition(part_name);
@@ -116,7 +125,7 @@ extern "C" esp_err_t nvs_flash_init_partition_ptr(const esp_partition_t *partiti
     return init_res;
 }
 
-#ifdef ESP_PLATFORM
+#ifndef LINUX_TARGET
 extern "C" esp_err_t nvs_flash_init_partition(const char *part_name)
 {
     Lock::init();
@@ -195,7 +204,7 @@ extern "C" esp_err_t nvs_flash_erase(void)
 {
     return nvs_flash_erase_partition(NVS_DEFAULT_PART_NAME);
 }
-#endif // ESP_PLATFORM
+#endif // ! LINUX_TARGET
 
 extern "C" esp_err_t nvs_flash_deinit_partition(const char* partition_name)
 {
@@ -519,7 +528,7 @@ extern "C" esp_err_t nvs_get_used_entry_count(nvs_handle_t c_handle, size_t* use
     return err;
 }
 
-#if (defined CONFIG_NVS_ENCRYPTION) && (defined ESP_PLATFORM)
+#if (defined CONFIG_NVS_ENCRYPTION) && (!defined LINUX_TARGET)
 
 extern "C" esp_err_t nvs_flash_generate_keys(const esp_partition_t* partition, nvs_sec_cfg_t* cfg)
 {

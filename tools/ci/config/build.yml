@@ -5,6 +5,7 @@
     - build
   variables:
     SIZE_INFO_LOCATION: "$CI_PROJECT_DIR/size_info.txt"
+  dependencies: []
 
 .build_template_app_template:
   extends:
@@ -43,7 +44,9 @@
 # build-related-pre-check-jobs ------------------------------------------------
 # Build at least one project for each target at earliest stage to reduce build cost for obvious failing commits
 fast_template_app:
-  extends: .build_template_app_template
+  extends:
+    - .build_template_app_template
+    - .rules:build_tests:target_test-weekend_test
   stage: pre_check
   variables:
     BUILD_COMMAND_ARGS: "-p"
@@ -89,6 +92,11 @@ build_ssc_esp32s2:
   extends:
     - .build_template
     - .rules:build_tests:unit_test
+  dependencies:  # set dependencies to null to avoid missing artifacts issue
+  needs:
+    - job: fast_template_app
+      artifacts: false
+    - scan_tests
   artifacts:
     paths:
       - tools/unit-test-app/output/${IDF_TARGET}
@@ -105,10 +113,8 @@ build_ssc_esp32s2:
     OUTPUT_PATH: ${CI_PROJECT_DIR}/tools/unit-test-app/output
     BUILD_SYSTEM: "cmake"
     TEST_TYPE: "unit_test"
+    PYTHON_VER: 3
   script:
-    # RISC-V toolchain is optional but ULP may need it, so install:
-    - $IDF_PATH/tools/idf_tools.py install riscv-none-embed-gcc
-    - . $IDF_PATH/export.sh
     - ${IDF_PATH}/tools/ci/find_apps_build_apps.sh
     - cd $CI_PROJECT_DIR/tools/unit-test-app
     - python tools/UnitTestParser.py ${BUILD_PATH}
@@ -128,10 +134,20 @@ build_esp_idf_tests_cmake_esp32s3:
   variables:
     IDF_TARGET: esp32s3
 
+build_esp_idf_tests_cmake_esp32c3:
+  extends: .build_esp_idf_tests_cmake
+  variables:
+    IDF_TARGET: esp32c3
+
 .build_examples_template:
   extends:
     - .build_template
     - .rules:build_tests:example_test-weekend_test
+  dependencies:  # set dependencies to null to avoid missing artifacts issue
+  needs:
+    - job: fast_template_app
+      artifacts: false
+    - scan_tests
   variables:
     TEST_PREFIX: examples
     TEST_RELATIVE_DIR: examples
@@ -139,10 +155,8 @@ build_esp_idf_tests_cmake_esp32s3:
     TEST_TYPE: example_test
     LOG_PATH: ${CI_PROJECT_DIR}/log_${TEST_PREFIX}
     BUILD_PATH: ${CI_PROJECT_DIR}/build_${TEST_PREFIX}
+    PYTHON_VER: 3
   script:
-    # RISC-V toolchain is optional but ULP may need it, so install:
-    - $IDF_PATH/tools/idf_tools.py install riscv-none-embed-gcc
-    - . $IDF_PATH/export.sh
     # it's not possible to build 100% out-of-tree and have the "artifacts"
     # mechanism work, but this is the next best thing
     - ${IDF_PATH}/tools/ci/find_apps_build_apps.sh
@@ -168,8 +182,6 @@ build_examples_make:
 # same as above, but for CMake
 .build_examples_cmake:
   extends: .build_examples_template
-  needs:
-    - scan_tests
   artifacts:
     paths:
       - build_${TEST_PREFIX}/list.json
@@ -184,6 +196,8 @@ build_examples_make:
       - build_${TEST_PREFIX}/*/*/*/build/partition_table/*.bin
       - $LOG_PATH
       - $SIZE_INFO_LOCATION
+    when: always
+    expire_in: 4 days
   variables:
     BUILD_SYSTEM: cmake
 
@@ -228,6 +242,12 @@ build_test_apps_esp32s3:
   variables:
     IDF_TARGET: esp32s3
 
+build_test_apps_esp32c3:
+  extends: .build_test_apps
+  parallel: 8
+  variables:
+    IDF_TARGET: esp32c3
+
 .build_component_ut:
   extends:
     - .build_test_apps
@@ -245,6 +265,11 @@ build_component_ut_esp32s2:
   extends: .build_component_ut
   variables:
     IDF_TARGET: esp32s2
+
+build_component_ut_esp32c3:
+  extends: .build_component_ut
+  variables:
+    IDF_TARGET: esp32c3
 
 .build_docs_template:
   stage: build
@@ -289,6 +314,10 @@ build_docs_pdf:
   extends:
     - .build_template
     - .rules:build_tests:weekend_test
+  dependencies:  # set dependencies to null to avoid missing artifacts issue
+  needs:
+    - job: fast_template_app
+      artifacts: false
   script:
     - ${IDF_PATH}/tools/ci/test_configure_ci_environment.sh
     - rm -rf test_build_system
@@ -380,6 +409,7 @@ build_installer:
   image: $CI_DOCKER_REGISTRY/wine-innosetup:1
   tags:
     - build
+  dependencies:  # set dependencies to null to avoid missing artifacts issue
   needs:
     - build_cmdlinerunner
   script:
@@ -388,6 +418,9 @@ build_installer:
 
 # This job builds template app with permutations of targets and optimization levels
 build_template_app:
+  needs:
+    - job: fast_template_app
+      artifacts: false
   extends: .build_template_app_template
 
 # Sonarqube related jobs put here for this reason:
@@ -423,6 +456,7 @@ build_template_app:
     REPORT_DIR: examples/get-started/hello_world/tidybuild/report
   tags:
     - host_test
+  dependencies:  # set dependencies to null to avoid missing artifacts issue
   needs:
     - clang_tidy_check_regular
 
@@ -449,6 +483,7 @@ code_quality_check:
       -Dsonar.gitlab.project_id=$CI_PROJECT_ID
       -Dsonar.gitlab.commit_sha=$CI_MR_COMMITS
       -Dsonar.gitlab.ref_name=$CI_COMMIT_REF_NAME
+      -Dsonar.gitlab.failure_notification_mode=exit-code
       -Dsonar.cxx.clangtidy.reportPath=$REPORT_DIR/clang_tidy_report.txt
       -Dsonar.cxx.includeDirectories=components,/usr/include
       -Dsonar.python.pylint_config=.pylintrc

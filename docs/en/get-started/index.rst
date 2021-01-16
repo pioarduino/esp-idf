@@ -91,12 +91,15 @@ If you have one of {IDF_TARGET_NAME} development boards listed below, you can cl
         ESP32-PICO-KIT <../hw-reference/esp32/get-started-pico-kit>
         ESP32-Ethernet-Kit <../hw-reference/esp32/get-started-ethernet-kit>
         ESP32-DevKit-S(-R) <../hw-reference/esp32/user-guide-devkits-r-v1.1>
+        ESP32-PICO-KIT-1 <../hw-reference/esp32/get-started-pico-kit-1>
+        ESP32-PICO-DevKitM-2 <../hw-reference/esp32/get-started-pico-devkitm-2>
+        ESP32-DevKitM-1 <../hw-reference/esp32/user-guide-devkitm-1>
 
 .. only:: esp32s2
 
     .. toctree::
         :maxdepth: 1
-
+        
         ESP32-S2-Saola-1 <../hw-reference/esp32s2/user-guide-saola-1-v1.2>
         ESP32-S2-DevKitM-1(U) <../hw-reference/esp32s2/user-guide-devkitm-1-v1>
         ESP32-S2-Kaluga-Kit <../hw-reference/esp32s2/user-guide-esp32-s2-kaluga-1-kit>
@@ -225,6 +228,35 @@ Linux and macOS
 .. code-block:: bash
 
     cd ~/esp/esp-idf
+    ./install.sh
+
+Alternative File Downloads
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The tools installer downloads a number of files attached to GitHub Releases. If accessing GitHub is slow then it is possible to set an environment variable to prefer Espressif's download server for GitHub asset downloads.
+
+.. note:: This setting only controls individual tools downloaded from GitHub releases, it doesn't change the URLs used to access any Git repositories.
+
+Windows
+-------
+
+To prefer the Espressif download server when running the ESP-IDF Tools Installer or installing tools from the command line, open the System control panel, then click on Advanced Settings. Add a new Environment Variable (of type either User or System) with the name ``IDF_GITHUB_ASSETS`` and value ``dl.espressif.com/github_assets``. Click OK once done.
+
+If the command line window or ESP-IDF Tools Installer window was already open before you added the new environment variable, you will need to close and reopen it.
+
+While this environment variable is still set, the ESP-IDF Tools Installer and the command line installer will prefer the Espressif download server.
+
+.. Once the ESP-IDF Tools Installer binary is updated to include the checkbox, the above can be rewritten to refer to it
+
+Linux and macOS
+---------------
+
+To prefer the Espressif download server when installing tools, use the following sequence of commands when running ``install.sh``:
+
+.. code-block:: bash
+
+    cd ~/esp/esp-idf
+    export IDF_GITHUB_ASSETS="dl.espressif.com/github_assets"
     ./install.sh
 
 Customizing the tools installation path

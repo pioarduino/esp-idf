@@ -25,7 +25,7 @@
 #include "esp_private/crosscore_int.h"
 
 #include "soc/rtc.h"
-
+#include "hal/cpu_hal.h"
 #include "hal/uart_ll.h"
 #include "hal/uart_types.h"
 
@@ -46,9 +46,11 @@
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/clk.h"
 #include "esp32/pm.h"
+#include "driver/gpio.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/clk.h"
 #include "esp32s2/pm.h"
+#include "driver/gpio.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
 #include "esp32s3/clk.h"
 #include "esp32s3/pm.h"
@@ -283,6 +285,10 @@ esp_err_t esp_pm_configure(const void* vconfig)
     s_config_changed = true;
     portEXIT_CRITICAL(&s_switch_lock);
 
+#if CONFIG_PM_SLP_DISABLE_GPIO && SOC_GPIO_SUPPORT_SLP_SWITCH
+    esp_sleep_gpio_status_switch_configure(config->light_sleep_enable);
+#endif
+
     return ESP_OK;
 }
 
@@ -460,7 +466,7 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
  */
 static void IRAM_ATTR update_ccompare(void)
 {
-    uint32_t ccount = XTHAL_GET_CCOUNT();
+    uint32_t ccount = cpu_hal_get_cycle_count();
     uint32_t ccompare = XTHAL_GET_CCOMPARE(XT_TIMER_INDEX);
     if ((ccompare - CCOMPARE_MIN_CYCLES_IN_FUTURE) - ccount < UINT32_MAX / 2) {
         uint32_t diff = ccompare - ccount;
@@ -636,7 +642,7 @@ void IRAM_ATTR vApplicationSleep( TickType_t xExpectedIdleTime )
                  * work for timer interrupt, and changing CCOMPARE would clear
                  * the interrupt flag.
                  */
-                XTHAL_SET_CCOUNT(XTHAL_GET_CCOMPARE(XT_TIMER_INDEX) - 16);
+                cpu_hal_set_cycle_count(XTHAL_GET_CCOMPARE(XT_TIMER_INDEX) - 16);
                 while (!(XTHAL_GET_INTERRUPT() & BIT(XT_TIMER_INTNUM))) {
                     ;
                 }
@@ -680,15 +686,26 @@ void esp_pm_impl_dump_stats(FILE* out)
 void esp_pm_impl_init(void)
 {
 #if defined(CONFIG_ESP_CONSOLE_UART)
+    //This clock source should be a source which won't be affected by DFS
+    uint32_t clk_source;
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
+    clk_source = UART_SCLK_REF_TICK;
+#else
+    clk_source = UART_SCLK_XTAL;
+#endif
     while(!uart_ll_is_tx_idle(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM)));
     /* When DFS is enabled, override system setting and use REFTICK as UART clock source */
-    uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), UART_SCLK_REF_TICK, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
+    uart_ll_set_sclk(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), clk_source);
+    uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), CONFIG_ESP_CONSOLE_UART_BAUDRATE);
 #endif // CONFIG_ESP_CONSOLE_UART
 
 #ifdef CONFIG_PM_TRACE
     esp_pm_trace_init();
 #endif
 
+#if CONFIG_PM_SLP_DISABLE_GPIO && SOC_GPIO_SUPPORT_SLP_SWITCH
+    esp_sleep_gpio_status_init();
+#endif
     ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "rtos0",
             &s_rtos_lock_handle[0]));
     ESP_ERROR_CHECK(esp_pm_lock_acquire(s_rtos_lock_handle[0]));

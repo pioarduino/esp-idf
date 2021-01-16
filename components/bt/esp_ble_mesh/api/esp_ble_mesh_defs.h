@@ -51,6 +51,12 @@ extern "C" {
 /*!< The maximum length of a BLE Mesh unprovisioned device name */
 #define ESP_BLE_MESH_DEVICE_NAME_MAX_LEN    DEVICE_NAME_SIZE
 
+/*!< The maximum length of settings user id */
+#define ESP_BLE_MESH_SETTINGS_UID_SIZE      20
+
+/*!< Invalid settings index */
+#define ESP_BLE_MESH_INVALID_SETTINGS_IDX   0xFF
+
 /*!< Define the BLE Mesh octet 16 bytes size */
 #define ESP_BLE_MESH_OCTET16_LEN    16
 typedef uint8_t esp_ble_mesh_octet16_t[ESP_BLE_MESH_OCTET16_LEN];
@@ -771,35 +777,19 @@ typedef enum {
     PROXY_FILTER_BLACKLIST,
 } esp_ble_mesh_proxy_filter_type_t;
 
-/** Count for sending BLE advertising packet infinitely */
-#define ESP_BLE_MESH_BLE_ADV_INFINITE   0xFFFF
+/*!< Provisioner heartbeat filter type */
+#define ESP_BLE_MESH_HEARTBEAT_FILTER_ACCEPTLIST    0x00
+#define ESP_BLE_MESH_HEARTBEAT_FILTER_REJECTLIST    0x01
 
-/*!< This enum value is the priority of BLE advertising packet */
-typedef enum {
-    ESP_BLE_MESH_BLE_ADV_PRIO_LOW,
-    ESP_BLE_MESH_BLE_ADV_PRIO_HIGH,
-} esp_ble_mesh_ble_adv_priority_t;
+/*!< Provisioner heartbeat filter operation */
+#define ESP_BLE_MESH_HEARTBEAT_FILTER_ADD           0x00
+#define ESP_BLE_MESH_HEARTBEAT_FILTER_REMOVE        0x01
 
-/** Context of BLE advertising parameters. */
+/** Context of Provisioner heartbeat filter information to be set */
 typedef struct {
-    uint16_t interval;                  /*!< BLE advertising interval */
-    uint8_t  adv_type;                  /*!< BLE advertising type */
-    uint8_t  own_addr_type;             /*!< Own address type */
-    uint8_t  peer_addr_type;            /*!< Peer address type */
-    uint8_t  peer_addr[BD_ADDR_LEN];    /*!< Peer address */
-    uint16_t duration;                  /*!< Duration is milliseconds */
-    uint16_t period;                    /*!< Period in milliseconds */
-    uint16_t count;                     /*!< Number of advertising duration */
-    uint8_t  priority:2;                /*!< Priority of BLE advertising packet */
-} esp_ble_mesh_ble_adv_param_t;
-
-/** Context of BLE advertising data. */
-typedef struct {
-    uint8_t adv_data_len;       /*!< Advertising data length */
-    uint8_t adv_data[31];       /*!< Advertising data */
-    uint8_t scan_rsp_data_len;  /*!< Scan response data length */
-    uint8_t scan_rsp_data[31];  /*!< Scan response data */
-} esp_ble_mesh_ble_adv_data_t;
+    uint16_t hb_src;    /*!< Heartbeat source address (unicast address) */
+    uint16_t hb_dst;    /*!< Heartbeat destination address (unicast address or group address) */
+} esp_ble_mesh_heartbeat_filter_info_t;
 
 /*!< This enum value is the event of node/provisioner/fast provisioning */
 typedef enum {
@@ -852,6 +842,17 @@ typedef enum {
     ESP_BLE_MESH_PROVISIONER_STORE_NODE_COMP_DATA_COMP_EVT,     /*!< Provisioner store node composition data completion event */
     ESP_BLE_MESH_PROVISIONER_DELETE_NODE_WITH_UUID_COMP_EVT,    /*!< Provisioner delete node with uuid completion event */
     ESP_BLE_MESH_PROVISIONER_DELETE_NODE_WITH_ADDR_COMP_EVT,    /*!< Provisioner delete node with unicast address completion event */
+    ESP_BLE_MESH_PROVISIONER_ENABLE_HEARTBEAT_RECV_COMP_EVT,     /*!< Provisioner start to receive heartbeat message completion event */
+    ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_TYPE_COMP_EVT, /*!< Provisioner set the heartbeat filter type completion event */
+    ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_INFO_COMP_EVT, /*!< Provisioner set the heartbeat filter information completion event */
+    ESP_BLE_MESH_PROVISIONER_RECV_HEARTBEAT_MESSAGE_EVT,         /*!< Provisioner receive heartbeat message event */
+    ESP_BLE_MESH_PROVISIONER_DRIECT_ERASE_SETTINGS_COMP_EVT,        /*!< Provisioner directly erase settings completion event */
+    ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_INDEX_COMP_EVT,     /*!< Provisioner open settings with index completion event */
+    ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_UID_COMP_EVT,       /*!< Provisioner open settings with user id completion event */
+    ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_INDEX_COMP_EVT,    /*!< Provisioner close settings with index completion event */
+    ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_UID_COMP_EVT,      /*!< Provisioner close settings with user id completion event */
+    ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_INDEX_COMP_EVT,   /*!< Provisioner delete settings with index completion event */
+    ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_UID_COMP_EVT,     /*!< Provisioner delete settings with user id completion event */
     ESP_BLE_MESH_SET_FAST_PROV_INFO_COMP_EVT,                   /*!< Set fast provisioning information (e.g. unicast address range, net_idx, etc.) completion event */
     ESP_BLE_MESH_SET_FAST_PROV_ACTION_COMP_EVT,                 /*!< Set fast provisioning action completion event */
     ESP_BLE_MESH_HEARTBEAT_MESSAGE_RECV_EVT,                    /*!< Receive Heartbeat message event */
@@ -871,8 +872,6 @@ typedef enum {
     ESP_BLE_MESH_PROXY_CLIENT_SET_FILTER_TYPE_COMP_EVT,         /*!< Proxy Client set filter type completion event */
     ESP_BLE_MESH_PROXY_CLIENT_ADD_FILTER_ADDR_COMP_EVT,         /*!< Proxy Client add filter address completion event */
     ESP_BLE_MESH_PROXY_CLIENT_REMOVE_FILTER_ADDR_COMP_EVT,      /*!< Proxy Client remove filter address completion event */
-    ESP_BLE_MESH_START_BLE_ADVERTISING_COMP_EVT,                /*!< Start BLE advertising completion event */
-    ESP_BLE_MESH_STOP_BLE_ADVERTISING_COMP_EVT,                 /*!< Stop BLE advertising completion event */
     ESP_BLE_MESH_MODEL_SUBSCRIBE_GROUP_ADDR_COMP_EVT,           /*!< Local model subscribes group address completion event */
     ESP_BLE_MESH_MODEL_UNSUBSCRIBE_GROUP_ADDR_COMP_EVT,         /*!< Local model unsubscribes group address completion event */
     ESP_BLE_MESH_DEINIT_MESH_COMP_EVT,                          /*!< De-initialize BLE Mesh stack completion event */
@@ -1220,6 +1219,92 @@ typedef union {
         uint16_t unicast_addr;                  /*!< Node unicast address */
     } provisioner_delete_node_with_addr_comp;   /*!< Event parameter of ESP_BLE_MESH_PROVISIONER_DELETE_NODE_WITH_ADDR_COMP_EVT */
     /**
+     * @brief ESP_BLE_MESH_PROVISIONER_ENABLE_HEARTBEAT_RECV_COMP_EVT
+     */
+    struct {
+        int err_code;                           /*!< Indicate the result of enabling/disabling to receive heartbeat messages by the Provisioner */
+        bool enable;                            /*!< Indicate enabling or disabling receiving heartbeat messages */
+    } provisioner_enable_heartbeat_recv_comp;   /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_ENABLE_HEARTBEAT_RECV_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_TYPE_COMP_EVT
+     */
+    struct {
+        int err_code;                               /*!< Indicate the result of setting the heartbeat filter type by the Provisioner */
+        uint8_t type;                               /*!< Type of the filter used for receiving heartbeat messages */
+    } provisioner_set_heartbeat_filter_type_comp;   /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_TYPE_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_INFO_COMP_EVT
+     */
+    struct {
+        int err_code;                               /*!< Indicate the result of setting the heartbeat filter address by the Provisioner */
+        uint8_t  op;                                /*!< Operation (add, remove, clean) */
+        uint16_t hb_src;                            /*!< Heartbeat source address */
+        uint16_t hb_dst;                            /*!< Heartbeat destination address */
+    } provisioner_set_heartbeat_filter_info_comp;   /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_SET_HEARTBEAT_FILTER_INFO_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_RECV_HEARTBEAT_MESSAGE_EVT
+     */
+    struct {
+        uint16_t hb_src;            /*!< Heartbeat source address */
+        uint16_t hb_dst;            /*!< Heartbeat destination address */
+        uint8_t  init_ttl;          /*!< Heartbeat InitTTL */
+        uint8_t  rx_ttl;            /*!< Heartbeat RxTTL */
+        uint8_t  hops;              /*!< Heartbeat hops (InitTTL - RxTTL + 1) */
+        uint16_t feature;           /*!< Bit field of currently active features of the node */
+        int8_t   rssi;              /*!< RSSI of the heartbeat message */
+    } provisioner_recv_heartbeat;   /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_RECV_HEARTBEAT_MESSAGE_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_DRIECT_ERASE_SETTINGS_COMP_EVT
+     */
+    struct {
+        int err_code;                           /*!< Indicate the result of directly erasing settings by the Provisioner */
+    } provisioner_direct_erase_settings_comp;   /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_DRIECT_ERASE_SETTINGS_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_INDEX_COMP_EVT
+     */
+    struct {
+        int err_code;                               /*!< Indicate the result of opening settings with index by the Provisioner */
+        uint8_t index;                              /*!< Index of Provisioner settings */
+    } provisioner_open_settings_with_index_comp;    /*!< Event parameter of ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_INDEX_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_UID_COMP_EVT
+     */
+    struct {
+        int err_code;                                   /*!< Indicate the result of opening settings with user id by the Provisioner */
+        uint8_t index;                                  /*!< Index of Provisioner settings */
+        char uid[ESP_BLE_MESH_SETTINGS_UID_SIZE + 1];   /*!< Provisioner settings user id */
+    } provisioner_open_settings_with_uid_comp;          /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_OPEN_SETTINGS_WITH_UID_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_INDEX_COMP_EVT
+     */
+    struct {
+        int err_code;                               /*!< Indicate the result of closing settings with index by the Provisioner */
+        uint8_t index;                              /*!< Index of Provisioner settings */
+    } provisioner_close_settings_with_index_comp;   /*!< Event parameter of ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_INDEX_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_UID_COMP_EVT
+     */
+    struct {
+        int err_code;                                   /*!< Indicate the result of closing settings with user id by the Provisioner */
+        uint8_t index;                                  /*!< Index of Provisioner settings */
+        char uid[ESP_BLE_MESH_SETTINGS_UID_SIZE + 1];   /*!< Provisioner settings user id */
+    } provisioner_close_settings_with_uid_comp;         /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_CLOSE_SETTINGS_WITH_UID_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_INDEX_COMP_EVT
+     */
+    struct {
+        int err_code;                               /*!< Indicate the result of deleting settings with index by the Provisioner */
+        uint8_t index;                              /*!< Index of Provisioner settings */
+    } provisioner_delete_settings_with_index_comp;  /*!< Event parameter of ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_INDEX_COMP_EVT */
+    /**
+     * @brief ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_UID_COMP_EVT
+     */
+    struct {
+        int err_code;                                   /*!< Indicate the result of deleting settings with user id by the Provisioner */
+        uint8_t index;                                  /*!< Index of Provisioner settings */
+        char uid[ESP_BLE_MESH_SETTINGS_UID_SIZE + 1];   /*!< Provisioner settings user id */
+    } provisioner_delete_settings_with_uid_comp;        /*!< Event parameters of ESP_BLE_MESH_PROVISIONER_DELETE_SETTINGS_WITH_UID_COMP_EVT */
+    /**
      * @brief ESP_BLE_MESH_SET_FAST_PROV_INFO_COMP_EVT
      */
     struct ble_mesh_set_fast_prov_info_comp_param {
@@ -1369,20 +1454,6 @@ typedef union {
         uint8_t conn_handle;                    /*!< Proxy connection handle */
         uint16_t net_idx;                       /*!< Corresponding NetKey Index */
     } proxy_client_remove_filter_addr_comp;     /*!< Event parameter of ESP_BLE_MESH_PROXY_CLIENT_REMOVE_FILTER_ADDR_COMP_EVT */
-    /**
-     * @brief ESP_BLE_MESH_START_BLE_ADVERTISING_COMP_EVT
-     */
-    struct ble_mesh_start_ble_advertising_comp_param {
-        int err_code;                           /*!< Indicate the result of starting BLE advertising */
-        uint8_t index;                          /*!< Index of the BLE advertising */
-    } start_ble_advertising_comp;               /*!< Event parameter of ESP_BLE_MESH_START_BLE_ADVERTISING_COMP_EVT */
-    /**
-     * @brief ESP_BLE_MESH_STOP_BLE_ADVERTISING_COMP_EVT
-     */
-    struct ble_mesh_stop_ble_advertising_comp_param {
-        int err_code;                           /*!< Indicate the result of stopping BLE advertising */
-        uint8_t index;                          /*!< Index of the BLE advertising */
-    } stop_ble_advertising_comp;                /*!< Event parameter of ESP_BLE_MESH_STOP_BLE_ADVERTISING_COMP_EVT */
     /**
      * @brief ESP_BLE_MESH_MODEL_SUBSCRIBE_GROUP_ADDR_COMP_EVT
      */

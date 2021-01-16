@@ -19,6 +19,7 @@
 #include <esp_log.h>
 #include <esp_ota_ops.h>
 #include <errno.h>
+#include <sys/param.h>
 
 #define IMAGE_HEADER_SIZE sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t) + 1
 #define DEFAULT_OTA_BUF_SIZE IMAGE_HEADER_SIZE
@@ -199,8 +200,7 @@ esp_err_t esp_https_ota_begin(esp_https_ota_config_t *ota_config, esp_https_ota_
     ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%x",
         https_ota_handle->update_partition->subtype, https_ota_handle->update_partition->address);
 
-    const int alloc_size = (ota_config->http_config->buffer_size > DEFAULT_OTA_BUF_SIZE) ?
-                            ota_config->http_config->buffer_size : DEFAULT_OTA_BUF_SIZE;
+    const int alloc_size = MAX(ota_config->http_config->buffer_size, DEFAULT_OTA_BUF_SIZE);
     https_ota_handle->ota_upgrade_buf = (char *)malloc(alloc_size);
     if (!https_ota_handle->ota_upgrade_buf) {
         ESP_LOGE(TAG, "Couldn't allocate memory to upgrade data buffer");
@@ -381,6 +381,40 @@ esp_err_t esp_https_ota_finish(esp_https_ota_handle_t https_ota_handle)
     return err;
 }
 
+esp_err_t esp_https_ota_abort(esp_https_ota_handle_t https_ota_handle)
+{
+    esp_https_ota_t *handle = (esp_https_ota_t *)https_ota_handle;
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (handle->state < ESP_HTTPS_OTA_BEGIN) {
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = ESP_OK;
+    switch (handle->state) {
+        case ESP_HTTPS_OTA_SUCCESS:
+        case ESP_HTTPS_OTA_IN_PROGRESS:
+            err = esp_ota_abort(handle->update_handle);
+            /* falls through */
+        case ESP_HTTPS_OTA_BEGIN:
+            if (handle->ota_upgrade_buf) {
+                free(handle->ota_upgrade_buf);
+            }
+            if (handle->http_client) {
+                _http_cleanup(handle->http_client);
+            }
+            break;
+        default:
+            err = ESP_ERR_INVALID_STATE;
+            ESP_LOGE(TAG, "Invalid ESP HTTPS OTA State");
+            break;
+    }
+    free(handle);
+    return err;
+}
+
 int esp_https_ota_get_image_len_read(esp_https_ota_handle_t https_ota_handle)
 {
     esp_https_ota_t *handle = (esp_https_ota_t *)https_ota_handle;
@@ -417,13 +451,13 @@ esp_err_t esp_https_ota(const esp_http_client_config_t *config)
         }
     }
 
-    esp_err_t ota_finish_err = esp_https_ota_finish(https_ota_handle);
     if (err != ESP_OK) {
-        /* If there was an error in esp_https_ota_perform(),
-           then it is given more precedence than error in esp_https_ota_finish()
-         */
+        esp_https_ota_abort(https_ota_handle);
         return err;
-    } else if (ota_finish_err != ESP_OK) {
+    }
+
+    esp_err_t ota_finish_err = esp_https_ota_finish(https_ota_handle);
+    if (ota_finish_err != ESP_OK) {
         return ota_finish_err;
     }
     return ESP_OK;

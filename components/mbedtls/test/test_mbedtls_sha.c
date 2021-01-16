@@ -15,6 +15,7 @@
 #include "sdkconfig.h"
 #include "test_apb_dport_access.h"
 #include "sodium/utils.h"
+#include "soc/soc_caps.h"
 
 TEST_CASE("mbedtls SHA self-tests", "[mbedtls]")
 {
@@ -153,6 +154,7 @@ void tskRunSHASelftests(void *param)
             while (1) {}
         }
 
+#if SOC_SHA_SUPPORT_SHA512
         if (mbedtls_sha512_self_test(1)) {
             printf("SHA512 self-tests failed.\n");
             while (1) {}
@@ -162,6 +164,7 @@ void tskRunSHASelftests(void *param)
             printf("SHA512 self-tests failed.\n");
             while (1) {}
         }
+#endif //SOC_SHA_SUPPORT_SHA512
     }
     xSemaphoreGive(done_sem);
     vTaskDelete(NULL);
@@ -365,11 +368,8 @@ TEST_CASE("mbedtls SHA, input in flash", "[mbedtls]")
     TEST_ASSERT_EQUAL_MEMORY_MESSAGE(test_vector_digest, sha256, 32, "SHA256 calculation");
 }
 
-/* ESP32 do not have SHA512/t functions */
-#if !DISABLED_FOR_TARGETS(ESP32)
-
 /* Function are not implemented in SW */
-#ifdef CONFIG_MBEDTLS_HARDWARE_SHA
+#if CONFIG_MBEDTLS_HARDWARE_SHA && SOC_SHA_SUPPORT_SHA512_T
 
 /*
  * FIPS-180-2 test vectors
@@ -490,4 +490,3 @@ TEST_CASE("mbedtls SHA256 PSRAM DMA", "[mbedtls]")
 #endif //CONFIG_SPIRAM
 
 #endif //CONFIG_MBEDTLS_HARDWARE_SHA
-#endif //!DISABLED_FOR_TARGETS(ESP32S2)

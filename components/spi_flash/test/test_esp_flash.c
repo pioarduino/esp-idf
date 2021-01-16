@@ -22,6 +22,7 @@
 #include "ccomp_timer.h"
 #include "esp_rom_gpio.h"
 #include "esp_rom_sys.h"
+#include "esp_timer.h"
 
 #define FUNC_SPI    1
 
@@ -89,6 +90,26 @@ static uint8_t sector_buf[4096];
 #define HSPI_PIN_NUM_HD     FSPI_PIN_NUM_HD
 #define HSPI_PIN_NUM_WP     FSPI_PIN_NUM_WP
 #define HSPI_PIN_NUM_CS     FSPI_PIN_NUM_CS
+
+#elif CONFIG_IDF_TARGET_ESP32C3
+#define SPI1_CS_IO          26  //the pin which is usually used by the PSRAM cs
+#define SPI1_HD_IO          27  //the pin which is usually used by the PSRAM hd
+#define SPI1_WP_IO          28  //the pin which is usually used by the PSRAM wp
+
+#define FSPI_PIN_NUM_MOSI   7
+#define FSPI_PIN_NUM_MISO   2
+#define FSPI_PIN_NUM_CLK    6
+#define FSPI_PIN_NUM_HD     4
+#define FSPI_PIN_NUM_WP     5
+#define FSPI_PIN_NUM_CS     10
+
+// Just use the same pins for HSPI
+#define HSPI_PIN_NUM_MOSI   FSPI_PIN_NUM_MOSI
+#define HSPI_PIN_NUM_MISO   FSPI_PIN_NUM_MISO
+#define HSPI_PIN_NUM_CLK    FSPI_PIN_NUM_CLK
+#define HSPI_PIN_NUM_HD     FSPI_PIN_NUM_HD
+#define HSPI_PIN_NUM_WP     FSPI_PIN_NUM_WP
+#define HSPI_PIN_NUM_CS     FSPI_PIN_NUM_CS
 #endif
 
 #define TEST_CONFIG_NUM (sizeof(config_list)/sizeof(flashtest_config_t))
@@ -108,7 +129,8 @@ typedef void (*flash_test_func_t)(const esp_partition_t *part);
 
    These tests run for all the flash chip configs shown in config_list, below (internal and external).
  */
-#if defined(CONFIG_SPIRAM)
+#if defined(CONFIG_SPIRAM) || TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
+
 #define FLASH_TEST_CASE_3(STR, FUNCT_TO_RUN)
 #define FLASH_TEST_CASE_3_IGNORE(STR, FUNCT_TO_RUN)
 #else
@@ -188,7 +210,7 @@ flashtest_config_t config_list[] = {
 #elif CONFIG_IDF_TARGET_ESP32S3
 flashtest_config_t config_list[] = {
     FLASHTEST_CONFIG_COMMON,
-    /* No runners for esp32s2 for these config yet */
+    /* No runners for esp32s3 for these config yet */
     {
         .io_mode = TEST_SPI_READ_MODE,
         .speed = TEST_SPI_SPEED,
@@ -197,16 +219,19 @@ flashtest_config_t config_list[] = {
         .cs_io_num = FSPI_PIN_NUM_CS,
         .input_delay_ns = 0,
     },
-    // /* current runner doesn't have a flash on HSPI */
-    // {
-    //     .io_mode = TEST_SPI_READ_MODE,
-    //     .speed = TEST_SPI_SPEED,
-    //     .host_id = HSPI_HOST,
-    //     .cs_id = 0,
-    //     // uses GPIO matrix on esp32s2 regardless if FORCE_GPIO_MATRIX
-    //     .cs_io_num = HSPI_PIN_NUM_CS,
-    //     .input_delay_ns = 20,
-    // },
+};
+#elif CONFIG_IDF_TARGET_ESP32C3
+flashtest_config_t config_list[] = {
+    FLASHTEST_CONFIG_COMMON,
+    /* No runners for esp32c3 for these config yet */
+    {
+        .io_mode = TEST_SPI_READ_MODE,
+        .speed = TEST_SPI_SPEED,
+        .host_id = FSPI_HOST,
+        .cs_id = 0,
+        .cs_io_num = FSPI_PIN_NUM_CS,
+        .input_delay_ns = 0,
+    },
 };
 #endif
 
@@ -296,7 +321,7 @@ static void setup_bus(spi_host_device_t host_id)
         gpio_set_level(HSPI_PIN_NUM_WP, 1);
 #endif
     }
-#if !DISABLED_FOR_TARGETS(ESP32S2, ESP32S3)
+#if !DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
     else if (host_id == VSPI_HOST) {
         ESP_LOGI(TAG, "setup flash on SPI%d (VSPI) CS0...\n", host_id + 1);
         spi_bus_config_t vspi_bus_cfg = {
@@ -801,12 +826,14 @@ TEST_CASE("SPI flash test reading with all speed/mode permutations", "[esp_flash
 }
 
 #ifndef CONFIG_SPIRAM
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
 TEST_CASE("SPI flash test reading with all speed/mode permutations, 3 chips", "[esp_flash_3][test_env=UT_T1_ESP_FLASH]")
 {
     for (int i = 0; i < TEST_CONFIG_NUM; i++) {
         test_permutations_chip(&config_list[i]);
     }
 }
+#endif //TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
 #endif
 
 
@@ -874,6 +901,9 @@ static void test_write_large_buffer(const esp_partition_t* part, const uint8_t *
     write_large_buffer(part, source, length);
     read_and_check(part, source, length);
 }
+
+#if !CONFIG_SPIRAM && !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
+/* No runners on C3, TODO ESP32-C3 IDF-2399 */
 
 typedef struct {
     uint32_t us_start;
@@ -981,8 +1011,8 @@ static void test_flash_read_write_performance(const esp_partition_t *part)
     TEST_ASSERT_EQUAL_HEX8_ARRAY(data_to_write, data_read, total_len);
 
 #if !CONFIG_SPIRAM && !CONFIG_FREERTOS_CHECK_PORT_CRITICAL_COMPLIANCE
-#  define CHECK_DATA(bus, suffix) TEST_PERFORMANCE_GREATER_THAN(FLASH_SPEED_BYTE_PER_SEC_##bus##suffix, "%d", speed_##suffix)
-#  define CHECK_ERASE(bus, var) TEST_PERFORMANCE_GREATER_THAN(FLASH_SPEED_BYTE_PER_SEC_##bus##ERASE, "%d", var)
+#  define CHECK_DATA(bus, suffix) TEST_PERFORMANCE_CCOMP_GREATER_THAN(FLASH_SPEED_BYTE_PER_SEC_##bus##suffix, "%d", speed_##suffix)
+#  define CHECK_ERASE(bus, var) TEST_PERFORMANCE_CCOMP_GREATER_THAN(FLASH_SPEED_BYTE_PER_SEC_##bus##ERASE, "%d", var)
 #else
 #  define CHECK_DATA(bus, suffix) ((void)speed_##suffix)
 #  define CHECK_ERASE(bus, var)   ((void)var)
@@ -1016,8 +1046,9 @@ static void test_flash_read_write_performance(const esp_partition_t *part)
     free(data_read);
 }
 
-FLASH_TEST_CASE("Test esp_flash read/write performance", test_flash_read_write_performance);
-FLASH_TEST_CASE_3("Test esp_flash read/write performance", test_flash_read_write_performance);
+TEST_CASE("Test esp_flash read/write performance", "[esp_flash][test_env=UT_T1_ESP_FLASH]") {flash_test_func(test_flash_read_write_performance, 1);}
+#endif // !CONFIG_SPIRAM
+FLASH_TEST_CASE_3("Test esp_flash read/write performance"", 3 chips", test_flash_read_write_performance);
 
 #ifdef CONFIG_SPIRAM_USE_MALLOC
 

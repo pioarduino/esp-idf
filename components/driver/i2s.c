@@ -19,18 +19,18 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include "freertos/xtensa_api.h"
 #include "freertos/semphr.h"
 
 #include "soc/lldesc.h"
 #include "driver/gpio.h"
 #include "driver/i2s.h"
-
 #if SOC_I2S_SUPPORTS_ADC_DAC
 #include "driver/dac.h"
 #include "hal/i2s_hal.h"
 #include "adc1_private.h"
 #endif
+
+#include "soc/rtc.h"
 
 #include "esp_intr_alloc.h"
 #include "esp_err.h"
@@ -39,6 +39,8 @@
 #include "esp_pm.h"
 #include "esp_efuse.h"
 #include "esp_rom_gpio.h"
+
+#include "sdkconfig.h"
 
 static const char* I2S_TAG = "I2S";
 
@@ -112,7 +114,7 @@ static int _i2s_adc_channel = -1;
 static i2s_dma_t *i2s_create_dma_queue(i2s_port_t i2s_num, int dma_buf_count, int dma_buf_len);
 static esp_err_t i2s_destroy_dma_queue(i2s_port_t i2s_num, i2s_dma_t *dma);
 
-static inline void gpio_matrix_out_check(uint32_t gpio, uint32_t signal_idx, bool out_inv, bool oen_inv)
+static inline void gpio_matrix_out_check(int gpio, uint32_t signal_idx, bool out_inv, bool oen_inv)
 {
     //if pin = -1, do not need to configure
     if (gpio != -1) {
@@ -122,7 +124,7 @@ static inline void gpio_matrix_out_check(uint32_t gpio, uint32_t signal_idx, boo
     }
 }
 
-static inline void gpio_matrix_in_check(uint32_t gpio, uint32_t signal_idx, bool inv)
+static inline void gpio_matrix_in_check(int gpio, uint32_t signal_idx, bool inv)
 {
     if (gpio != -1) {
         PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[gpio], PIN_FUNC_GPIO);
@@ -350,11 +352,11 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, i2s_bits_per_sample_t b
 #endif
     i2s_hal_set_tx_mode(&(p_i2s_obj[i2s_num]->hal), ch, bits);
 
-    if (p_i2s_obj[i2s_num]->channel_num != ch) {
+    if (p_i2s_obj[i2s_num]->channel_num != (int)ch) {
         p_i2s_obj[i2s_num]->channel_num = (ch == 2) ? 2 : 1;
     }
 
-    if (bits != p_i2s_obj[i2s_num]->bits_per_sample) {
+    if ((int)bits != p_i2s_obj[i2s_num]->bits_per_sample) {
         p_i2s_obj[i2s_num]->bits_per_sample = bits;
 
         // Round bytes_per_sample up to next multiple of 16 bits
@@ -870,7 +872,7 @@ static esp_err_t i2s_param_config(i2s_port_t i2s_num, const i2s_config_t *i2s_co
         //initialize the specific ADC channel.
         //in the current stage, we only support ADC1 and single channel mode.
         //In default data mode, the ADC data is in 12-bit resolution mode.
-        adc_power_always_on();
+        adc_power_acquire();
     }
 #endif
     // configure I2S data port interface.
@@ -1038,7 +1040,7 @@ esp_err_t i2s_driver_uninstall(i2s_port_t i2s_num)
 esp_err_t i2s_write(i2s_port_t i2s_num, const void *src, size_t size, size_t *bytes_written, TickType_t ticks_to_wait)
 {
     char *data_ptr, *src_byte;
-    int bytes_can_write;
+    size_t bytes_can_write;
     *bytes_written = 0;
     I2S_CHECK((i2s_num < I2S_NUM_MAX), "i2s_num error", ESP_ERR_INVALID_ARG);
     I2S_CHECK((size < SOC_I2S_MAX_BUFFER_SIZE), "size is too large", ESP_ERR_INVALID_ARG);
@@ -1146,7 +1148,7 @@ esp_err_t i2s_write_expand(i2s_port_t i2s_num, const void *src, size_t size, siz
         data_ptr = (char*)p_i2s_obj[i2s_num]->tx->curr_ptr;
         data_ptr += p_i2s_obj[i2s_num]->tx->rw_pos;
         bytes_can_write = p_i2s_obj[i2s_num]->tx->buf_size - p_i2s_obj[i2s_num]->tx->rw_pos;
-        if (bytes_can_write > size) {
+        if (bytes_can_write > (int)size) {
             bytes_can_write = size;
         }
         tail = bytes_can_write % aim_bytes;
@@ -1188,7 +1190,7 @@ esp_err_t i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_re
         data_ptr = (char*)p_i2s_obj[i2s_num]->rx->curr_ptr;
         data_ptr += p_i2s_obj[i2s_num]->rx->rw_pos;
         bytes_can_read = p_i2s_obj[i2s_num]->rx->buf_size - p_i2s_obj[i2s_num]->rx->rw_pos;
-        if (bytes_can_read > size) {
+        if (bytes_can_read > (int)size) {
             bytes_can_read = size;
         }
         memcpy(dest_byte, data_ptr, bytes_can_read);

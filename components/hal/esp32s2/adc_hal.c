@@ -12,23 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The HAL layer for ADC (esp32s2 specific part)
+// The HAL layer for ADC (ESP32-S2 specific part)
 
 #include "sdkconfig.h"
 #include "hal/adc_hal.h"
 #include "hal/adc_types.h"
 #include "hal/adc_hal_conf.h"
+#include "esp_log.h"
 
 /*---------------------------------------------------------------
                     Digital controller setting
 ---------------------------------------------------------------*/
-
-void adc_hal_digi_init(void)
-{
-    adc_hal_init();
-    adc_ll_digi_set_clk_div(SOC_ADC_DIGI_SAR_CLK_DIV_DEFAULT);
-}
-
 void adc_hal_digi_deinit(void)
 {
     adc_ll_digi_trigger_disable();   // boss
@@ -42,12 +36,6 @@ void adc_hal_digi_deinit(void)
     adc_hal_deinit();
 }
 
-static inline void adc_set_init_code(adc_ll_num_t adc_n, adc_channel_t channel, adc_atten_t atten)
-{
-    uint32_t cal_val = adc_hal_calibration(adc_n, channel, atten, true, false);
-    adc_hal_set_calibration_param(adc_n, cal_val);
-}
-
 void adc_hal_digi_controller_config(const adc_digi_config_t *cfg)
 {
     /* If enable digtal controller, adc xpd should always on. */
@@ -58,9 +46,8 @@ void adc_hal_digi_controller_config(const adc_digi_config_t *cfg)
         if (cfg->adc1_pattern_len) {
             adc_ll_digi_clear_pattern_table(ADC_NUM_1);
             adc_ll_digi_set_pattern_table_len(ADC_NUM_1, cfg->adc1_pattern_len);
-            for (int i = 0; i < cfg->adc1_pattern_len; i++) {
+            for (uint32_t i = 0; i < cfg->adc1_pattern_len; i++) {
                 adc_ll_digi_set_pattern_table(ADC_NUM_1, i, cfg->adc1_pattern[i]);
-                adc_set_init_code(ADC_NUM_1, cfg->adc1_pattern[i].channel, cfg->adc1_pattern[i].atten);
             }
         }
     }
@@ -68,9 +55,8 @@ void adc_hal_digi_controller_config(const adc_digi_config_t *cfg)
         if (cfg->adc2_pattern_len) {
             adc_ll_digi_clear_pattern_table(ADC_NUM_2);
             adc_ll_digi_set_pattern_table_len(ADC_NUM_2, cfg->adc2_pattern_len);
-            for (int i = 0; i < cfg->adc2_pattern_len; i++) {
+            for (uint32_t i = 0; i < cfg->adc2_pattern_len; i++) {
                 adc_ll_digi_set_pattern_table(ADC_NUM_2, i, cfg->adc2_pattern[i]);
-                adc_set_init_code(ADC_NUM_2, cfg->adc2_pattern[i].channel, cfg->adc2_pattern[i].atten);
             }
         }
     }
@@ -164,48 +150,28 @@ void adc_hal_arbiter_config(adc_arbiter_t *config)
 /*---------------------------------------------------------------
                     ADC calibration setting
 ---------------------------------------------------------------*/
-
-#define ADC_HAL_CAL_OFFSET_RANGE (4096)
 #define ADC_HAL_CAL_TIMES        (10)
+#define ADC_HAL_CAL_OFFSET_RANGE (4096)
 
-static uint16_t s_adc_cali_param[ADC_NUM_MAX][ADC_ATTEN_MAX] = { {0}, {0} };
-
-static uint32_t adc_hal_read_self_cal(adc_ll_num_t adc_n, int channel)
+static uint32_t read_cal_channel(adc_ll_num_t adc_n, int channel)
 {
     adc_ll_rtc_start_convert(adc_n, channel);
     while (adc_ll_rtc_convert_is_done(adc_n) != true);
     return (uint32_t)adc_ll_rtc_get_convert_value(adc_n);
 }
 
-uint32_t adc_hal_calibration(adc_ll_num_t adc_n, adc_channel_t channel, adc_atten_t atten, bool internal_gnd, bool force_cal)
+uint32_t adc_hal_self_calibration(adc_ll_num_t adc_n, adc_channel_t channel, adc_atten_t atten, bool internal_gnd)
 {
-#ifdef CONFIG_IDF_ENV_FPGA
-    return 0;
-#endif
-
-    if (!force_cal) {
-        if (s_adc_cali_param[adc_n][atten]) {
-            return (uint32_t)s_adc_cali_param[adc_n][atten];
-        }
-    }
-
-    uint32_t code_list[ADC_HAL_CAL_TIMES] = {0};
-    uint32_t code_sum = 0;
-    uint32_t code_h = 0;
-    uint32_t code_l = 0;
-    uint32_t chk_code = 0;
-    uint32_t dout = 0;
-
     adc_hal_set_power_manage(ADC_POWER_SW_ON);
+
     if (adc_n == ADC_NUM_2) {
         adc_arbiter_t config = ADC_ARBITER_CONFIG_DEFAULT();
         adc_hal_arbiter_config(&config);
     }
     adc_hal_set_controller(adc_n, ADC_CTRL_RTC);    //Set controller
 
-    // adc_hal_arbiter_config(adc_arbiter_t *config)
-    adc_ll_calibration_prepare(adc_n, channel, internal_gnd);
 
+    adc_ll_calibration_prepare(adc_n, channel, internal_gnd);
     /* Enable/disable internal connect GND (for calibration). */
     if (internal_gnd) {
         adc_ll_rtc_disable_channel(adc_n, channel);
@@ -215,25 +181,31 @@ uint32_t adc_hal_calibration(adc_ll_num_t adc_n, adc_channel_t channel, adc_atte
         adc_ll_set_atten(adc_n, channel, atten);
     }
 
+    uint32_t code_list[ADC_HAL_CAL_TIMES] = {0};
+    uint32_t code_sum = 0;
+    uint32_t code_h = 0;
+    uint32_t code_l = 0;
+    uint32_t chk_code = 0;
+
     for (uint8_t rpt = 0 ; rpt < ADC_HAL_CAL_TIMES ; rpt ++) {
         code_h = ADC_HAL_CAL_OFFSET_RANGE;
         code_l = 0;
         chk_code = (code_h + code_l) / 2;
         adc_ll_set_calibration_param(adc_n, chk_code);
-        dout = adc_hal_read_self_cal(adc_n, channel);
+        uint32_t self_cal = read_cal_channel(adc_n, channel);
         while (code_h - code_l > 1) {
-            if (dout == 0) {
+            if (self_cal == 0) {
                 code_h = chk_code;
             } else {
                 code_l = chk_code;
             }
             chk_code = (code_h + code_l) / 2;
             adc_ll_set_calibration_param(adc_n, chk_code);
-            dout = adc_hal_read_self_cal(adc_n, channel);
+            self_cal = read_cal_channel(adc_n, channel);
             if ((code_h - code_l == 1)) {
                 chk_code += 1;
                 adc_ll_set_calibration_param(adc_n, chk_code);
-                dout = adc_hal_read_self_cal(adc_n, channel);
+                self_cal = read_cal_channel(adc_n, channel);
             }
         }
         code_list[rpt] = chk_code;
@@ -250,12 +222,10 @@ uint32_t adc_hal_calibration(adc_ll_num_t adc_n, adc_channel_t channel, adc_atte
         }
     }
     chk_code = code_h + code_l;
-    dout = ((code_sum - chk_code) % (ADC_HAL_CAL_TIMES - 2) < 4)
+    uint32_t ret = ((code_sum - chk_code) % (ADC_HAL_CAL_TIMES - 2) < 4)
            ? (code_sum - chk_code) / (ADC_HAL_CAL_TIMES - 2)
            : (code_sum - chk_code) / (ADC_HAL_CAL_TIMES - 2) + 1;
 
-    adc_ll_set_calibration_param(adc_n, dout);
     adc_ll_calibration_finish(adc_n);
-    s_adc_cali_param[adc_n][atten] = (uint16_t)dout;
-    return dout;
+    return ret;
 }

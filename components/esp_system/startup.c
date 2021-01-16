@@ -70,6 +70,9 @@
 #include "esp32s3/clk.h"
 #include "esp32s3/spiram.h"
 #include "esp32s3/brownout.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/clk.h"
+#include "esp32c3/brownout.h"
 #endif
 /***********************************************/
 
@@ -85,6 +88,11 @@
 #define STRINGIFY2(s) #s
 
 uint64_t g_startup_time = 0;
+
+#if SOC_APB_BACKUP_DMA
+// APB DMA lock initialising API
+extern void esp_apb_backup_dma_lock_init(void);
+#endif
 
 // App entry point for core 0
 extern void esp_startup_start_app(void);
@@ -126,8 +134,22 @@ static IRAM_ATTR void _Unwind_SetNoFunctionContextInstall_Default(unsigned char 
 
 static const char* TAG = "cpu_start";
 
+/**
+ * Xtensa gcc is configured to emit a .ctors section, RISC-V gcc is configured with --enable-initfini-array
+ * so it emits an .init_array section instead.
+ * But the init_priority sections will be sorted for iteration in ascending order during startup.
+ * The rest of the init_array sections is sorted for iteration in descending order during startup, however.
+ * Hence a different section is generated for the init_priority functions which is looped
+ * over in ascending direction instead of descending direction.
+ * The RISC-V-specific behavior is dependent on the linker script esp32c3.project.ld.in.
+ */
 static void do_global_ctors(void)
 {
+#if __riscv
+    extern void (*__init_priority_array_start)(void);
+    extern void (*__init_priority_array_end)(void);
+#endif
+
     extern void (*__init_array_start)(void);
     extern void (*__init_array_end)(void);
 
@@ -141,7 +163,16 @@ static void do_global_ctors(void)
 #endif // CONFIG_COMPILER_CXX_EXCEPTIONS
 
     void (**p)(void);
+
+#if __riscv
+    for (p = &__init_priority_array_start; p < &__init_priority_array_end; ++p) {
+        ESP_EARLY_LOGD(TAG, "calling init function: %p", *p);
+        (*p)();
+    }
+#endif
+
     for (p = &__init_array_end - 1; p >= &__init_array_start; --p) {
+        ESP_EARLY_LOGD(TAG, "calling init function: %p", *p);
         (*p)();
     }
 }
@@ -195,7 +226,7 @@ static void do_core_init(void)
        app CPU, and when that is not up yet, the memory will be inaccessible and heap_caps_init may
        fail initializing it properly. */
     heap_caps_init();
-    esp_setup_syscall_table();
+    esp_newlib_init();
     esp_newlib_time_init();
 
     if (g_spiram_ok) {
@@ -375,6 +406,10 @@ IRAM_ATTR ESP_SYSTEM_INIT_FN(init_components0, BIT(0))
 
 #if CONFIG_ESP_COREDUMP_ENABLE
     esp_core_dump_init();
+#endif
+
+#if SOC_APB_BACKUP_DMA
+    esp_apb_backup_dma_lock_init();
 #endif
 
 #if CONFIG_SW_COEXIST_ENABLE
