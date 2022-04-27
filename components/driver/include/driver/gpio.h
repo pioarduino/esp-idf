@@ -1,26 +1,22 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
+
 #include "sdkconfig.h"
 #include "esp_err.h"
+#include <stdbool.h>
+#include "esp_intr_alloc.h"
+#if !CONFIG_IDF_TARGET_LINUX
 #include <esp_types.h>
 #include <esp_bit_defs.h>
 #include "esp_attr.h"
-#include "esp_intr_alloc.h"
 #include "soc/soc_caps.h"
 #include "soc/gpio_periph.h"
+#endif // !CONFIG_IDF_TARGET_LINUX
 #include "hal/gpio_types.h"
 
 // |================================= WARNING ====================================================== |
@@ -31,8 +27,14 @@
 #include "esp32/rom/gpio.h"
 #elif CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/gpio.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/gpio.h"
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32c3/rom/gpio.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/gpio.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/gpio.h"
 #endif
 
 #ifdef CONFIG_LEGACY_INCLUDE_COMMON_HEADERS
@@ -213,9 +215,9 @@ esp_err_t gpio_wakeup_disable(gpio_num_t gpio_num);
  * per-GPIO ISRs.
  *
  * @param  fn  Interrupt handler function.
+ * @param  arg  Parameter for handler function
  * @param  intr_alloc_flags Flags used to allocate the interrupt. One or multiple (ORred)
  *            ESP_INTR_FLAG_* values. See esp_intr_alloc.h for more info.
- * @param  arg  Parameter for handler function
  * @param  handle Pointer to return handle. If non-NULL, a handle for the interrupt will be returned here.
  *
  * \verbatim embed:rst:leading-asterisk
@@ -462,7 +464,6 @@ esp_err_t gpio_sleep_sel_en(gpio_num_t gpio_num);
   *
   * @return
   *     - ESP_OK Success
-  *
   */
 esp_err_t gpio_sleep_sel_dis(gpio_num_t gpio_num);
 
@@ -477,7 +478,6 @@ esp_err_t gpio_sleep_sel_dis(gpio_num_t gpio_num);
  * @return
  *     - ESP_OK Success
  *     - ESP_ERR_INVALID_ARG GPIO error
- *
  */
 esp_err_t gpio_sleep_set_direction(gpio_num_t gpio_num, gpio_mode_t mode);
 
@@ -492,33 +492,40 @@ esp_err_t gpio_sleep_set_direction(gpio_num_t gpio_num, gpio_mode_t mode);
  * @return
  *     - ESP_OK Success
  *     - ESP_ERR_INVALID_ARG : Parameter error
- *
  */
 esp_err_t gpio_sleep_set_pull_mode(gpio_num_t gpio_num, gpio_pull_mode_t pull);
-
-#if CONFIG_GPIO_ESP32_SUPPORT_SWITCH_SLP_PULL
-/**
-  * @brief Emulate ESP32S2 behaviour to backup FUN_PU, FUN_PD information
-  *
-  * @note Need to be called before sleep.
-  *
-  * @return
-  *      - ESP_OK Success
-  *
-  * */
-esp_err_t gpio_sleep_pupd_config_apply(gpio_num_t gpio_num);
-
-/**
-  * @brief Emulate ESP32S2 behaviour to restore FUN_PU, FUN_PD information
-  *
-  * @note Need to be called after sleep.
-  *
-  * @return
-  *      - ESP_OK Success
-  *
-  * */
-esp_err_t gpio_sleep_pupd_config_unapply(gpio_num_t gpio_num);
 #endif
+
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
+
+#define GPIO_IS_DEEP_SLEEP_WAKEUP_VALID_GPIO(gpio_num)        ((gpio_num & ~SOC_GPIO_DEEP_SLEEP_WAKEUP_VALID_GPIO_MASK) == 0)
+
+/**
+ * @brief Enable GPIO deep-sleep wake-up function.
+ *
+ * @param gpio_num GPIO number.
+ *
+ * @param intr_type GPIO wake-up type. Only GPIO_INTR_LOW_LEVEL or GPIO_INTR_HIGH_LEVEL can be used.
+ *
+ * @note Called by the SDK. User shouldn't call this directly in the APP.
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_ERR_INVALID_ARG Parameter error
+ */
+esp_err_t gpio_deep_sleep_wakeup_enable(gpio_num_t gpio_num, gpio_int_type_t intr_type);
+
+/**
+ * @brief Disable GPIO deep-sleep wake-up function.
+ *
+ * @param gpio_num GPIO number
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_ERR_INVALID_ARG Parameter error
+ */
+esp_err_t gpio_deep_sleep_wakeup_disable(gpio_num_t gpio_num);
+
 #endif
 
 #ifdef __cplusplus

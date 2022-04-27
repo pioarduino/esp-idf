@@ -24,7 +24,7 @@
 #include "esp_websocket_client.h"
 #include "esp_event.h"
 
-#define NO_DATA_TIMEOUT_SEC 10
+#define NO_DATA_TIMEOUT_SEC 5
 
 static const char *TAG = "WEBSOCKET";
 
@@ -115,7 +115,7 @@ static void websocket_app_start(void)
     xTimerStart(shutdown_signal_timer, portMAX_DELAY);
     char data[32];
     int i = 0;
-    while (i < 10) {
+    while (i < 5) {
         if (esp_websocket_client_is_connected(client)) {
             int len = sprintf(data, "hello %04d", i++);
             ESP_LOGI(TAG, "Sending %s", data);
@@ -137,6 +137,7 @@ void app_main(void)
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set("WEBSOCKET_CLIENT", ESP_LOG_DEBUG);
+    esp_log_level_set("TRANSPORT_WS", ESP_LOG_DEBUG);
     esp_log_level_set("TRANS_TCP", ESP_LOG_DEBUG);
 
     ESP_ERROR_CHECK(nvs_flash_init());

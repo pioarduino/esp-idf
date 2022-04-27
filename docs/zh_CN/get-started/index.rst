@@ -2,11 +2,12 @@
 快速入门
 ***********
 
-{IDF_TARGET_CORE_NUM:default="2", esp32="2", esp32s2="1"}
+{IDF_TARGET_CORE_NUM:default="2", esp32s2="1", esp32c3="1"}
 
-{IDF_TARGET_FEATURES:default="WiFi/BT/BLE, silicon revision 1, 2MB external flash", esp32="WiFi/BT/BLE, silicon revision 1, 2MB external flash", esp32s2="WiFi, silicon revision 0, 2MB external flash"}
+{IDF_TARGET_FEATURES:default="WiFi/BT/BLE, silicon revision 1, 2MB external flash", esp32="WiFi/BT/BLE, silicon revision 1, 2MB external flash", esp32s2="WiFi, silicon revision 0, 2MB external flash", esp32s3="This is esp32s3 chip with 2 CPU core(s), WiFi/BLE, silicon revision 0, 2MB external flash", esp32c3="WiFi/BLE, silicon revision 0, 2MB external flash"}
 
-{IDF_TARGET_HEAP_SIZE:default="298968", esp32="298968", esp32s2="253900"}
+{IDF_TARGET_HEAP_SIZE:default="298968", esp32="298968", esp32s2="253900", esp32s3="390684", esp32c3="337332"}
+
 
 :link_to_translation:`en:[English]`
 
@@ -19,30 +20,48 @@
 概述
 ============
 
-.. only:: esp32
+{IDF_TARGET_NAME} SoC 芯片支持以下功能：
 
-    ESP32 SoC 芯片支持以下功能：
+.. only:: esp32
 
     * 2.4 GHz Wi-Fi
     * 蓝牙
-    * 高性能双核
+    * 高性能 Xtensa® 32 位 LX6 双核处理器
     * 超低功耗协处理器
     * 多种外设
 
 .. only:: esp32s2
 
-    ESP32-S2 SoC 芯片支持以下功能：
-
     * 2.4 GHz Wi-Fi
-    * 高性能单核
+    * 高性能 Xtensa® 32 位 LX7 单核处理器
     * 运行 RISC-V 或 FSM 内核的超低功耗协处理器
     * 多种外设
     * 内置安全硬件
     * USB OTG 接口
 
+.. only:: esp32s3
+
+    * 2.4 GHz Wi-Fi
+    * 低功耗蓝牙
+    * 高性能 Xtensa® 32 位 LX7 双核处理器
+    * 运行 RISC-V 或 FSM 内核的超低功耗协处理器
+    * 多种外设
+    * 内置安全硬件
+    * USB OTG 接口
+    * USB 串口/JTAG 控制器
+
+.. only:: esp32c3
+
+    * 2.4 GHz Wi-Fi
+    * 低功耗蓝牙
+    * 高性能 32 位 RISC-V 单核处理器
+    * 多种外设
+    * 内置安全硬件
+
 {IDF_TARGET_NAME} 采用 40 nm 工艺制成，具有最佳的功耗性能、射频性能、稳定性、通用性和可靠性，适用于各种应用场景和不同功耗需求。
 
 乐鑫为用户提供完整的软、硬件资源，进行 {IDF_TARGET_NAME} 硬件设备的开发。其中，乐鑫的软件开发环境 ESP-IDF 旨在协助用户快速开发物联网 (IoT) 应用，可满足用户对 Wi-Fi、蓝牙、低功耗等方面的要求。
+
 
 准备工作
 =============
@@ -64,7 +83,7 @@
 或者，您也可以通过以下集成开发环境 (IDE) 中的官方插件完成安装流程：
 
     * `Eclipse 插件 <https://github.com/espressif/idf-eclipse-plugin>`_ (`安装 <https://github.com/espressif/idf-eclipse-plugin#installing-idf-plugin-using-update-site-url>`__)
-    * `VS Code 插件 <https://github.com/espressif/vscode-esp-idf-extension>`_ (`安装 <https://github.com/espressif/vscode-esp-idf-extension/blob/master/docs/ONBOARDING.md>`__)
+    * `VS Code 插件 <https://github.com/espressif/vscode-esp-idf-extension>`_ (`安装 <https://github.com/espressif/vscode-esp-idf-extension/blob/master/docs/tutorial/install.md>`__)
 
 .. figure:: ../../_static/what-you-need.png
     :align: center
@@ -100,7 +119,25 @@
 
         ESP32-S2-Saola-1 <../hw-reference/esp32s2/user-guide-saola-1-v1.2>
         ESP32-S2-DevKitM-1(U) <../hw-reference/esp32s2/user-guide-devkitm-1-v1>
+        ESP32-S2-DevKitC-1 <../hw-reference/esp32s2/user-guide-s2-devkitc-1>
         ESP32-S2-Kaluga-Kit <../hw-reference/esp32s2/user-guide-esp32-s2-kaluga-1-kit>
+
+.. only:: esp32c3
+
+    .. toctree::
+        :maxdepth: 1
+
+        ESP32-C3-DevKitM-1 <../hw-reference/esp32c3/user-guide-devkitm-1>
+        ESP32-C3-DevKitC-02 <../hw-reference/esp32c3/user-guide-devkitc-02>
+
+
+.. only:: esp32s3
+
+    .. toctree::
+        :maxdepth: 1
+
+        ESP32-S3-DevKitC-1 <../hw-reference/esp32s3/user-guide-devkitc-1>
+
 
 .. _get-started-step-by-step:
 
@@ -167,7 +204,6 @@
 
 .. _get-started-get-esp-idf:
 
-
 第二步：获取 ESP-IDF
 =================================
 
@@ -212,14 +248,14 @@ Windows 操作系统
 .. code-block:: batch
 
     cd %userprofile%\esp\esp-idf
-    install.bat
+    install.bat {IDF_TARGET_PATH_NAME}
 
 或使用 Windows PowerShell
 
 .. code-block:: powershell
 
     cd ~/esp/esp-idf
-    ./install.ps1
+    ./install.ps1 {IDF_TARGET_PATH_NAME}
 
 Linux 和 macOS 操作系统
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -227,8 +263,18 @@ Linux 和 macOS 操作系统
 .. code-block:: bash
 
     cd ~/esp/esp-idf
-    ./install.sh
+    ./install.sh {IDF_TARGET_PATH_NAME}
 
+或使用 Fish shell
+
+.. code-block:: fish
+
+    cd ~/esp/esp-idf
+    ./install.fish {IDF_TARGET_PATH_NAME}
+
+.. note::
+    通过一次性指定多个目标，可为多个目标芯片同时安装工具，如运行 ``./install.sh esp32,esp32c3,esp32s3``。
+    通过运行 ``./install.sh`` 或 ``./install.sh all`` 可一次性为所有支持的目标芯片安装工具。
 
 下载工具备选方案
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -240,13 +286,7 @@ ESP-IDF 工具安装器会下载 Github 发布版本中附带的一些工具，�
 Windows 操作系统
 -----------------
 
-如果希望在运行 ESP-IDF 工具安装器或在使用命令行安装工具时优先选择 Espressif 下载服务器，可通过以下方式设置：打开系统控制面板，然后点击高级设置，添加一个新的环境变量（类型为用户或系统都可以，名称为 ``IDF_GITHUB_ASSETS``，值为 ``dl.espressif.com/github_assets``），最后点击确定。
-
-如果在添加新的环境变量前命令行窗口或 ESP-IDF 工具安装器窗口已经打开，请关闭这些窗口后重新打开。
-
-当设置好这个新的环境变量后，ESP-IDF 工具安装器以及命令行安装程序将会优先选择 Espressif 下载服务器。
-
-.. 在 ESP-IDF 工具安装器的二进制文件更新后（导入复选框），这段需要重新更新
+如果希望在运行 ESP-IDF 工具安装器时优先选择 Espressif 下载服务器，请在 **Select Components** 窗口中的 **Optimization** 部分勾选 **Use Espressif download mirror instead of GitHub** 选项。
 
 Linux 和 macOS 操作系统
 --------------------------
@@ -259,7 +299,6 @@ Linux 和 macOS 操作系统
     export IDF_GITHUB_ASSETS="dl.espressif.com/github_assets"
     ./install.sh
 
-
 自定义工具安装路径
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -268,6 +307,7 @@ Linux 和 macOS 操作系统
 如果修改了 ``IDF_TOOLS_PATH`` 变量，请确保该变量在每次执行安装脚本 (``install.bat``、``install.ps1`` 或 ``install.sh``) 和导出脚本 (``export.bat``、``export.ps1`` 或 ``export.sh``) 均保持一致。
 
 .. _get-started-set-up-env:
+
 
 第四步：设置环境变量
 =======================================
@@ -409,13 +449,15 @@ Windows 操作系统
     :alt: 工程配置 — 主窗口
     :figclass: align-center
 
+    工程配置 — 主窗口
+
 您可以通过此菜单设置项目的具体变量，包括 Wi-Fi 网络名称、密码和处理器速度等. ``hello_world`` 示例项目会以默认配置运行，因此可以跳过使用 ``menuconfig`` 进行项目配置这一步骤。
 
 .. only:: esp32
 
     .. attention::
 
-        如果您使用的是 ESP32-DevKitC（板载 ESP32-SOLO-1 模组），请在烧写示例程序前，前往 ``menuconfig`` 中使能单核模式（:ref:`CONFIG_FREERTOS_UNICORE`）。
+        如果您使用的是 ESP32-DevKitC（板载 ESP32-SOLO-1 模组）或 ESP32-DevKitM-1（板载 ESP32-MINI-1(1U) 模组），请在烧写示例程序前，前往 ``menuconfig`` 中使能单核模式（:ref:`CONFIG_FREERTOS_UNICORE`）。
 
 .. 注解::
 
@@ -426,7 +468,9 @@ Windows 操作系统
 第八步：编译工程
 =========================
 
-请使用以下命令，编译烧录工程：::
+请使用以下命令，编译烧录工程：
+
+.. code-block:: batch
 
     idf.py build
 
@@ -445,11 +489,11 @@ Windows 操作系统
 
     ... (more lines of build system output)
 
-    [527/527] Generating hello-world.bin
+    [527/527] Generating hello_world.bin
     esptool.py v2.3.1
 
     Project build complete. To flash, run this command:
-    ../../../components/esptool_py/esptool/esptool.py -p (PORT) -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 40m 0x10000 build/hello-world.bin  build 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin
+    ../../../components/esptool_py/esptool/esptool.py -p (PORT) -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 40m 0x10000 build/hello_world.bin  build 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin
     or run 'idf.py -p PORT flash'
 
 如果一切正常，编译完成后将生成 .bin 文件。
@@ -460,7 +504,7 @@ Windows 操作系统
 第九步：烧录到设备
 =============================
 
-请使用以下命令，将刚刚生成的二进制文件 (bootloader.bin, partition-table.bin 和 hello-world.bin) 烧录至您的 {IDF_TARGET_NAME} 开发板：
+请使用以下命令，将刚刚生成的二进制文件 (bootloader.bin, partition-table.bin 和 hello_world.bin) 烧录至您的 {IDF_TARGET_NAME} 开发板：
 
 .. code-block:: bash
 
@@ -479,21 +523,22 @@ Windows 操作系统
 
 烧录过程中可能遇到的问题
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-如果在运行给定命令时出现如“连接失败”这样的错误，原因之一则可能是运行 ``esptool.py`` 出现错误。``esptool.py`` 是编译系统调用的程序，用于重置芯片、与 ROM 引导加载器交互以及烧录固件的工具。解决该问题的一个简单的方法就是按照以下步骤进行手动复位。如果问题仍未解决，请参考 `Troubleshooting <https://github.com/espressif/esptool#bootloader-wont-respond>`_ 获取更多信息。
+{IDF_TARGET_STRAP_GPIO:default="GPIO0", esp32="GPIO0", esp32s2="GPIO0", esp32s3="GPIO0", esp32c3="GPIO9"}
 
+如果在运行给定命令时出现如“连接失败”这样的错误，原因之一则可能是运行 ``esptool.py`` 出现错误。``esptool.py`` 是构建系统调用的程序，用于重置芯片、与 ROM 引导加载器交互以及烧录固件的工具。解决该问题的一个简单的方法就是按照以下步骤进行手动复位。如果问题仍未解决，请参考 `Troubleshooting <https://github.com/espressif/esptool#bootloader-wont-respond>`_ 获取更多信息。
 
-``esptool.py`` 通过使 USB 转串口转接器芯片（如 FTDI 或 CP210x）的 DTR 和 RTS 控制线生效来自动复位 {IDF_TARGET_NAME}（请参考 :doc:`establish-serial-connection` 获取更多详细信息)。DTR 和 RTS 控制线又连接到 {IDF_TARGET_NAME} 的 ``GPIO0`` 和 ``CHIP_PU`` (EN) 管脚上，因此 DTR 和 RTS 的电压水平变化会使 {IDF_TARGET_NAME} 进入固件下载模式。相关示例可查看 ESP32 DevKitC 开发板的 `原理图 <https://dl.espressif.com/dl/schematics/esp32_devkitc_v4-sch-20180607a.pdf>`_。
+``esptool.py`` 通过使 USB 转串口转接器芯片（如 FTDI 或 CP210x）的 DTR 和 RTS 控制线生效来自动复位 {IDF_TARGET_NAME}（请参考 :doc:`establish-serial-connection` 获取更多详细信息)。DTR 和 RTS 控制线又连接到 {IDF_TARGET_NAME} 的 ``{IDF_TARGET_STRAP_GPIO}`` 和 ``CHIP_PU`` (EN) 管脚上，因此 DTR 和 RTS 的电压电平变化会使 {IDF_TARGET_NAME} 进入固件下载模式。相关示例可查看 ESP32 DevKitC 开发板的 `原理图 <https://dl.espressif.com/dl/schematics/esp32_devkitc_v4-sch-20180607a.pdf>`_。
 
 一般来说，使用官方的 esp-idf 开发板不会出现问题。但是，``esptool.py`` 在以下情况下不能自动重置硬件。
 
-- 您的硬件没有连接到 ``GPIO0`` 和 ``CIHP_PU`` 的 DTR 和 RTS 控制线。
+- 您的硬件没有连接到 ``{IDF_TARGET_STRAP_GPIO}`` 和 ``CIHP_PU`` 的 DTR 和 RTS 控制线。
 - DTR 和 RTS 控制线的配置方式不同
 - 根本没有这样的串行控制线路
 
 根据您硬件的种类，也可以将您 {IDF_TARGET_NAME} 开发板手动设置成固件下载模式（复位）。
-- 对于 Espressif 的开发板，您可以参考对应开发板的入门指南或用户指南。例如，可以通过按住 **Boot** 按钮 (``GPIO0``) 再按住 **EN** 按钮(``CHIP_PU``) 来手动复位 esp-idf 开发板。
-- 对于其他类型的硬件，可以尝试将 ``GPIO0`` 拉低。
 
+- 对于 Espressif 的开发板，您可以参考对应开发板的入门指南或用户指南。例如，可以通过按住 **Boot** 按钮 (``{IDF_TARGET_STRAP_GPIO}``) 再按住 **EN** 按钮(``CHIP_PU``) 来手动复位 esp-idf 开发板。
+- 对于其他类型的硬件，可以尝试将 ``{IDF_TARGET_STRAP_GPIO}`` 拉低。
 
 
 常规操作
@@ -506,7 +551,7 @@ Windows 操作系统
     .. code-block:: none
 
         ...
-        esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 2MB 0x8000 partition_table/partition-table.bin 0x1000 bootloader/bootloader.bin 0x10000 hello-world.bin
+        esptool.py --chip esp32 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 2MB 0x8000 partition_table/partition-table.bin 0x1000 bootloader/bootloader.bin 0x10000 hello_world.bin
         esptool.py v3.0-dev
         Serial port /dev/ttyUSB0
         Connecting........_
@@ -546,7 +591,7 @@ Windows 操作系统
     .. code-block:: none
 
         ...
-        esptool.py --chip esp32s2 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 2MB 0x8000 partition_table/partition-table.bin 0x1000 bootloader/bootloader.bin 0x10000 hello-world.bin
+        esptool.py --chip esp32s2 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 2MB 0x8000 partition_table/partition-table.bin 0x1000 bootloader/bootloader.bin 0x10000 hello_world.bin
         esptool.py v3.0-dev
         Serial port /dev/ttyUSB0
         Connecting....
@@ -581,6 +626,92 @@ Windows 操作系统
         Hard resetting via RTS pin...
         Done
 
+.. only:: esp32s3
+
+    .. code-block:: none
+
+        ...
+        esptool.py esp32s3 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 2MB 0x0 bootloader/bootloader.bin 0x10000 hello_world.bin 0x8000 partition_table/partition-table.bin
+        esptool.py v3.2-dev
+        Serial port /dev/ttyUSB0
+        Connecting....
+        Chip is ESP32-S3
+        Features: WiFi, BLE
+        Crystal is 40MHz
+        MAC: 7c:df:a1:e0:00:64
+        Uploading stub...
+        Running stub...
+        Stub running...
+        Changing baud rate to 460800
+        Changed.
+        Configuring flash size...
+        Flash will be erased from 0x00000000 to 0x00004fff...
+        Flash will be erased from 0x00010000 to 0x00039fff...
+        Flash will be erased from 0x00008000 to 0x00008fff...
+        Compressed 18896 bytes to 11758...
+        Writing at 0x00000000... (100 %)
+        Wrote 18896 bytes (11758 compressed) at 0x00000000 in 0.5 seconds (effective 279.9 kbit/s)...
+        Hash of data verified.
+        Compressed 168208 bytes to 88178...
+        Writing at 0x00010000... (16 %)
+        Writing at 0x0001a80f... (33 %)
+        Writing at 0x000201f1... (50 %)
+        Writing at 0x00025dcf... (66 %)
+        Writing at 0x0002d0be... (83 %)
+        Writing at 0x00036c07... (100 %)
+        Wrote 168208 bytes (88178 compressed) at 0x00010000 in 2.4 seconds (effective 569.2 kbit/s)...
+        Hash of data verified.
+        Compressed 3072 bytes to 103...
+        Writing at 0x00008000... (100 %)
+        Wrote 3072 bytes (103 compressed) at 0x00008000 in 0.1 seconds (effective 478.9 kbit/s)...
+        Hash of data verified.
+
+        Leaving...
+        Hard resetting via RTS pin...
+        Done
+
+
+.. only:: esp32c3
+
+    .. code-block:: none
+
+        ...
+        esptool.py --chip esp32c3 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 2MB 0x8000 partition_table/partition-table.bin 0x0 bootloader/bootloader.bin 0x10000 hello_world.bin
+        esptool.py v3.0
+        Serial port /dev/ttyUSB0
+        Connecting....
+        Chip is ESP32-C3
+        Features: Wi-Fi
+        Crystal is 40MHz
+        MAC: 7c:df:a1:40:02:a4
+        Uploading stub...
+        Running stub...
+        Stub running...
+        Changing baud rate to 460800
+        Changed.
+        Configuring flash size...
+        Compressed 3072 bytes to 103...
+        Writing at 0x00008000... (100 %)
+        Wrote 3072 bytes (103 compressed) at 0x00008000 in 0.0 seconds (effective 4238.1 kbit/s)...
+        Hash of data verified.
+        Compressed 18960 bytes to 11311...
+        Writing at 0x00000000... (100 %)
+        Wrote 18960 bytes (11311 compressed) at 0x00000000 in 0.3 seconds (effective 584.9 kbit/s)...
+        Hash of data verified.
+        Compressed 145520 bytes to 71984...
+        Writing at 0x00010000... (20 %)
+        Writing at 0x00014000... (40 %)
+        Writing at 0x00018000... (60 %)
+        Writing at 0x0001c000... (80 %)
+        Writing at 0x00020000... (100 %)
+        Wrote 145520 bytes (71984 compressed) at 0x00010000 in 2.3 seconds (effective 504.4 kbit/s)...
+        Hash of data verified.
+
+        Leaving...
+        Hard resetting via RTS pin...
+        Done        
+
+
 如果一切顺利，烧录完成后，开发板将会复位，应用程序 "hello_world" 开始运行。
 
 如果您希望使用 Eclipse 或是 VS Code IDE，而非 ``idf.py``，请参考 :doc:`Eclipse 指南 <eclipse-setup>`，以及 :doc:`VS Code 指南 <vscode-setup>`。
@@ -597,7 +728,7 @@ Windows 操作系统
 
     $ idf.py -p /dev/ttyUSB0 monitor
     Running idf_monitor in directory [...]/esp/hello_world/build
-    Executing "python [...]/esp-idf/tools/idf_monitor.py -b 115200 [...]/esp/hello_world/build/hello-world.elf"...
+    Executing "python [...]/esp-idf/tools/idf_monitor.py -b 115200 [...]/esp/hello_world/build/hello_world.elf"...
     --- idf_monitor on /dev/ttyUSB0 115200 ---
     --- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
     ets Jun  8 2016 00:22:57
@@ -642,6 +773,12 @@ Windows 操作系统
     您也可以运行以下命令，一次性执行构建、烧录和监视过程：
 
     ``idf.py -p PORT flash monitor``
+
+.. only:: esp32s3
+
+    .. note::
+
+        如果带有八线 flash 的开发板在二级引导加载程序之前复位，请参考 :ref:`八线 flash 错误处理 <flash-psram-error>`。
 
 此外，
 

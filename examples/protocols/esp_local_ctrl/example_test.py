@@ -1,11 +1,13 @@
 from __future__ import unicode_literals
+
 import os
 import re
 import sys
+
 import ttfw_idf
 
 
-@ttfw_idf.idf_example_test(env_tag='Example_WIFI')
+@ttfw_idf.idf_example_test(env_tag='Example_WIFI_Protocols')
 def test_examples_esp_local_ctrl(env, extra_data):
 
     rel_project_path = os.path.join('examples', 'protocols', 'esp_local_ctrl')
@@ -27,6 +29,7 @@ def test_examples_esp_local_ctrl(env, extra_data):
     # Running mDNS services in docker is not a trivial task. Therefore, the script won't connect to the host name but
     # to IP address. However, the certificates were generated for the host name and will be rejected.
     cmd = ' '.join([sys.executable, os.path.join(idf_path, rel_project_path, 'scripts/esp_local_ctrl.py'),
+                    '--sec_ver 0',
                     '--name', dut_ip,
                     '--dont-check-hostname'])  # don't reject the certificate because of the hostname
     esp_local_ctrl_log = os.path.join(idf_path, rel_project_path, 'esp_local_ctrl.log')

@@ -31,6 +31,8 @@ typedef struct {
     const esp_http_client_config_t *http_config;   /*!< ESP HTTP client configuration */
     http_client_init_cb_t http_client_init_cb;     /*!< Callback after ESP HTTP client is initialised */
     bool bulk_flash_erase;                         /*!< Erase entire flash partition during initialization. By default flash partition is erased during write operation and in chunk of 4K sector size */
+    bool partial_http_download;                    /*!< Enable Firmware image to be downloaded over multiple HTTP requests */
+    int max_http_request_size;                     /*!< Maximum request size for partial HTTP download */
 } esp_https_ota_config_t;
 
 #define ESP_ERR_HTTPS_OTA_BASE            (0x9000)
@@ -199,6 +201,21 @@ esp_err_t esp_https_ota_get_img_desc(esp_https_ota_handle_t https_ota_handle, es
 */
 int esp_https_ota_get_image_len_read(esp_https_ota_handle_t https_ota_handle);
 
+
+/**
+* @brief  This function returns OTA image total size.
+*
+* @note   This API should be called after esp_https_ota_begin() has been already called.
+*         This can be used to create some sort of progress indication
+*         (in combination with esp_https_ota_get_image_len_read())
+*
+* @param[in]   https_ota_handle   pointer to esp_https_ota_handle_t structure
+*
+* @return
+*    - -1    On failure or chunked encoding
+*    - total bytes of image
+*/
+int esp_https_ota_get_image_size(esp_https_ota_handle_t https_ota_handle);
 #ifdef __cplusplus
 }
 #endif

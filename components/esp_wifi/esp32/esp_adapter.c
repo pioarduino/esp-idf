@@ -40,6 +40,7 @@
 #include "esp_phy_init.h"
 #include "soc/dport_reg.h"
 #include "soc/syscon_reg.h"
+#include "hal/interrupt_controller_hal.h"
 #include "phy_init_data.h"
 #include "driver/periph_ctrl.h"
 #include "nvs.h"
@@ -255,7 +256,7 @@ static void semphr_delete_wrapper(void *semphr)
 
 static void wifi_thread_semphr_free(void* data)
 {
-    xSemaphoreHandle *sem = (xSemaphoreHandle*)(data);
+    SemaphoreHandle_t *sem = (SemaphoreHandle_t*)(data);
 
     if (sem) {
         vSemaphoreDelete(sem);
@@ -266,7 +267,7 @@ static void * wifi_thread_semphr_get_wrapper(void)
 {
     static bool s_wifi_thread_sem_key_init = false;
     static pthread_key_t s_wifi_thread_sem_key;
-    xSemaphoreHandle sem = NULL;
+    SemaphoreHandle_t sem = NULL;
 
     if (s_wifi_thread_sem_key_init == false) {
         if (0 != pthread_key_create(&s_wifi_thread_sem_key, wifi_thread_semphr_free)) {
@@ -460,12 +461,12 @@ static void wifi_reset_mac_wrapper(void)
 
 static void wifi_clock_enable_wrapper(void)
 {
-    periph_module_enable(PERIPH_WIFI_MODULE);
+    wifi_module_enable();
 }
 
 static void wifi_clock_disable_wrapper(void)
 {
-    periph_module_disable(PERIPH_WIFI_MODULE);
+    wifi_module_disable();
 }
 
 static int get_time_wrapper(void *t)
@@ -667,8 +668,8 @@ wifi_osi_funcs_t g_wifi_osi_funcs = {
     ._set_intr = set_intr_wrapper,
     ._clear_intr = clear_intr_wrapper,
     ._set_isr = set_isr_wrapper,
-    ._ints_on = xt_ints_on,
-    ._ints_off = xt_ints_off,
+    ._ints_on = interrupt_controller_hal_enable_interrupts,
+    ._ints_off = interrupt_controller_hal_disable_interrupts,
     ._is_from_isr = is_from_isr_wrapper,
     ._spin_lock_create = spin_lock_create_wrapper,
     ._spin_lock_delete = free,

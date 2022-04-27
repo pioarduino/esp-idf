@@ -39,6 +39,10 @@ are not covered by any support period. Sometimes a particular feature is
 marked as "Preview" in a release, which means it is also not covered
 by the support period.
 
+ESP-IDF should be used in an up-to-date software environment. The operating system
+and other third-party tools should be supported by their maintainers.
+ESP-IDF cannot keep compatibility with unsupported third-party tools.
+
 The ESP-IDF Programming Guide has information about the
 [different versions of ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/latest/versions.html)
 (major, minor, bugfix, etc).
@@ -70,8 +74,7 @@ original support periods apply:
 
 * ESP-IDF V4.0.x will be supported until October 2021
 * ESP-IDF V3.3.x will be supported until February 2022
-* ESP-IDF V3.1.x and V3.2.x will both be supported until October 2020.
-* ESP-IDF versions before V3.1 are already End of Life.
+* ESP-IDF versions before V3.3 are already End of Life.
 
 Policy History
 --------------

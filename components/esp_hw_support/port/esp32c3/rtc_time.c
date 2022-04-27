@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdint.h>
 #include "esp32c3/rom/ets_sys.h"
@@ -39,8 +31,8 @@
  */
 uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles)
 {
-    /* On ESP32S3, choosing RTC_CAL_RTC_MUX results in calibration of
-     * the 90k RTC clock regardless of the currenlty selected SLOW_CLK.
+    /* On ESP32C3, choosing RTC_CAL_RTC_MUX results in calibration of
+     * the 150k RTC clock regardless of the currenlty selected SLOW_CLK.
      * On the ESP32, it used the currently selected SLOW_CLK.
      * The following code emulates ESP32 behavior:
      */
@@ -51,7 +43,11 @@ uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles)
         } else if (slow_freq == RTC_SLOW_FREQ_8MD256) {
             cal_clk = RTC_CAL_8MD256;
         }
+    } else if (cal_clk == RTC_CAL_INTERNAL_OSC) {
+        cal_clk = RTC_CAL_RTC_MUX;
     }
+
+
     /* Enable requested clock (150k clock is always on) */
     int dig_32k_xtal_state = REG_GET_FIELD(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_DIG_XTAL32K_EN);
     if (cal_clk == RTC_CAL_32K_XTAL && !dig_32k_xtal_state) {
@@ -61,16 +57,21 @@ uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles)
     if (cal_clk == RTC_CAL_8MD256) {
         SET_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_DIG_CLK8M_D256_EN);
     }
-    /* Prepare calibration */
-    REG_SET_FIELD(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_CLK_SEL, cal_clk);
     /* There may be another calibration process already running during we call this function,
      * so we should wait the last process is done.
      */
-    if (!GET_PERI_REG_MASK(TIMG_RTCCALICFG2_REG(0), TIMG_RTC_CALI_TIMEOUT)) {
-        if (GET_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_START_CYCLING)) {
-            while (!GET_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_RDY));
-        }
+    if (GET_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_START_CYCLING)) {
+        /**
+         * Set a small timeout threshold to accelerate the generation of timeout.
+         * The internal circuit will be reset when the timeout occurs and will not affect the next calibration.
+         */
+        REG_SET_FIELD(TIMG_RTCCALICFG2_REG(0), TIMG_RTC_CALI_TIMEOUT_THRES, 1);
+        while (!GET_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_RDY)
+               && !GET_PERI_REG_MASK(TIMG_RTCCALICFG2_REG(0), TIMG_RTC_CALI_TIMEOUT));
     }
+
+    /* Prepare calibration */
+    REG_SET_FIELD(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_CLK_SEL, cal_clk);
     CLEAR_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_START_CYCLING);
     REG_SET_FIELD(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_MAX, slowclk_cycles);
     /* Figure out how long to wait for calibration to finish */
@@ -85,7 +86,7 @@ uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles)
         expected_freq = RTC_SLOW_CLK_FREQ_8MD256;
     } else {
         REG_SET_FIELD(TIMG_RTCCALICFG2_REG(0), TIMG_RTC_CALI_TIMEOUT_THRES, RTC_SLOW_CLK_150K_CAL_TIMEOUT_THRES(slowclk_cycles));
-        expected_freq = RTC_SLOW_CLK_FREQ_90K;
+        expected_freq = RTC_SLOW_CLK_FREQ_150K;
     }
     uint32_t us_time_estimate = (uint32_t) (((uint64_t) slowclk_cycles) * MHZ / expected_freq);
     /* Start calibration */
@@ -150,12 +151,6 @@ uint64_t rtc_time_slowclk_to_us(uint64_t rtc_cycles, uint32_t period)
 uint64_t rtc_time_get(void)
 {
     SET_PERI_REG_MASK(RTC_CNTL_TIME_UPDATE_REG, RTC_CNTL_TIME_UPDATE);
-#if 0 // TODO ESP32-C3 IDF-2569:  Re-enable it in the future
-    while (GET_PERI_REG_MASK(RTC_CNTL_TIME_UPDATE_REG, RTC_CNTL_TIME_VALID) == 0) {
-        esp_rom_delay_us(1); // might take 1 RTC slowclk period, don't flood RTC bus
-    }
-    SET_PERI_REG_MASK(RTC_CNTL_INT_CLR_REG, RTC_CNTL_TIME_VALID_INT_CLR);
-#endif
     uint64_t t = READ_PERI_REG(RTC_CNTL_TIME0_REG);
     t |= ((uint64_t) READ_PERI_REG(RTC_CNTL_TIME1_REG)) << 32;
     return t;

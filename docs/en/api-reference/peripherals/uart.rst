@@ -1,20 +1,20 @@
-UART
-====
+Universal Asynchronous Receiver/Transmitter (UART)
+==================================================
 
-{IDF_TARGET_UART_NUM:default = "UART1", esp32 = "UART2", esp32s2 = "UART1"}
+{IDF_TARGET_UART_NUM:default = "UART_NUM_1", esp32 = "UART_NUM_2", esp32s3 = "UART_NUM_2"}
 
 Overview
 --------
 
-A Universal Asynchronous Receiver/Transmitter (UART) is a hardware feature that handles communication (i.e., timing requirements and data framing) using widely-adapted asynchronous serial communication interfaces, such as RS232, RS422, RS485. A UART provides a widely adopted and cheap method to realize full-duplex or half-duplex data exchange among different devices.
+A Universal Asynchronous Receiver/Transmitter (UART) is a hardware feature that handles communication (i.e., timing requirements and data framing) using widely-adopted asynchronous serial communication interfaces, such as RS232, RS422, RS485. A UART provides a widely adopted and cheap method to realize full-duplex or half-duplex data exchange among different devices.
 
-.. only:: esp32
+.. only:: esp32 or esp32s3
 
-    The ESP32 chip has three UART controllers (UART0, UART1, and UART2) that feature an identical set of registers for ease of programming and flexibility. 
+    The {IDF_TARGET_NAME} chip has three UART controllers (UART0, UART1, and UART2), each featuring an identical set of registers to simplify programming and for more flexibility.
 
-.. only:: esp32s2
+.. only:: esp32s2 or esp32c3
 
-    The ESP32-S2 chip has two UART controllers (UART0 and UART1) that feature an identical set of registers for ease of programming and flexibility. 
+    The {IDF_TARGET_NAME} chip has two UART controllers (UART0 and UART1), each featuring an identical set of registers to simplify programming and for more flexibility.
 
 Each UART controller is independently configurable with parameters such as baud rate, data bit length, bit ordering, number of stop bits, parity bit etc. All the controllers are compatible with UART-enabled devices from various manufacturers and can also support Infrared Data Association protocols (IrDA).
 
@@ -50,7 +50,7 @@ Call the function :cpp:func:`uart_param_config` and pass to it a :cpp:type:`uart
 
 .. code-block:: c
 
-    const int uart_num = {IDF_TARGET_UART_NUM};
+    const uart_port_t uart_num = {IDF_TARGET_UART_NUM};
     uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -101,20 +101,8 @@ The same macro should be specified for pins that will not be used.
 
 .. code-block:: c
 
-.. only:: esp32
-
-    ::
-
-        // Set UART pins(TX: IO16 (UART2 default), RX: IO17 (UART2 default), RTS: IO18, CTS: IO19)
-        ESP_ERROR_CHECK(uart_set_pin(UART_NUM_2, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, 18, 19));
-
-.. only:: esp32s2
-
-    ::
-
-        // Set UART pins(TX: IO17 (UART1 default), RX: IO18 (UART1 default), RTS: IO19, CTS: IO20)
-        ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, 19, 20));
-
+  // Set UART pins(TX: IO4, RX: IO5, RTS: IO18, CTS: IO19)
+  ESP_ERROR_CHECK(uart_set_pin({IDF_TARGET_UART_NUM}, 4, 5, 18, 19));
 
 .. _uart-api-driver-installation:
 
@@ -189,7 +177,7 @@ There is a 'companion' function :cpp:func:`uart_wait_tx_done` that monitors the 
 .. code-block:: c
 
     // Wait for packet to be sent
-    const int uart_num = UART_NUM_2;
+    const uart_port_t uart_num = {IDF_TARGET_UART_NUM};
     ESP_ERROR_CHECK(uart_wait_tx_done(uart_num, 100)); // wait timeout is 100 RTOS ticks (TickType_t)
 
 
@@ -201,7 +189,7 @@ Once the data is received by the UART and saved in the Rx FIFO buffer, it needs 
 .. code-block:: c
 
     // Read data from UART.
-    const int uart_num = {IDF_TARGET_UART_NUM};
+    const uart_port_t uart_num = {IDF_TARGET_UART_NUM};
     uint8_t data[128];
     int length = 0;
     ESP_ERROR_CHECK(uart_get_buffered_data_len(uart_num, (size_t*)&length));
@@ -232,7 +220,7 @@ The UART controller supports a number of communication modes. A mode can be sele
 Using Interrupts
 ^^^^^^^^^^^^^^^^
 
-There are many interrupts that can be generated following specific UART states or detected errors. The full list of available interrupts is provided  `{IDF_TARGET_NAME} Technical Reference Manual <{IDF_TARGET_TRM_EN_URL}>`_ (PDF).. You can enable or disable specific interrupts by calling :cpp:func:`uart_enable_intr_mask` or :cpp:func:`uart_disable_intr_mask` respectively. The mask of all interrupts is available as :c:macro:`UART_INTR_MASK`.
+There are many interrupts that can be generated following specific UART states or detected errors. The full list of available interrupts is provided in *{IDF_TARGET_NAME} Technical Reference Manual* > *UART Controller (UART)* > *UART Interrupts* and *UHCI Interrupts* [`PDF <{IDF_TARGET_TRM_EN_URL}#uart>`__]. You can enable or disable specific interrupts by calling :cpp:func:`uart_enable_intr_mask` or :cpp:func:`uart_disable_intr_mask` respectively. The mask of all interrupts is available as :c:macro:`UART_INTR_MASK`.
 
 By default, the :cpp:func:`uart_driver_install` function installs the driver's internal interrupt handler to manage the Tx and Rx ring buffers and provides high-level API functions like events (see below). It is also possible to register a lower level interrupt handler instead using :cpp:func:`uart_isr_register`, and to free it again using :cpp:func:`uart_isr_free`. Some UART driver functions which use the Tx and Rx ring buffers, events, etc. will not automatically work in this case - it is necessary to handle the interrupts directly in the ISR. Inside the custom handler implementation, clear the interrupt status bits using :cpp:func:`uart_clear_intr_status`.
 
@@ -271,7 +259,7 @@ Overview of RS485 specific communication options
 
 .. note::
 
-    The following section will use ``[UART_REGISTER_NAME].[UART_FIELD_BIT]`` to refer to UART register fields/bits. To find more information on a specific option bit, open the Register Summary section of the SoC Technical Reference Manual. Use the register name to navigate to the register description and then find the field/bit.
+    The following section will use ``[UART_REGISTER_NAME].[UART_FIELD_BIT]`` to refer to UART register fields/bits. For more information on a specific option bit, see *{IDF_TARGET_NAME} Technical Reference Manual* > *UART Controller (UART)* > *Register Summary* [`PDF <{IDF_TARGET_TRM_EN_URL}#uart-reg-summ>`__]. Use the register name to navigate to the register description and then find the field/bit.
 
 - ``UART_RS485_CONF_REG.UART_RS485_EN``: setting this bit enables RS485 communication mode support.
 - ``UART_RS485_CONF_REG.UART_RS485TX_RX_EN``: if this bit is set, the transmitter's output signal loops back to the receiver's input signal.
@@ -354,7 +342,7 @@ Circuit C: Auto Switching Transmitter/Receiver
                  10K ____   |           |           |                   |
                 +---|____|--+       +---x-----------x---+    10K ____   |
                 |                   |                   |   +---|____|--+
-  RX <----------+-------------------| RXD               |   | 
+  RX <----------+-------------------| RXD               |   |
                      10K ____       |                  A|---+---------------<> A (+)
                 +-------|____|------| PV    ADM2483     |   |    ____  120
                 |   ____            |                   |   +---|____|---+  RS485 bus side

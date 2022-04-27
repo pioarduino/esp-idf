@@ -1,16 +1,8 @@
-// Copyright 2010-2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2010-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include "sdkconfig.h"
 #include "bootloader_random.h"
 #include "hal/cpu_hal.h"
@@ -26,6 +18,13 @@
 }
 
 #else
+
+#if !defined CONFIG_IDF_TARGET_ESP32S3
+#define RNG_CPU_WAIT_CYCLE_NUM (80 * 32 * 2) /* extra factor of 2 is precautionary */
+#else
+#define RNG_CPU_WAIT_CYCLE_NUM (80 * 23) /* 45 KHz reading frequency is the maximum we have tested so far on S3 */
+#endif
+
  __attribute__((weak)) void bootloader_fill_random(void *buffer, size_t length)
 {
     uint8_t *buffer_bytes = (uint8_t *)buffer;
@@ -48,10 +47,32 @@
             do {
                 random ^= REG_READ(WDEV_RND_REG);
                 now = cpu_hal_get_cycle_count();
-            } while (now - start < 80 * 32 * 2); /* extra factor of 2 is precautionary */
+            } while (now - start < RNG_CPU_WAIT_CYCLE_NUM);
         }
         buffer_bytes[i] = random >> ((i % 4) * 8);
     }
 }
+
+#ifndef CONFIG_IDF_ENV_FPGA
+
+#else // CONFIG_IDF_ENV_FPGA
+#include "esp_log.h"
+
+static void s_non_functional(const char *func)
+{
+    ESP_EARLY_LOGW("rand", "%s non-functional for FPGA builds", func);
+}
+
+void bootloader_random_enable()
+{
+    s_non_functional(__func__);
+}
+
+void bootloader_random_disable()
+{
+    s_non_functional(__func__);
+}
+
+#endif // CONFIG_IDF_ENV_FPGA
 
 #endif // BOOTLOADER_BUILD

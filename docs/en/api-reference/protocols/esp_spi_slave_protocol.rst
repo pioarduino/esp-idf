@@ -1,36 +1,37 @@
 ESP SPI Slave HD (Half Duplex) Mode Protocol
 ============================================
 
-.. note::
-    This protocol is only for ESP32-S2. The driver for other chip versions hasn't be developed
-    yet.
+.. only:: esp32
+
+    .. warning::
+        The driver for ESP32 hasn't been developed yet.
 
 .. _esp_spi_slave_caps:
 
 SPI Slave Capabilities of Espressif chips
 -----------------------------------------
 
-+--------------------+-------+----------+
-|                    | ESP32 | ESP32-S2 |
-+====================+=======+==========+
-| SPI Slave HD       | N     | Y (v2)   |
-+--------------------+-------+----------+
-| Tohost intr        |       | N        |
-+--------------------+-------+----------+
-| Frhost intr        |       | 2  \*    |
-+--------------------+-------+----------+
-| TX DMA             |       | Y        |
-+--------------------+-------+----------+
-| RX DMA             |       | Y        |
-+--------------------+-------+----------+
-| Shared   registers |       | 72       |
-+--------------------+-------+----------+
++--------------------+-------+----------+----------+
+|                    | ESP32 | ESP32-S2 | ESP32-C3 |
++====================+=======+==========+==========+
+| SPI Slave HD       | N     | Y (v2)   | Y (v2)   |
++--------------------+-------+----------+----------+
+| Tohost intr        |       | N        | N        |
++--------------------+-------+----------+----------+
+| Frhost intr        |       | 2  \*    | 2  \*    |
++--------------------+-------+----------+----------+
+| TX DMA             |       | Y        | Y        |
++--------------------+-------+----------+----------+
+| RX DMA             |       | Y        | Y        |
++--------------------+-------+----------+----------+
+| Shared   registers |       | 72       | 64       |
++--------------------+-------+----------+----------+
 
 Introduction
 ------------
 
 In the half duplex mode, the master has to use the protocol defined by the slave to communicate
-with the slave. Each transaction may consists of the following phases (list by the order they
+with the slave. Each transaction may consist of the following phases (list by the order they
 should exist):
 
 - Command: 8-bit, master to slave

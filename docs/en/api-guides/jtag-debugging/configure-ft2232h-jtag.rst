@@ -1,4 +1,4 @@
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
    :start-after: devkit-defs
    :end-before: ---
 
@@ -12,13 +12,13 @@ All versions of |devkit-name| boards have built-in JTAG functionality. Putting i
 Configure Hardware
 ^^^^^^^^^^^^^^^^^^
 
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
     :start-after: devkit-hw-config
     :end-before: ---
 
 * Verify if {IDF_TARGET_NAME} pins used for JTAG communication are not connected to some other h/w that may disturb JTAG operation:
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: jtag-pins
         :end-before: ---
 
@@ -112,13 +112,24 @@ Manually unloading the driver
 
     sudo kextunload -b com.FTDI.driver.FTDIUSBSerialDriver
 
-   In some cases you may need to unload Apple's FTDI driver as well::
+   In some cases you may need to unload Apple's FTDI driver as well:
 
-    sudo kextunload -b com.apple.driver.AppleUSBFTDI
+   * macOS < 10.15::
+
+        sudo kextunload -b com.apple.driver.AppleUSBFTDI
+
+   * macOS 10.15::
+
+        sudo kextunload -b com.apple.DriverKit-AppleUSBFTDI
+
+   .. warning::
+
+      Attempting to use serial over the wrong channel with the FTDI driver will cause a kernel panic. The ESP-WROVER-KIT uses channel A for JTAG and channel B for serial.
+
 
 4. Run OpenOCD:
 
-   .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+   .. include:: {IDF_TARGET_PATH_NAME}.inc
        :start-after: run-openocd
        :end-before: ---
 

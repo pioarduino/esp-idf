@@ -31,6 +31,7 @@
 
 #include "esp_log.h"
 #include "esp_crypto_lock.h"
+#include "esp_attr.h"
 #include "soc/lldesc.h"
 #include "soc/cache_memory.h"
 #include "soc/periph_defs.h"
@@ -44,6 +45,7 @@
 #include "sha/sha_dma.h"
 #include "hal/sha_hal.h"
 #include "soc/soc_caps.h"
+#include "esp_sha_dma_priv.h"
 
 #if CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/cache.h"
@@ -51,20 +53,26 @@
 #include "esp32s3/rom/cache.h"
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32s3/rom/cache.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/cache.h"
 #endif
 
-#if SOC_SHA_GENERAL_DMA
-#define SHA_LOCK() esp_crypto_sha_lock_acquire()
-#define SHA_RELEASE() esp_crypto_sha_lock_release()
+#if SOC_SHA_GDMA
+#define SHA_LOCK() esp_crypto_sha_aes_lock_acquire()
+#define SHA_RELEASE() esp_crypto_sha_aes_lock_release()
 #elif SOC_SHA_CRYPTO_DMA
 #define SHA_LOCK() esp_crypto_dma_lock_acquire()
 #define SHA_RELEASE() esp_crypto_dma_lock_release()
-#else
-#define SHA_LOCK() ()
 #endif
 
 const static char *TAG = "esp-sha";
 
+/* These are static due to:
+ *  * Must be in DMA capable memory, so stack is not a safe place to put them
+ *  * To avoid having to malloc/free them for every DMA operation
+ */
+static DRAM_ATTR lldesc_t s_dma_descr_input;
+static DRAM_ATTR lldesc_t s_dma_descr_buf;
 
 void esp_sha_write_digest_state(esp_sha_type sha_type, void *digest_state)
 {
@@ -110,9 +118,8 @@ void esp_sha_acquire_hardware()
     /* Enable SHA and DMA hardware */
 #if SOC_SHA_CRYPTO_DMA
     periph_module_enable(PERIPH_SHA_DMA_MODULE);
-#elif SOC_SHA_GENERAL_DMA
+#elif SOC_SHA_GDMA
     periph_module_enable(PERIPH_SHA_MODULE);
-    periph_module_enable(PERIPH_GDMA_MODULE);
 #endif
 }
 
@@ -122,9 +129,8 @@ void esp_sha_release_hardware()
     /* Disable SHA and DMA hardware */
 #if SOC_SHA_CRYPTO_DMA
     periph_module_disable(PERIPH_SHA_DMA_MODULE);
-#elif SOC_SHA_GENERAL_DMA
+#elif SOC_SHA_GDMA
     periph_module_disable(PERIPH_SHA_MODULE);
-    periph_module_disable(PERIPH_GDMA_MODULE);
 #endif
 
     SHA_RELEASE();
@@ -222,7 +228,7 @@ int esp_sha_dma(esp_sha_type sha_type, const void *input, uint32_t ilen,
         return 0;
     }
 
-#if (CONFIG_SPIRAM_USE_CAPS_ALLOC || CONFIG_SPIRAM_USE_MALLOC)
+#if (CONFIG_SPIRAM && SOC_PSRAM_DMA_CAPABLE)
     if (esp_ptr_external_ram(input)) {
         Cache_WriteBack_Addr((uint32_t)input, ilen);
     }
@@ -276,37 +282,43 @@ static esp_err_t esp_sha_dma_process(esp_sha_type sha_type, const void *input, u
                                      const void *buf, uint32_t buf_len, bool is_first_block)
 {
     int ret = 0;
-    lldesc_t dma_descr_input = {};
-    lldesc_t dma_descr_buf = {};
     lldesc_t *dma_descr_head;
     size_t num_blks = (ilen + buf_len) / block_length(sha_type);
 
+    memset(&s_dma_descr_input, 0, sizeof(lldesc_t));
+    memset(&s_dma_descr_buf, 0, sizeof(lldesc_t));
+
     /* DMA descriptor for Memory to DMA-SHA transfer */
     if (ilen) {
-        dma_descr_input.length = ilen;
-        dma_descr_input.size = ilen;
-        dma_descr_input.owner = 1;
-        dma_descr_input.eof = 1;
-        dma_descr_input.buf = (uint8_t *)input;
-        dma_descr_head = &dma_descr_input;
+        s_dma_descr_input.length = ilen;
+        s_dma_descr_input.size = ilen;
+        s_dma_descr_input.owner = 1;
+        s_dma_descr_input.eof = 1;
+        s_dma_descr_input.buf = (uint8_t *)input;
+        dma_descr_head = &s_dma_descr_input;
     }
     /* Check after input to overide head if there is any buf*/
     if (buf_len) {
-        dma_descr_buf.length = buf_len;
-        dma_descr_buf.size = buf_len;
-        dma_descr_buf.owner = 1;
-        dma_descr_buf.eof = 1;
-        dma_descr_buf.buf = (uint8_t *)buf;
-        dma_descr_head = &dma_descr_buf;
+        s_dma_descr_buf.length = buf_len;
+        s_dma_descr_buf.size = buf_len;
+        s_dma_descr_buf.owner = 1;
+        s_dma_descr_buf.eof = 1;
+        s_dma_descr_buf.buf = (uint8_t *)buf;
+        dma_descr_head = &s_dma_descr_buf;
     }
 
     /* Link DMA lists */
     if (buf_len && ilen) {
-        dma_descr_buf.eof = 0;
-        dma_descr_buf.empty = (uint32_t)(&dma_descr_input);
+        s_dma_descr_buf.eof = 0;
+        s_dma_descr_buf.empty = (uint32_t)(&s_dma_descr_input);
     }
 
-    sha_hal_hash_dma(sha_type, dma_descr_head, num_blks, is_first_block);
+    if (esp_sha_dma_start(dma_descr_head) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_sha_dma_start failed, no DMA channel available");
+        return -1;
+    }
+
+    sha_hal_hash_dma(sha_type, num_blks, is_first_block);
 
     sha_hal_wait_idle();
 

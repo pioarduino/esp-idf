@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 
 
@@ -24,8 +16,22 @@
 
 #include <esp_http_server.h>
 #include "esp_httpd_priv.h"
+#include "freertos/event_groups.h"
 
 #ifdef CONFIG_HTTPD_WS_SUPPORT
+
+#define WS_SEND_OK      (1 << 0)
+#define WS_SEND_FAILED  (1 << 1)
+
+typedef struct {
+    httpd_ws_frame_t frame;
+    httpd_handle_t handle;
+    int socket;
+    transfer_complete_cb callback;
+    void *arg;
+    bool blocking;
+    EventGroupHandle_t transfer_done;
+} async_transfer_t;
 
 static const char *TAG="httpd_ws";
 
@@ -253,45 +259,46 @@ esp_err_t httpd_ws_recv_frame(httpd_req_t *req, httpd_ws_frame_t *frame, size_t 
         ESP_LOGW(TAG, LOG_FMT("Frame pointer is invalid"));
         return ESP_ERR_INVALID_ARG;
     }
+    /* If frame len is 0, will get frame len from req. Otherwise regard frame len already achieved by calling httpd_ws_recv_frame before */
+    if (frame->len == 0) {
+        /* Assign the frame info from the previous reading */
+        frame->type = aux->ws_type;
+        frame->final = aux->ws_final;
 
-    /* Assign the frame info from the previous reading */
-    frame->type = aux->ws_type;
-    frame->final = aux->ws_final;
-
-    /* Grab the second byte */
-    uint8_t second_byte = 0;
-    if (httpd_recv_with_opt(req, (char *)&second_byte, sizeof(second_byte), false) <= 0) {
-        ESP_LOGW(TAG, LOG_FMT("Failed to receive the second byte"));
-        return ESP_FAIL;
-    }
-
-    /* Parse the second byte */
-    /* Please refer to RFC6455 Section 5.2 for more details */
-    bool masked = (second_byte & HTTPD_WS_MASK_BIT) != 0;
-
-    /* Interpret length */
-    uint8_t init_len = second_byte & HTTPD_WS_LENGTH_BITS;
-    if (init_len < 126) {
-        /* Case 1: If length is 0-125, then this length bit is 7 bits */
-        frame->len = init_len;
-    } else if (init_len == 126) {
-        /* Case 2: If length byte is 126, then this frame's length bit is 16 bits */
-        uint8_t length_bytes[2] = { 0 };
-        if (httpd_recv_with_opt(req, (char *)length_bytes, sizeof(length_bytes), false) <= 0) {
-            ESP_LOGW(TAG, LOG_FMT("Failed to receive 2 bytes length"));
+        /* Grab the second byte */
+        uint8_t second_byte = 0;
+        if (httpd_recv_with_opt(req, (char *)&second_byte, sizeof(second_byte), false) <= 0) {
+            ESP_LOGW(TAG, LOG_FMT("Failed to receive the second byte"));
             return ESP_FAIL;
         }
 
-        frame->len = ((uint32_t)(length_bytes[0] << 8U) | (length_bytes[1]));
-    } else if (init_len == 127) {
-        /* Case 3: If length is byte 127, then this frame's length bit is 64 bits */
-        uint8_t length_bytes[8] = { 0 };
-        if (httpd_recv_with_opt(req, (char *)length_bytes, sizeof(length_bytes), false) <= 0) {
-            ESP_LOGW(TAG, LOG_FMT("Failed to receive 2 bytes length"));
-            return ESP_FAIL;
-        }
+        /* Parse the second byte */
+        /* Please refer to RFC6455 Section 5.2 for more details */
+        bool masked = (second_byte & HTTPD_WS_MASK_BIT) != 0;
 
-        frame->len = (((uint64_t)length_bytes[0] << 56U) |
+        /* Interpret length */
+        uint8_t init_len = second_byte & HTTPD_WS_LENGTH_BITS;
+        if (init_len < 126) {
+            /* Case 1: If length is 0-125, then this length bit is 7 bits */
+            frame->len = init_len;
+        } else if (init_len == 126) {
+            /* Case 2: If length byte is 126, then this frame's length bit is 16 bits */
+            uint8_t length_bytes[2] = { 0 };
+            if (httpd_recv_with_opt(req, (char *)length_bytes, sizeof(length_bytes), false) <= 0) {
+                ESP_LOGW(TAG, LOG_FMT("Failed to receive 2 bytes length"));
+                return ESP_FAIL;
+            }
+
+            frame->len = ((uint32_t)(length_bytes[0] << 8U) | (length_bytes[1]));
+        } else if (init_len == 127) {
+            /* Case 3: If length is byte 127, then this frame's length bit is 64 bits */
+            uint8_t length_bytes[8] = { 0 };
+            if (httpd_recv_with_opt(req, (char *)length_bytes, sizeof(length_bytes), false) <= 0) {
+                ESP_LOGW(TAG, LOG_FMT("Failed to receive 2 bytes length"));
+                return ESP_FAIL;
+            }
+
+            frame->len = (((uint64_t)length_bytes[0] << 56U) |
                     ((uint64_t)length_bytes[1] << 48U) |
                     ((uint64_t)length_bytes[2] << 40U) |
                     ((uint64_t)length_bytes[3] << 32U) |
@@ -299,26 +306,29 @@ esp_err_t httpd_ws_recv_frame(httpd_req_t *req, httpd_ws_frame_t *frame, size_t 
                     ((uint64_t)length_bytes[5] << 16U) |
                     ((uint64_t)length_bytes[6] <<  8U) |
                     ((uint64_t)length_bytes[7]));
+        }
+        /* If this frame is masked, dump the mask as well */
+        if (masked) {
+            if (httpd_recv_with_opt(req, (char *)aux->mask_key, sizeof(aux->mask_key), false) <= 0) {
+                ESP_LOGW(TAG, LOG_FMT("Failed to receive mask key"));
+                return ESP_FAIL;
+            }
+        } else {
+            /* If the WS frame from client to server is not masked, it should be rejected.
+             * Please refer to RFC6455 Section 5.2 for more details. */
+            ESP_LOGW(TAG, LOG_FMT("WS frame is not properly masked."));
+            return ESP_ERR_INVALID_STATE;
+        }
     }
-
     /* We only accept the incoming packet length that is smaller than the max_len (or it will overflow the buffer!) */
+    /* If max_len is 0, regard it OK for userspace to get frame len */
     if (frame->len > max_len) {
+        if (max_len == 0) {
+            ESP_LOGD(TAG, "regard max_len == 0 is OK for user to get frame len");
+            return ESP_OK;
+        }
         ESP_LOGW(TAG, LOG_FMT("WS Message too long"));
         return ESP_ERR_INVALID_SIZE;
-    }
-
-    /* If this frame is masked, dump the mask as well */
-    uint8_t mask_key[4] = { 0 };
-    if (masked) {
-        if (httpd_recv_with_opt(req, (char *)mask_key, sizeof(mask_key), false) <= 0) {
-            ESP_LOGW(TAG, LOG_FMT("Failed to receive mask key"));
-            return ESP_FAIL;
-        }
-    } else {
-        /* If the WS frame from client to server is not masked, it should be rejected.
-         * Please refer to RFC6455 Section 5.2 for more details. */
-        ESP_LOGW(TAG, LOG_FMT("WS frame is not properly masked."));
-        return ESP_ERR_INVALID_STATE;
     }
 
     /* Receive buffer */
@@ -332,13 +342,23 @@ esp_err_t httpd_ws_recv_frame(httpd_req_t *req, httpd_ws_frame_t *frame, size_t 
         return ESP_FAIL;
     }
 
-    if (httpd_recv_with_opt(req, (char *)frame->payload, frame->len, false) <= 0) {
-        ESP_LOGW(TAG, LOG_FMT("Failed to receive payload"));
-        return ESP_FAIL;
+    size_t left_len = frame->len;
+    size_t offset = 0;
+
+    while (left_len > 0) {
+        int read_len = httpd_recv_with_opt(req, (char *)frame->payload + offset, left_len, false);
+        if (read_len <= 0) {
+            ESP_LOGW(TAG, LOG_FMT("Failed to receive payload"));
+            return ESP_FAIL;
+        }
+        offset += read_len;
+        left_len -= read_len;
+
+        ESP_LOGD(TAG, "Frame length: %d, Bytes Read: %d", frame->len, offset);
     }
 
     /* Unmask payload */
-    httpd_ws_unmask_payload(frame->payload, frame->len, mask_key);
+    httpd_ws_unmask_payload(frame->payload, frame->len, aux->mask_key);
 
     return ESP_OK;
 }
@@ -377,9 +397,11 @@ esp_err_t httpd_ws_send_frame_async(httpd_handle_t hd, int fd, httpd_ws_frame_t 
     } else {
         header_buf[1] = 127;                /* Length for 64 bits */
         uint8_t shift_idx = sizeof(uint64_t) - 1; /* Shift index starts at 7 */
-        for (int8_t idx = 2; idx > 9; idx--) {
-            /* Now do shifting (be careful of endianess, i.e. when buffer index is 2, frame length shift index is 7) */
-            header_buf[idx] = (frame->len >> (uint8_t)(shift_idx * 8)) & 0xffU;
+        uint64_t len64 = frame->len; /* Raise variable size to make sure we won't shift by more bits
+                                      * than the length has (to avoid undefined behaviour) */
+        for (int8_t idx = 2; idx <= 9; idx++) {
+            /* Now do shifting (be careful of endianness, i.e. when buffer index is 2, frame length shift index is 7) */
+            header_buf[idx] = (len64 >> (shift_idx * 8)) & 0xffU;
             shift_idx--;
         }
         tx_len = 10;
@@ -474,6 +496,79 @@ httpd_ws_client_info_t httpd_ws_get_fd_info(httpd_handle_t hd, int fd)
     }
     bool is_active_ws = sess->ws_handshake_done && (!sess->ws_close);
     return is_active_ws ? HTTPD_WS_CLIENT_WEBSOCKET : HTTPD_WS_CLIENT_HTTP;
+}
+
+static void httpd_ws_send_cb(void *arg)
+{
+    async_transfer_t *trans = arg;
+
+    esp_err_t err = httpd_ws_send_frame_async(trans->handle, trans->socket, &trans->frame);
+
+    if (trans->blocking) {
+        xEventGroupSetBits(trans->transfer_done, err ? WS_SEND_FAILED : WS_SEND_OK);
+    } else if (trans->callback) {
+        trans->callback(err, trans->socket, trans->arg);
+    }
+
+    free(trans);
+}
+
+esp_err_t httpd_ws_send_data(httpd_handle_t handle, int socket, httpd_ws_frame_t *frame)
+{
+    async_transfer_t *transfer = calloc(1, sizeof(async_transfer_t));
+    if (transfer == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    EventGroupHandle_t transfer_done = xEventGroupCreate();
+    if (!transfer_done) {
+        free(transfer);
+        return ESP_ERR_NO_MEM;
+    }
+
+    transfer->blocking = true;
+    transfer->handle = handle;
+    transfer->socket = socket;
+    transfer->transfer_done = transfer_done;
+    memcpy(&transfer->frame, frame, sizeof(httpd_ws_frame_t));
+
+    esp_err_t err = httpd_queue_work(handle, httpd_ws_send_cb, transfer);
+    if (err != ESP_OK) {
+        vEventGroupDelete(transfer_done);
+        free(transfer);
+        return err;
+    }
+
+    EventBits_t status = xEventGroupWaitBits(transfer_done, WS_SEND_OK | WS_SEND_FAILED,
+                                             pdTRUE, pdFALSE, portMAX_DELAY);
+
+    vEventGroupDelete(transfer_done);
+
+    return (status & WS_SEND_OK) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t httpd_ws_send_data_async(httpd_handle_t handle, int socket, httpd_ws_frame_t *frame,
+                                   transfer_complete_cb callback, void *arg)
+{
+    async_transfer_t *transfer = calloc(1, sizeof(async_transfer_t));
+    if (transfer == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    transfer->arg = arg;
+    transfer->callback = callback;
+    transfer->handle = handle;
+    transfer->socket = socket;
+    memcpy(&transfer->frame, frame, sizeof(httpd_ws_frame_t));
+
+    esp_err_t err = httpd_queue_work(handle, httpd_ws_send_cb, transfer);
+
+    if (err) {
+        free(transfer);
+        return err;
+    }
+
+    return ESP_OK;
 }
 
 #endif /* CONFIG_HTTPD_WS_SUPPORT */

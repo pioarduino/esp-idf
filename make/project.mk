@@ -134,6 +134,13 @@ export COMMON_MAKEFILES
 ifndef BUILD_DIR_BASE
 BUILD_DIR_BASE := $(PROJECT_PATH)/build
 endif
+
+ifneq ("$(BUILD_DIR_BASE)","$(subst :,,$(BUILD_DIR_BASE))")
+$(error BUILD_DIR_BASE ($(BUILD_DIR_BASE)) cannot contain colons. If setting this path on Windows, use MSYS Unix-style /c/dir instead of C:/dir)
+endif
+
+BUILD_DIR_BASE := $(abspath $(BUILD_DIR_BASE))
+
 export BUILD_DIR_BASE
 
 # Component directories. These directories are searched for components (either the directory is a component,
@@ -338,7 +345,7 @@ endif
 
 # If we have `version.txt` then prefer that for extracting IDF version
 ifeq ("$(wildcard ${IDF_PATH}/version.txt)","")
-IDF_VER_T := $(shell cd ${IDF_PATH} && git describe --always --dirty)
+IDF_VER_T := $(shell cd ${IDF_PATH} && git describe --always --dirty --match v*.*)
 else
 IDF_VER_T := $(shell cat ${IDF_PATH}/version.txt)
 endif
@@ -347,7 +354,6 @@ IDF_VER := $(shell echo "$(IDF_VER_T)"  | cut -c 1-31)
 # Set default LDFLAGS
 EXTRA_LDFLAGS ?=
 LDFLAGS ?= -nostdlib \
-	-u call_user_start_cpu0	\
 	$(EXTRA_LDFLAGS) \
 	-Wl,--gc-sections	\
 	-Wl,-static	\
@@ -425,6 +431,11 @@ endif
 ifdef CONFIG_COMPILER_STACK_CHECK_MODE_ALL
 COMMON_FLAGS += -fstack-protector-all
 endif
+
+# Placing jump tables in flash would cause issues with code that required
+# to be placed in IRAM
+COMMON_FLAGS += -fno-jump-tables
+COMMON_FLAGS += -fno-tree-switch-conversion
 
 # Optimization flags are set based on menuconfig choice
 ifdef CONFIG_COMPILER_OPTIMIZATION_SIZE
@@ -512,7 +523,7 @@ CXXFLAGS += -fno-rtti
 LDFLAGS += -fno-rtti
 endif
 
-ARFLAGS := cru
+ARFLAGS := cr
 
 export CFLAGS CPPFLAGS CXXFLAGS ARFLAGS
 
@@ -605,11 +616,14 @@ endef
 define GenerateComponentTargets
 .PHONY: component-$(2)-build component-$(2)-clean
 
+COMPONENT_$(2)_BUILDTARGET ?= build
+COMPONENT_$(2)_CLEANTARGET ?= clean
+
 component-$(2)-build: check-submodules $(call prereq_if_explicit, component-$(2)-clean) | $(BUILD_DIR_BASE)/$(2)
-	$(call ComponentMake,$(1),$(2)) build
+	$(call ComponentMake,$(1),$(2)) $$(COMPONENT_$(2)_BUILDTARGET)
 
 component-$(2)-clean: | $(BUILD_DIR_BASE)/$(2) $(BUILD_DIR_BASE)/$(2)/component_project_vars.mk
-	$(call ComponentMake,$(1),$(2)) clean
+	$(call ComponentMake,$(1),$(2)) $$(COMPONENT_$(2)_CLEANTARGET)
 
 $(BUILD_DIR_BASE)/$(2):
 	@mkdir -p $(BUILD_DIR_BASE)/$(2)

@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "esp_attr.h"
 #include "soc/cpu.h"
@@ -19,9 +11,10 @@
 #include "sdkconfig.h"
 
 #include "hal/cpu_hal.h"
-#include "esp_debug_helpers.h"
 #include "hal/cpu_types.h"
 #include "hal/mpu_hal.h"
+
+#include "esp_cpu.h"
 
 #include "hal/soc_hal.h"
 #include "soc/soc_caps.h"
@@ -47,7 +40,7 @@ void IRAM_ATTR esp_cpu_reset(int cpu_id)
     soc_hal_reset_core(cpu_id);
 }
 
-esp_err_t IRAM_ATTR esp_set_watchpoint(int no, void *adr, int size, int flags)
+esp_err_t IRAM_ATTR esp_cpu_set_watchpoint(int no, void *adr, int size, int flags)
 {
     watchpoint_trigger_t trigger;
 
@@ -70,7 +63,7 @@ esp_err_t IRAM_ATTR esp_set_watchpoint(int no, void *adr, int size, int flags)
     return ESP_OK;
 }
 
-void IRAM_ATTR esp_clear_watchpoint(int no)
+void IRAM_ATTR esp_cpu_clear_watchpoint(int no)
 {
     cpu_hal_clear_watchpoint(no);
 }
@@ -80,18 +73,12 @@ bool IRAM_ATTR esp_cpu_in_ocd_debug_mode(void)
 #if CONFIG_ESP32_DEBUG_OCDAWARE || \
     CONFIG_ESP32S2_DEBUG_OCDAWARE || \
     CONFIG_ESP32S3_DEBUG_OCDAWARE || \
-    CONFIG_ESP32C3_DEBUG_OCDAWARE
+    CONFIG_ESP32C3_DEBUG_OCDAWARE || \
+    CONFIG_ESP32H2_DEBUG_OCDAWARE
     return cpu_ll_is_debugger_attached();
 #else
     return false; // Always return false if "OCD aware" is disabled
 #endif
-}
-
-void IRAM_ATTR esp_set_breakpoint_if_jtag(void *fn)
-{
-    if (esp_cpu_in_ocd_debug_mode()) {
-        cpu_hal_set_breakpoint(0, fn);
-    }
 }
 
 #if __XTENSA__

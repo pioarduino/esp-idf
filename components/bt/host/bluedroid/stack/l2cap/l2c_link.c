@@ -42,6 +42,11 @@
 
 static BOOLEAN l2c_link_send_to_lower (tL2C_LCB *p_lcb, BT_HDR *p_buf);
 
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+extern tBTM_STATUS BTM_BleStartExtAdvRestart(uint8_t handle);
+#endif// #if (BLE_50_FEATURE_SUPPORT == TRUE)
+extern bool btm_ble_inter_get(void);
+
 /*******************************************************************************
 **
 ** Function         l2c_link_hci_conn_req
@@ -333,7 +338,6 @@ void l2c_link_sec_comp (BD_ADDR p_bda, tBT_TRANSPORT transport, void *p_ref_data
     }
 }
 
-
 /*******************************************************************************
 **
 ** Function         l2c_link_hci_disc_comp
@@ -359,7 +363,10 @@ BOOLEAN l2c_link_hci_disc_comp (UINT16 handle, UINT8 reason)
     /* If we don't have one, maybe an SCO link. Send to MM */
     if (!p_lcb) {
 #if (BLE_INCLUDED == TRUE)
-        BTM_Recovery_Pre_State();
+        /* The Directed Advertising Timeout error code indicates that directed advertising completed */
+        if (reason != HCI_ERR_DIRECTED_ADVERTISING_TIMEOUT) {
+            BTM_Recovery_Pre_State();
+        }
 #endif  ///BLE_INCLUDED == TRUE
         status = FALSE;
     } else {
@@ -456,7 +463,38 @@ BOOLEAN l2c_link_hci_disc_comp (UINT16 handle, UINT8 reason)
         }
 
         p_lcb->p_pending_ccb = NULL;
+#if (BLE_INCLUDED == TRUE && GATTC_CONNECT_RETRY_EN == TRUE)
+        if(reason == HCI_ERR_CONN_FAILED_ESTABLISHMENT && p_lcb->transport == BT_TRANSPORT_LE) {
 
+            if(p_lcb->link_role == HCI_ROLE_MASTER && p_lcb->retry_create_con < GATTC_CONNECT_RETRY_COUNT) {
+                L2CAP_TRACE_DEBUG("master retry connect, retry count %d reason 0x%x\n",  p_lcb->retry_create_con, reason);
+                p_lcb->retry_create_con ++;
+                // create connection retry
+                if (l2cu_create_conn(p_lcb, BT_TRANSPORT_LE)) {
+                    btm_acl_removed (p_lcb->remote_bd_addr, BT_TRANSPORT_LE);
+                    lcb_is_free = FALSE;    /* still using this lcb */
+                }
+            }
+
+            #if (BLE_50_FEATURE_SUPPORT == TRUE)
+            if(btm_ble_inter_get() && p_lcb->link_role == HCI_ROLE_SLAVE && p_lcb->retry_create_con < GATTC_CONNECT_RETRY_COUNT) {
+                p_lcb->retry_create_con ++;
+                L2CAP_TRACE_DEBUG("slave restart extend adv, retry count %d reason 0x%x\n", p_lcb->retry_create_con, reason);
+                BTM_BleStartExtAdvRestart(handle);
+            }
+            #endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
+
+            #if (BLE_42_FEATURE_SUPPORT == TRUE)
+            if(!btm_ble_inter_get() && p_lcb->link_role == HCI_ROLE_SLAVE && p_lcb->retry_create_con < GATTC_CONNECT_RETRY_COUNT) {
+                p_lcb->retry_create_con ++;
+                L2CAP_TRACE_DEBUG("slave resatrt adv, retry count %d reason 0x%x\n", p_lcb->retry_create_con, reason);
+                btm_ble_start_adv();
+            }
+            #endif // #if (BLE_42_FEATURE_SUPPORT == TRUE)
+        }
+
+
+#endif // #if (BLE_INCLUDED == TRUE)
         /* Release the LCB */
         if (lcb_is_free) {
             l2cu_release_lcb (p_lcb);
@@ -683,7 +721,7 @@ void l2c_info_timeout (tL2C_LCB *p_lcb)
 *******************************************************************************/
 void l2c_link_adjust_allocation (void)
 {
-    UINT16      qq, yy = 0, qq_remainder;
+    UINT16      qq, qq_remainder;
     tL2C_LCB    *p_lcb;
     UINT16      hi_quota, low_quota;
     UINT16      num_lowpri_links = 0;
@@ -768,8 +806,8 @@ void l2c_link_adjust_allocation (void)
                 }
             }
 
-            L2CAP_TRACE_EVENT ("l2c_link_adjust_allocation LCB %d   Priority: %d  XmitQuota: %d\n",
-                               yy, p_lcb->acl_priority, p_lcb->link_xmit_quota);
+            L2CAP_TRACE_EVENT ("l2c_link_adjust_allocation   Priority: %d  XmitQuota: %d\n",
+                               p_lcb->acl_priority, p_lcb->link_xmit_quota);
 
             L2CAP_TRACE_EVENT ("        SentNotAcked: %d  RRUnacked: %d\n",
                                p_lcb->sent_not_acked, l2cb.round_robin_unacked);

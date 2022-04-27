@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014, Wind River Systems, Inc.
+ * SPDX-FileCopyrightText: 2011-2014 Wind River Systems, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,6 +15,7 @@
 #define _BLE_MESH_UTIL_H_
 
 #include <stddef.h>
+#include "esp_bit_defs.h"
 #include "mesh_types.h"
 
 #ifdef __cplusplus

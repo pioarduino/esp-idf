@@ -20,7 +20,7 @@ For more details about Espressif device protocols, see the following documents.
 .. toctree::
     :maxdepth: 1
 
-    esp_sdio_slave_protocol
+    :SOC_SDIO_SLAVE_SUPPORTED: esp_sdio_slave_protocol
     esp_spi_slave_protocol
 
 Terminology
@@ -80,8 +80,14 @@ There are some common services provided by the Espressif slaves:
 5. Shared registers: the master can read some part of the registers on the slave, and also write
    these registers to let the slave read.
 
-The services provided by the slave depends on the slave's model. See
-:ref:`esp_sdio_slave_caps` and :ref:`esp_spi_slave_caps` for more details.
+.. only:: SOC_SDIO_SLAVE_SUPPORTED
+
+   The services provided by the slave depends on the slave's model. See :ref:`esp_sdio_slave_caps` and :ref:`esp_spi_slave_caps` for more details.
+
+.. only:: not SOC_SDIO_SLAVE_SUPPORTED
+
+   The services provided by the slave depends on the slave's model. See :ref:`esp_spi_slave_caps` for more details.
+
 
 Initialization of ESP Serial Slave Link
 ---------------------------------------
@@ -170,7 +176,7 @@ counter.
 Application Example
 -------------------
 
-The example below shows how ESP32 SDIO host and slave communicate with each other. The host use the ESSL SDIO.
+The example below shows how {IDF_TARGET_NAME} SDIO host and slave communicate with each other. The host use the ESSL SDIO.
 
 :example:`peripherals/sdio`.
 

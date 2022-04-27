@@ -1,23 +1,16 @@
-// Copyright 2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2019-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
+
+#include "driver/touch_sensor_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "driver/touch_sensor_common.h"
 
 /**
  * @brief Set touch sensor FSM start
@@ -300,7 +293,7 @@ esp_err_t touch_pad_reset_benchmark(touch_pad_t touch_num);
  * @return
  *     - ESP_OK Success
  */
-esp_err_t touch_pad_filter_set_config(touch_filter_config_t *filter_info);
+esp_err_t touch_pad_filter_set_config(const touch_filter_config_t *filter_info);
 
 /**
  * @brief get parameter of touch sensor filter and detection algorithm.
@@ -338,7 +331,7 @@ esp_err_t touch_pad_filter_disable(void);
  * @return
  *     - ESP_OK Success
  */
-esp_err_t touch_pad_denoise_set_config(touch_pad_denoise_t *denoise);
+esp_err_t touch_pad_denoise_set_config(const touch_pad_denoise_t *denoise);
 
 /**
  * @brief get parameter of denoise pad (TOUCH_PAD_NUM0).
@@ -387,7 +380,7 @@ esp_err_t touch_pad_denoise_read_data(uint32_t *data);
  * @return
  *     - ESP_OK Success
  */
-esp_err_t touch_pad_waterproof_set_config(touch_pad_waterproof_t *waterproof);
+esp_err_t touch_pad_waterproof_set_config(const touch_pad_waterproof_t *waterproof);
 
 /**
  * @brief get parameter of waterproof function.
@@ -578,6 +571,22 @@ esp_err_t touch_pad_sleep_channel_reset_benchmark(void);
  *     - ESP_ERR_INVALID_ARG parameter is NULL
  */
 esp_err_t touch_pad_sleep_channel_read_proximity_cnt(touch_pad_t pad_num, uint32_t *proximity_cnt);
+
+/**
+ * @brief Change the operating frequency of touch pad in deep sleep state. Reducing the operating frequency can effectively reduce power consumption.
+ *        If this function is not called, the working frequency of touch in the deep sleep state is the same as that in the wake-up state.
+ *
+ * @param sleep_cycle The touch sensor will sleep after each measurement.
+ *                    sleep_cycle decide the interval between each measurement.
+ *                    t_sleep = sleep_cycle / (RTC_SLOW_CLK frequency).
+ *                    The approximate frequency value of RTC_SLOW_CLK can be obtained using rtc_clk_slow_freq_get_hz function.
+ * @param meas_times The times of charge and discharge in each measure process of touch channels.
+ *                  The timer frequency is 8Mhz. Range: 0 ~ 0xffff.
+ *                  Recommended typical value: Modify this value to make the measurement time around 1ms.
+ * @return
+ *     - ESP_OK Success
+ */
+esp_err_t touch_pad_sleep_channel_set_work_time(uint16_t sleep_cycle, uint16_t meas_times);
 
 #ifdef __cplusplus
 }

@@ -2,19 +2,8 @@
 #
 # Utility script for ESP-IDF developers to work with the CODEOWNERS file.
 #
-# Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+# SPDX-License-Identifier: Apache-2.0
 
 import argparse
 import os
@@ -24,8 +13,8 @@ import sys
 
 from idf_ci_utils import IDF_PATH
 
-CODEOWNERS_PATH = os.path.join(IDF_PATH, ".gitlab", "CODEOWNERS")
-CODEOWNER_GROUP_PREFIX = "@esp-idf-codeowners/"
+CODEOWNERS_PATH = os.path.join(IDF_PATH, '.gitlab', 'CODEOWNERS')
+CODEOWNER_GROUP_PREFIX = '@esp-idf-codeowners/'
 
 
 def get_all_files():
@@ -33,7 +22,7 @@ def get_all_files():
     Get list of all file paths in the repository.
     """
     # only split on newlines, since file names may contain spaces
-    return subprocess.check_output(["git", "ls-files"], cwd=IDF_PATH).decode("utf-8").strip().split('\n')
+    return subprocess.check_output(['git', 'ls-files'], cwd=IDF_PATH).decode('utf-8').strip().split('\n')
 
 
 def pattern_to_regex(pattern):
@@ -93,7 +82,7 @@ def action_identify(args):
     with open(CODEOWNERS_PATH) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith('#'):
                 continue
             tokens = line.split()
             path_pattern = tokens[0]
@@ -121,18 +110,21 @@ def action_ci_check(args):
     errors = []
 
     def add_error(msg):
-        errors.append("{}:{}: {}".format(CODEOWNERS_PATH, line_no, msg))
+        errors.append('{}:{}: {}'.format(CODEOWNERS_PATH, line_no, msg))
 
     all_files = get_all_files()
-    prev_path_pattern = ""
+    prev_path_pattern = ''
     with open(CODEOWNERS_PATH) as f:
         for line_no, line in enumerate(f, start=1):
             # Skip empty lines and comments
             line = line.strip()
-            if line.startswith("# sort-order-reset"):
-                prev_path_pattern = ""
+            if line.startswith('# sort-order-reset'):
+                prev_path_pattern = ''
 
-            if not line or line.startswith("#"):
+            if (not line
+                    or line.startswith('#')  # comment
+                    or line.startswith('[')  # file group
+                    or line.startswith('^[')):  # optional file group
                 continue
 
             # Each line has a form of "<path> <owners>+"
@@ -140,18 +132,17 @@ def action_ci_check(args):
             path_pattern = tokens[0]
             owners = tokens[1:]
             if not owners:
-                add_error("no owners specified for {}".format(path_pattern))
+                add_error('no owners specified for {}'.format(path_pattern))
 
             # Check that the file is sorted by path patterns
-            path_pattern_for_cmp = path_pattern.replace("-", "_")  # ignore difference between _ and - for ordering
-            if prev_path_pattern and path_pattern_for_cmp < prev_path_pattern:
-                add_error("file is not sorted: {} < {}".format(path_pattern_for_cmp, prev_path_pattern))
-            prev_path_pattern = path_pattern_for_cmp
+            if not in_order(prev_path_pattern, path_pattern):
+                add_error('file is not sorted: {} < {}'.format(path_pattern, prev_path_pattern))
+            prev_path_pattern = path_pattern
 
             # Check that the pattern matches at least one file
             files = files_by_pattern(all_files, path_pattern)
             if not files:
-                add_error("no files matched by pattern {}".format(path_pattern))
+                add_error('no files matched by pattern {}'.format(path_pattern))
 
             for o in owners:
                 # Sanity-check the owner group name
@@ -159,39 +150,73 @@ def action_ci_check(args):
                     add_error("owner {} doesn't start with {}".format(o, CODEOWNER_GROUP_PREFIX))
 
     if not errors:
-        print("No errors found.")
+        print('No errors found.')
     else:
-        print("Errors found!")
+        print('Errors found!')
         for e in errors:
             print(e)
         raise SystemExit(1)
 
 
+def in_order(prev, current):
+    """
+    Return True if the ordering is correct for these two lines ('prev' should be before 'current').
+
+    Codeowners should be ordered alphabetically, except that order is also significant for the codeowners
+    syntax (the last matching line has priority).
+
+    This means that wildcards are allowed in either order (if wildcard placed first, it's placed before a
+    more specific pattern as a catch-all fallback. If wildcard placed second, it's to override the match
+    made on a previous line i.e. '/xyz/**/*.py' to override the owner of the Python files inside /xyz/ ).
+    """
+    if not prev:
+        return True  # first element in file
+
+    def is_separator(c):
+        return c in '-_/'  # ignore differences between separators for ordering purposes
+
+    def is_wildcard(c):
+        return c in '?*'
+
+    # looping until we see a different character
+    for a,b in zip(prev, current):
+        if is_separator(a) and is_separator(b):
+            continue
+        if is_wildcard(a) or is_wildcard(b):
+            return True  # if the strings matched up to one of them having a wildcard, treat as in order
+        if a != b:
+            return b > a
+        assert a == b
+
+    # common substrings up to the common length are the same, so the longer string should be after
+    return len(current) >= len(prev)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        sys.argv[0], description="Internal helper script for working with the CODEOWNERS file."
+        sys.argv[0], description='Internal helper script for working with the CODEOWNERS file.'
     )
-    subparsers = parser.add_subparsers(dest="action")
+    subparsers = parser.add_subparsers(dest='action')
 
     identify = subparsers.add_parser(
-        "identify",
-        help="List the owners of the specified path within IDF."
+        'identify',
+        help='List the owners of the specified path within IDF.'
         "This command doesn't support files inside submodules, or files not added to git repository.",
     )
-    identify.add_argument("path", help="Path of the file relative to the root of the repository")
+    identify.add_argument('path', help='Path of the file relative to the root of the repository')
 
     subparsers.add_parser(
-        "ci-check",
-        help="Check CODEOWNERS file: every line should match at least one file, sanity-check group names, "
-        "check that the file is sorted by paths",
+        'ci-check',
+        help='Check CODEOWNERS file: every line should match at least one file, sanity-check group names, '
+        'check that the file is sorted by paths',
     )
 
     test_pattern = subparsers.add_parser(
-        "test-pattern",
-        help="Print files in the repository for a given CODEOWNERS pattern. Useful when adding new rules."
+        'test-pattern',
+        help='Print files in the repository for a given CODEOWNERS pattern. Useful when adding new rules.'
     )
-    test_pattern.add_argument("--regex", action="store_true", help="Print the equivalent regular expression instead of the file list.")
-    test_pattern.add_argument("pattern", help="Path pattern to get the list of files for")
+    test_pattern.add_argument('--regex', action='store_true', help='Print the equivalent regular expression instead of the file list.')
+    test_pattern.add_argument('pattern', help='Path pattern to get the list of files for')
 
     args = parser.parse_args()
 
@@ -199,10 +224,10 @@ def main():
         parser.print_help()
         parser.exit(1)
 
-    action_func_name = "action_" + args.action.replace("-", "_")
+    action_func_name = 'action_' + args.action.replace('-', '_')
     action_func = globals()[action_func_name]
     action_func(args)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

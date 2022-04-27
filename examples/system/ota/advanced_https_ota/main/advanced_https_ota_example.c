@@ -28,6 +28,10 @@
 #include "esp_wifi.h"
 #endif
 
+#if CONFIG_BT_BLE_ENABLED || CONFIG_BT_NIMBLE_ENABLED
+#include "ble_api.h"
+#endif
+
 static const char *TAG = "advanced_https_ota_example";
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
@@ -86,6 +90,7 @@ void advanced_ota_example_task(void *pvParameter)
         .url = CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL,
         .cert_pem = (char *)server_cert_pem_start,
         .timeout_ms = CONFIG_EXAMPLE_OTA_RECV_TIMEOUT,
+        .keep_alive_enable = true,
     };
 
 #ifdef CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL_FROM_STDIN
@@ -109,6 +114,10 @@ void advanced_ota_example_task(void *pvParameter)
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
         .http_client_init_cb = _http_client_init_cb, // Register a callback to be invoked after esp_http_client is initialized
+#ifdef CONFIG_EXAMPLE_ENABLE_PARTIAL_HTTP_DOWNLOAD
+        .partial_http_download = true,
+        .max_http_request_size = CONFIG_EXAMPLE_HTTP_REQUEST_SIZE,
+#endif
     };
 
     esp_https_ota_handle_t https_ota_handle = NULL;
@@ -188,7 +197,7 @@ void app_main(void)
     */
     ESP_ERROR_CHECK(example_connect());
 
-#if defined(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE) && defined(CONFIG_BOOTLOADER_APP_ANTI_ROLLBACK)
+#if defined(CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE)
     /**
      * We are treating successful WiFi connection as a checkpoint to cancel rollback
      * process and mark newly updated firmware image as active. For production cases,
@@ -208,11 +217,24 @@ void app_main(void)
 #endif
 
 #if CONFIG_EXAMPLE_CONNECT_WIFI
+#if !CONFIG_BT_ENABLED
     /* Ensure to disable any WiFi power save mode, this allows best throughput
      * and hence timings for overall OTA operation.
      */
     esp_wifi_set_ps(WIFI_PS_NONE);
+#else
+    /* WIFI_PS_MIN_MODEM is the default mode for WiFi Power saving. When both
+     * WiFi and Bluetooth are running, WiFI modem has to go down, hence we
+     * need WIFI_PS_MIN_MODEM. And as WiFi modem goes down, OTA download time
+     * increases.
+     */
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+#endif // CONFIG_BT_ENABLED
 #endif // CONFIG_EXAMPLE_CONNECT_WIFI
+
+#if CONFIG_BT_BLE_ENABLED || CONFIG_BT_NIMBLE_ENABLED
+    esp_ble_helper_init();
+#endif
 
     xTaskCreate(&advanced_ota_example_task, "advanced_ota_example_task", 1024 * 8, NULL, 5, NULL);
 }

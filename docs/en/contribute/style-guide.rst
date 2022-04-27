@@ -16,6 +16,8 @@ When doing modifications to third-party code used in ESP-IDF, follow the way tha
 C Code Formatting
 -----------------
 
+.. highlight:: c
+
 .. _style-guide-naming:
 
 Naming
@@ -178,7 +180,9 @@ Commits should only contain files with LF (Unix style) endings.
 
 Windows users can configure git to check out CRLF (Windows style) endings locally and commit LF endings by setting the ``core.autocrlf`` setting. `Github has a document about setting this option <github-line-endings>`. However because MSYS2 uses Unix-style line endings, it is often easier to configure your text editor to use LF (Unix style) endings when editing ESP-IDF source files.
 
-If you accidentally have some commits in your branch that add LF endings, you can convert them to Unix by running this command in an MSYS2 or Unix terminal (change directory to the IDF working directory and check the correct branch is currently checked out, beforehand)::
+If you accidentally have some commits in your branch that add LF endings, you can convert them to Unix by running this command in an MSYS2 or Unix terminal (change directory to the IDF working directory and check the correct branch is currently checked out, beforehand):
+
+.. code-block:: bash
 
   git rebase --exec 'git diff-tree --no-commit-id --name-only -r HEAD | xargs dos2unix && git commit -a --amend --no-edit --allow-empty' master
 
@@ -193,7 +197,9 @@ You can use ``astyle`` program to format your code according to the above recomm
 
 If you are writing a file from scratch, or doing a complete rewrite, feel free to re-format the entire file. If you are changing a small portion of file, don't re-format the code you didn't change. This will help others when they review your changes.
 
-To re-format a file, run::
+To re-format a file, run:
+
+.. code-block:: bash
 
     tools/format.sh components/my_component/file.c
 
@@ -217,6 +223,94 @@ Enums should be defined through the `typedef` and be namespaced::
         MODULE_FOO_THREE
     } module_foo_t;
 
+
+.. _assertions:
+
+Assertions
+^^^^^^^^^^
+
+The standard C ``assert()`` function, defined in ``assert.h`` should be used to check conditions that should be true in source code. In the default configuration, an assert condition that returns ``false`` or 0 will call ``abort()`` and trigger a :doc:`Fatal Error</api-guides/fatal-errors>`.
+
+``assert()`` should only be used to detect unrecoverable errors due to a serious internal logic bug or corruption, where it's not possible for the program to continue. For recoverable errors, including errors that are possible due to invalid external input, an :doc:`error value should be returned </api-guides/error-handling>`.
+
+.. note::
+
+   When asserting a value of type ``esp_err_t``is equal to ``ESP_OK``, use the :ref:`esp-error-check-macro` instead of an ``assert()``.
+
+It's possible to configure ESP-IDF projects with assertions disabled (see :ref:`CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL`). Therefore, functions called in an ``assert()`` statement should not have side-effects.
+
+It's also necessary to use particular techniques to avoid "variable set but not used" warnings when assertions are disabled, due to code patterns such as::
+
+  int res = do_something();
+  assert(res == 0);
+
+Once the ``assert`` is optimized out, the ``res`` value is unused and the compiler will warn about this. However the function ``do_something()`` must still be called, even if assertions are disabled.
+
+When the variable is declared and initialized in a single statement, a good strategy is to cast it to ``void`` on a new line. The compiler will not produce a warning, and the variable can still be optimized out of the final binary::
+
+  int res = do_something();
+  assert(res == 0);
+  (void)res;
+
+If the variable is declared separately, for example if it is used for multiple assertions, then it can be declared with the GCC attribute ``__attribute__((unused))``. The compiler will not produce any unused variable warnings, but the variable can still be optimized out::
+
+  int res __attribute__((unused));
+
+  res = do_something();
+  assert(res == 0);
+
+  res = do_something_else();
+  assert(res != 0);
+
+
+Header file guards
+------------------
+
+All public facing header files should have preprocessor guards. A pragma is preferred::
+
+    #pragma once
+
+over the following pattern::
+
+    #ifndef FILE_NAME_H
+    #define FILE_NAME_H
+    ...
+    #endif // FILE_NAME_H
+
+In addition to guard macros, all C header files should have ``extern "C"`` guards to allow the header to be used from C++ code. Note that the following order should be used: ``pragma once``, then any ``#include`` statements, then ``extern "C"`` guards::
+
+    #pragma once
+
+    #include <stdint.h>
+
+    #ifdef __cplusplus
+    extern "C" {
+    #endif
+
+    /* declarations go here */
+
+    #ifdef __cplusplus
+    }
+    #endif
+
+
+Include statements
+------------------
+
+When writing ``#include`` statements, try to maintain the following order:
+
+* C standard library headers.
+* Other POSIX standard headers and common extensions to them (such as ``sys/queue.h``.)
+* Common IDF headers (``esp_log.h``, ``esp_system.h``, ``esp_timer.h``, ``esp_sleep.h``, etc.)
+* Headers of other components, such as FreeRTOS.
+* Public headers of the current component.
+* Private headers.
+
+Use angle brackets for C standard library headers and other POSIX headers (``#include <stdio.h>``).
+
+Use double quotes for all other headers (``#include "esp_log.h"``).
+
+
 C++ Code Formatting
 -------------------
 
@@ -224,7 +318,7 @@ The same rules as for C apply. Where they are not enough, apply the following ru
 
 File Naming
 ^^^^^^^^^^^^
-C++ Header files have the extension ``.hpp``. C++ source files have the extension ``.cpp``. The latter is important for the compiler to distiguish them from normal C source files.
+C++ Header files have the extension ``.hpp``. C++ source files have the extension ``.cpp``. The latter is important for the compiler to distinguish them from normal C source files.
 
 Naming
 ^^^^^^

@@ -781,6 +781,52 @@ void btm_ble_test_command_complete(UINT8 *p)
     }
 }
 
+
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+/*******************************************************************************
+**
+** Function         BTM_BleEnhancedReceiverTest
+**
+** Description      This function is called to start the LE Enhanced Receiver test
+**
+** Parameter       rx_freq - Frequency Range
+**                 phy - The type of phy that receives data
+**                 modulation_index - modulation index
+**                 p_cmd_cmpl_cback - Command Complete callback
+**
+*******************************************************************************/
+void BTM_BleEnhancedReceiverTest(UINT8 rx_freq, UINT8 phy, UINT8 modulation_index, tBTM_CMPL_CB *p_cmd_cmpl_cback)
+{
+    btm_cb.devcb.p_le_test_cmd_cmpl_cb = p_cmd_cmpl_cback;
+
+    if (btsnd_hcic_ble_enhand_rx_test(rx_freq, phy, modulation_index) == FALSE) {
+        BTM_TRACE_ERROR("%s: Unable to Trigger LE enhanced receiver test", __FUNCTION__);
+    }
+}
+
+/*******************************************************************************
+**
+** Function         BTM_BleEnhancedTransmitterTest
+**
+** Description      This function is called to start the LE Enhanced Transmitter test
+**
+** Parameter       tx_freq - Frequency Range
+**                 test_data_len - Length in bytes of payload data in each packet
+**                 packet_payload - Pattern to use in the payload
+**                 phy - The type of phy that sends data
+**                 p_cmd_cmpl_cback - Command Complete callback
+**
+*******************************************************************************/
+void BTM_BleEnhancedTransmitterTest(UINT8 tx_freq, UINT8 test_data_len,
+                            UINT8 packet_payload, UINT8 phy, tBTM_CMPL_CB *p_cmd_cmpl_cback)
+{
+    btm_cb.devcb.p_le_test_cmd_cmpl_cb = p_cmd_cmpl_cback;
+    if (btsnd_hcic_ble_enhand_tx_test(tx_freq, test_data_len, packet_payload, phy) == FALSE) {
+        BTM_TRACE_ERROR("%s: Unable to Trigger LE enhanced transmitter test", __FUNCTION__);
+    }
+}
+#endif // BLE_50_FEATURE_SUPPORT
+
 /*******************************************************************************
 **
 ** Function         BTM_UseLeLink
@@ -794,7 +840,7 @@ BOOLEAN BTM_UseLeLink (BD_ADDR bd_addr)
 {
     tACL_CONN         *p;
     tBT_DEVICE_TYPE     dev_type;
-    tBLE_ADDR_TYPE      addr_type;
+    tBLE_ADDR_TYPE      addr_type = 0;
     BOOLEAN             use_le = FALSE;
 
     if ((p = btm_bda_to_acl(bd_addr, BT_TRANSPORT_BR_EDR)) != NULL) {
@@ -821,6 +867,7 @@ BOOLEAN BTM_UseLeLink (BD_ADDR bd_addr)
 tBTM_STATUS BTM_SetBleDataLength(BD_ADDR bd_addr, UINT16 tx_pdu_length)
 {
     tACL_CONN *p_acl = btm_bda_to_acl(bd_addr, BT_TRANSPORT_LE);
+
     BTM_TRACE_DEBUG("%s: tx_pdu_length =%d", __FUNCTION__, tx_pdu_length);
 
     if (!controller_get_interface()->supports_ble_packet_extension()) {
@@ -828,12 +875,12 @@ tBTM_STATUS BTM_SetBleDataLength(BD_ADDR bd_addr, UINT16 tx_pdu_length)
         return BTM_CONTROL_LE_DATA_LEN_UNSUPPORTED;
     }
 
-    if (!HCI_LE_DATA_LEN_EXT_SUPPORTED(p_acl->peer_le_features)) {
-        BTM_TRACE_ERROR("%s failed, peer does not support request", __FUNCTION__);
-        return BTM_PEER_LE_DATA_LEN_UNSUPPORTED;
-    }
-
     if (p_acl != NULL) {
+        if (!HCI_LE_DATA_LEN_EXT_SUPPORTED(p_acl->peer_le_features)) {
+            BTM_TRACE_ERROR("%s failed, peer does not support request", __FUNCTION__);
+            return BTM_PEER_LE_DATA_LEN_UNSUPPORTED;
+        }
+
         if (tx_pdu_length > BTM_BLE_DATA_SIZE_MAX) {
             tx_pdu_length =  BTM_BLE_DATA_SIZE_MAX;
         } else if (tx_pdu_length < BTM_BLE_DATA_SIZE_MIN) {
@@ -1956,8 +2003,11 @@ void btm_ble_conn_complete(UINT8 *p, UINT16 evt_len, BOOLEAN enhanced)
         * Once the connection is successful, resolve device address whether it is
         * slave or master*/
 
-        /* if (!match && role == HCI_ROLE_SLAVE && BTM_BLE_IS_RESOLVE_BDA(bda)) { */
-        if (!match && BTM_BLE_IS_RESOLVE_BDA(bda)) {
+#if CONTROLLER_RPA_LIST_ENABLE
+        if (!match && role == HCI_ROLE_SLAVE && bda_type != BLE_ADDR_PUBLIC && BTM_BLE_IS_RESOLVE_BDA(bda)) {
+#else
+        if (!match && bda_type != BLE_ADDR_PUBLIC && BTM_BLE_IS_RESOLVE_BDA(bda)) {
+#endif
             // save the enhanced value to used in btm_ble_resolve_random_addr_on_conn_cmpl func.
             temp_enhanced = enhanced;
             btm_ble_resolve_random_addr(bda, btm_ble_resolve_random_addr_on_conn_cmpl, p_data);
@@ -2027,6 +2077,30 @@ void btm_ble_create_ll_conn_complete (UINT8 status)
         btm_ble_update_mode_operation(HCI_ROLE_UNKNOWN, NULL, status);
     }
 }
+
+/*****************************************************************************
+** Function btm_ble_create_conn_cancel_complete
+**
+** Description LE connection cancel complete.
+**
+******************************************************************************/
+void btm_ble_create_conn_cancel_complete (UINT8 *p)
+{
+    UINT8       status;
+
+    STREAM_TO_UINT8 (status, p);
+
+    switch (status) {
+    case HCI_SUCCESS:
+        if (btm_ble_get_conn_st() == BLE_CONN_CANCEL) {
+            btm_ble_set_conn_st (BLE_CONN_IDLE);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 /*****************************************************************************
 **  Function        btm_proc_smp_cback
 **

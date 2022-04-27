@@ -6,17 +6,22 @@ I2C 驱动程序
 概述
 ---------
 
-I2C 是一种串行同步半双工式通信协议，总线上可以同时挂载多个主机和从机。I2C 总线由串行数据线 (SDA) 线和串行时钟线 (SCL) 线构成。这些线都需要上拉电阻。
+I2C 是一种串行同步半双工通信协议，总线上可以同时挂载多个主机和从机。I2C 总线由串行数据线 (SDA) 和串行时钟线 (SCL) 线构成。这些线都需要上拉电阻。
 
 I2C 具有简单且制造成本低廉等优点，主要用于低速外围设备的短距离通信（一英尺以内）。
 
-{IDF_TARGET_NAME} 有两个 I2C 控制器（也称为端口），负责处理在 I2C 两根总线上的通信。每个控制器都可以设置为主机或从机。例如，可以同时让一个控制器用作主机，另一个用作从机。
+.. only:: esp32c3
 
+    {IDF_TARGET_NAME} 只有一个 I2C 控制器（也称为端口），负责处理在 I2C 总线上的通信。每个控制器都可以设置为主机或从机。
+
+.. only:: not esp32c3
+
+    {IDF_TARGET_NAME} 有两个 I2C 控制器（也称为端口），负责处理在 I2C 两根总线上的通信。每个控制器都可以设置为主机或从机。例如，可以同时让一个控制器用作主机，另一个用作从机。
 
 驱动程序的功能
 ---------------
 
-I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备以下功能： 
+I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备以下功能：
 
 - 在主机模式下读写字节
 - 支持从机模式
@@ -32,10 +37,10 @@ I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备�
 2. :ref:`i2c-api-install-driver`- 激活一个 I2C 控制器的驱动，该控制器可为主机也可为从机
 3. 根据是为主机还是从机配置驱动程序，选择合适的项目
 
-   a) :ref:`i2c-api-master-mode` - 发起通信（主机模式）    
+   a) :ref:`i2c-api-master-mode` - 发起通信（主机模式）
    b) :ref:`i2c-api-slave-mode` - 响应主机消息（从机模式）
 
-4. :ref:`i2c-api-interrupt-handling` - 配置和 I2C 中断服务
+4. :ref:`i2c-api-interrupt-handling` - 配置 I2C 中断服务
 5. :ref:`i2c-api-customized-configuration` - 调整默认的 I2C 通信参数（如时序、位序等）
 6. :ref:`i2c-api-error-handling` - 如何识别和处理驱动程序配置和通信错误
 7. :ref:`i2c-api-delete-driver`- 在通信结束时释放 I2C 驱动程序所使用的资源
@@ -62,21 +67,146 @@ I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备�
 
 然后，初始化给定 I2C 端口的配置，请使用端口号和 :cpp:type:`i2c_config_t` 作为函数调用参数来调用 :cpp:func:`i2c_param_config` 函数。
 
+配置示例（主机）：
+
+.. code-block:: c
+
+    int i2c_master_port = 0;
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = I2C_MASTER_SDA_IO,         // select GPIO specific to your project
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = I2C_MASTER_SCL_IO,         // select GPIO specific to your project
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = I2C_MASTER_FREQ_HZ,  // select frequency specific to your project
+        // .clk_flags = 0,          /*!< Optional, you can use I2C_SCLK_SRC_FLAG_* flags to choose i2c source clock here. */
+    };
+
+配置示例（从机）：
+
+.. code-block:: c
+
+    int i2c_slave_port = I2C_SLAVE_NUM;
+    i2c_config_t conf_slave = {
+        .sda_io_num = I2C_SLAVE_SDA_IO,          // select GPIO specific to your project
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = I2C_SLAVE_SCL_IO,          // select GPIO specific to your project
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .mode = I2C_MODE_SLAVE,
+        .slave.addr_10bit_en = 0,
+        .slave.slave_addr = ESP_SLAVE_ADDR,      // address of your project
+    };
+
 在此阶段，:cpp:func:`i2c_param_config` 还将其他 I2C 配置参数设置为 I2C 总线协议规范中定义的默认值。有关默认值及修改默认值的详细信息，请参考 :ref:`i2c-api-customized-configuration`。
 
+源时钟配置
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+增加了 **时钟源分配器**，用于支持不同的时钟源。时钟分配器将选择一个满足所有频率和能力要求的时钟源（如 :cpp:member:`i2c_config_t::clk_flags` 中的要求）。
+
+当 :cpp:member:`i2c_config_t::clk_flags` 为 0 时，时钟分配器将仅根据所需频率进行选择。如果不需要诸如 APB 之类的特殊功能，则可以将时钟分配器配置为仅根据所需频率选择源时钟。为此，请将 :cpp:member:`i2c_config_t::clk_flags` 设置为 0。有关时钟特性，请参见下表。
+
+.. note::
+
+    如果时钟不满足请求的功能，则该时钟不是有效的选项，即，请求的功能中的任何位（clk_flags）在时钟的功能中均为 0。
+
+.. only:: esp32
+
+    .. list-table:: {IDF_TARGET_NAME} 时钟源特性
+       :widths: 5 5 50 20
+       :header-rows: 1
+
+       * - 时钟名称
+         - 时钟频率
+         - SCL 的最大频率
+         - 时钟功能
+       * - APB 时钟
+         - 80 MHz
+         - 4 MHz
+         - /
+
+.. only:: esp32s2
+
+    .. list-table:: {IDF_TARGET_NAME} 时钟源特性
+       :widths: 5 5 50 100
+       :header-rows: 1
+
+       * - 时钟名称
+         - 时钟频率
+         - SCL 的最大频率
+         - 时钟功能
+       * - APB 时钟
+         - 80 MHz
+         - 4 MHz
+         - /
+       * - REF_TICK
+         - 1 MHz
+         - 50 KHz
+         - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
+
+    对 :cpp:member:`i2c_config_t::clk_flags` 的解释如下：
+    1. :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`：当 APB 时钟改变时，时钟的波特率不会改变。
+    2. :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`：支持轻度睡眠模式，APB 时钟则不支持。
+
+.. only:: esp32s3
+
+    .. list-table:: {IDF_TARGET_NAME} 时钟源特性
+       :widths: 5 5 50 20
+       :header-rows: 1
+
+       * - 时钟名称
+         - 时钟频率
+         - SCL 的最大频率
+         - 时钟功能
+       * - XTAL 时钟
+         - 40 MHz
+         - 2 MHz
+         - /
+       * - RTC 时钟
+         - 20 MHz
+         - 1 MHz
+         - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
+
+.. only:: esp32c3
+
+    .. list-table:: {IDF_TARGET_NAME} 时钟源特性
+       :widths: 5 5 50 100
+       :header-rows: 1
+
+       * - 时钟名称
+         - 时钟频率
+         - SCL 的最大频率
+         - 时钟功能
+       * - XTAL 时钟
+         - 40 MHz
+         - 2 MHz
+         - /
+       * - RTC 时钟
+         - 20 MHz
+         - 1 MHz
+         - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
+
+对 :cpp:member:`i2c_config_t::clk_flags` 的解释如下：
+
+1. :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`：当 APB 时钟改变时，时钟的波特率不会改变。
+2. :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`：支持轻度睡眠模式，APB 时钟则不支持。
+3. {IDF_TARGET_NAME} 可能不支持某些标志，请在使用前阅读技术参考手册。
+
+.. note::
+
+    在主机模式下，SCL 的时钟频率不应大于上表中提到的 SCL 的最大频率。
 
 .. _i2c-api-install-driver:
 
 安装驱动程序
 ^^^^^^^^^^^^^^
 
-配置好 I2C 驱动程序后，使用以下参数调用函数  :cpp:func:`i2c_driver_install` 安装驱动程序:
+配置好 I2C 驱动程序后，使用以下参数调用函数 :cpp:func:`i2c_driver_install` 安装驱动程序：
 
 - 端口号，从 :cpp:type:`i2c_port_t` 中二选一
-- 主机或从机模式，从 :cpp:type:`i2c_mode_t` 中选择 
-- （仅限从机模式）分配用于在从机模式下发送和接收数据的缓存区大小。I2C 是一个以主机为中心的总线，数据只能根据主机的请求从从机传输到主机。因此，从机通常有一个发送缓存区，供从应用程序写入数据使用。数据保留在发送缓存区中，由主机自行读取。 
-- 用于分配中断的标志（请参考 ESP_INTR_FLAG_* values in :component_file:`esp_system/include/esp_intr_alloc.h`）
-
+- 主机或从机模式，从 :cpp:type:`i2c_mode_t` 中选择
+- （仅限从机模式）分配用于在从机模式下发送和接收数据的缓存区大小。I2C 是一个以主机为中心的总线，数据只能根据主机的请求从从机传输到主机。因此，从机通常有一个发送缓存区，供从应用程序写入数据使用。数据保留在发送缓存区中，由主机自行读取。
+- 用于分配中断的标志（请参考 :component_file:`esp_hw_support/include/esp_intr_alloc.h` 中 ESP_INTR_FLAG_* 值）
 
 .. _i2c-api-master-mode:
 
@@ -94,7 +224,6 @@ I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备�
 """""""""""""
 
 下面的示例展示如何为 I2C 主机构建命令链接，从而向从机发送 *n* 个字节。
-
 
 .. blockdiag:: ../../../_static/diagrams/i2c-command-link-master-write-blockdiag.diag
     :scale: 100
@@ -115,7 +244,7 @@ I2C 驱动程序管理在 I2C 总线上设备的通信，该驱动程序具备�
 
     函数 :cpp:func:`i2c_master_write_byte` 和 :cpp:func:`i2c_master_write` 都有额外的实参，规定主机是否应确认其有无接受到 ACK 位。
 
-2. 通过调用 :cpp:func:`i2c_master_cmd_begin` 来触发 I2C 控制器执行命令链接。一旦开始执行，就不能再修改命令链接。 
+2. 通过调用 :cpp:func:`i2c_master_cmd_begin` 来触发 I2C 控制器执行命令链接。一旦开始执行，就不能再修改命令链接。
 3. 命令发送后，通过调用 :cpp:func:`i2c_cmd_link_delete` 释放命令链接使用的资源。
 
 
@@ -168,7 +297,7 @@ API 为从机提供以下功能：
 
 - :cpp:func:`i2c_slave_write_buffer`
 
-    发送缓存区是用于存储从机要以 FIFO 顺序发送给主机的所有数据。在主机请求接收前，这些数据一直存储在发送缓存区。函数 :cpp:func:`i2c_slave_write_buffer` 有一个参数，用于指定发送缓存区已满时的块时间。这将允许从机应用程序在指定的超时设定内等待发送缓存区中足够的可用空间。 
+    发送缓存区是用于存储从机要以 FIFO 顺序发送给主机的所有数据。在主机请求接收前，这些数据一直存储在发送缓存区。函数 :cpp:func:`i2c_slave_write_buffer` 有一个参数，用于指定发送缓存区已满时的块时间。这将允许从机应用程序在指定的超时设定内等待发送缓存区中足够的可用空间。
 
 在 :example:`peripherals/i2c` 中可找到介绍如何使用这些功能的代码示例。
 
@@ -178,7 +307,7 @@ API 为从机提供以下功能：
 中断处理
 ^^^^^^^^^^^
 
-安装驱动程序时，默认情况下会安装中断处理程序。但是，您可以通过调用函数 :cpp:func:`i2c_isr_register` 来注册自己的而不是默认的中断处理程序。在运行自己的中断处理程序时，可以参考 `{IDF_TARGET_NAME} 的技术参考手册（PDF） <{IDF_TARGET_TRM_EN_URL}>`_，以获取有关 I2C 控制器触发的中断描述。 
+安装驱动程序时，默认情况下会安装中断处理程序。但是，您可以通过调用函数 :cpp:func:`i2c_isr_register` 来注册自己的而不是默认的中断处理程序。在运行自己的中断处理程序时，可以参考 *{IDF_TARGET_NAME} 技术参考手册* > *I2C 控制器 (I2C)* > *中断* [`PDF <{IDF_TARGET_TRM_CN_URL}#i2c>`__]，以获取有关 I2C 控制器触发的中断描述。
 
 调用函数 :cpp:func:`i2c_isr_free` 删除中断处理程序。
 
@@ -187,7 +316,7 @@ API 为从机提供以下功能：
 用户自定义配置
 ^^^^^^^^^^^^^^^
 
-如本节末尾所述 :ref:`i2c-api-configure-driver`, 函数 :cpp:func:`i2c_param_config` 在初始化 I2C 端口的驱动程序配置时，也会将几个 I2C 通信参数设置为 `I2C 总线协议规范 <https://www.nxp.com/docs/en/user-guide/UM10204.pdf>`_ 规定的默认值。 其他一些相关参数已在 I2C 控制器的寄存器中预先配置。
+如本节末尾所述 :ref:`i2c-api-configure-driver`，函数 :cpp:func:`i2c_param_config` 在初始化 I2C 端口的驱动程序配置时，也会将几个 I2C 通信参数设置为 `I2C 总线协议规范 <https://www.nxp.com/docs/en/user-guide/UM10204.pdf>`_ 规定的默认值。 其他一些相关参数已在 I2C 控制器的寄存器中预先配置。
 
 通过调用下表中提供的专用函数，可以将所有这些参数更改为用户自定义值。请注意，时序值是在 APB 时钟周期中定义。APB 的频率在 :cpp:type:`I2C_APB_CLK_FREQ` 中指定。
 
@@ -211,16 +340,15 @@ API 为从机提供以下功能：
      - :cpp:func:`i2c_set_data_mode`
 
 
-上述每个函数都有一个 *_get_* 对应项来检查当前设置的值。例如，调用 :cpp:func:`i2c_get_timeout` 来检查 I2C 超时值。 
+上述每个函数都有一个 *_get_* 对应项来检查当前设置的值。例如，调用 :cpp:func:`i2c_get_timeout` 来检查 I2C 超时值。
 
-要检查在驱动程序配置过程中设置的参数默认值，请参考文件 :component_file:`driver/i2c.c` 并查找带有后缀 ``_DEFAULT`` 的定义。 
+要检查在驱动程序配置过程中设置的参数默认值，请参考文件 :component_file:`driver/i2c.c` 并查找带有后缀 ``_DEFAULT`` 的定义。
 
 通过函数 :cpp:func:`i2c_set_pin` 可以为 SDA 和 SCL 信号选择不同的管脚并改变上拉配置。如果要修改已经输入的值，请使用函数 :cpp:func:`i2c_param_config`。
 
-
 .. 注解 ::
 
-    {IDF_TARGET_NAME} 的内部上拉电阻范围为几万欧姆，因此在大多数情况下，它们本身不足以用作 I2C 上拉电阻。建议用户使用阻值在 `I2C 总线协议规范 <https://www.nxp.com/docs/en/user-guide/UM10204.pdf>`_ 规定范围内的上拉电阻。  
+    {IDF_TARGET_NAME} 的内部上拉电阻范围为几万欧姆，因此在大多数情况下，它们本身不足以用作 I2C 上拉电阻。建议用户使用阻值在 `I2C 总线协议规范 <https://www.nxp.com/docs/en/user-guide/UM10204.pdf>`_ 规定范围内的上拉电阻。
 
 
 .. _i2c-api-error-handling:
@@ -240,13 +368,14 @@ API 为从机提供以下功能：
 删除驱动程序
 ^^^^^^^^^^^^^
 
-如果使用 :cpp:func:`i2c_driver_install` 建立 I2C 通信，一段时间后不再需要 I2C 通信，则可以通过调用 :cpp:func:`i2c_driver_delete` 来移除驱动程序以释放分配的资源。  
+当使用 :cpp:func:`i2c_driver_install` 建立 I2C 通信，一段时间后不再需要 I2C 通信时，可以通过调用 :cpp:func:`i2c_driver_delete` 来移除驱动程序以释放分配的资源。
 
+由于函数 :cpp:func:`i2c_driver_delete` 无法保证线程安全性，请在调用该函数移除驱动程序前务必确保所有的线程都已停止使用驱动程序。
 
 应用示例
 ----------
 
-I2C 主机和从机示例：:example:`peripherals/i2c`
+I2C 主机和从机示例：:example:`peripherals/i2c`。
 
 
 API 参考

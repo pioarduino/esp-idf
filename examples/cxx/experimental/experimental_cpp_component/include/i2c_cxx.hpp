@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//         http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 
@@ -419,6 +411,7 @@ protected:
 private:
     class CompTransferNode {
     public:
+        virtual ~CompTransferNode() { }
         virtual void queue_cmd(i2c_cmd_handle_t handle, uint8_t i2c_addr) = 0;
         virtual void process_result(std::vector<std::vector<uint8_t> > &read_results) { }
     };
@@ -475,7 +468,7 @@ TReturn I2CTransfer<TReturn>::do_transfer(i2c_port_t i2c_num, uint8_t i2c_addr)
 
     CHECK_THROW_SPECIFIC(i2c_master_stop(cmd_link.handle), I2CException);
 
-    CHECK_THROW_SPECIFIC(i2c_master_cmd_begin(i2c_num, cmd_link.handle, 1000 / portTICK_RATE_MS), I2CTransferException);
+    CHECK_THROW_SPECIFIC(i2c_master_cmd_begin(i2c_num, cmd_link.handle, driver_timeout / portTICK_RATE_MS), I2CTransferException);
 
     return process_result();
 }

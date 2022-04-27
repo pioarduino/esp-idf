@@ -55,7 +55,9 @@ typedef struct {
                                      *   The amount should be larger than dmadesc_n. The driver should ensure that
                                      *   the data to be sent is shorter than the descriptors can hold.
                                      */
-    int dmadesc_n;                  ///< The amount of descriptors of both ``dmadesc_tx`` and ``dmadesc_rx`` that the HAL can use.
+    int           dmadesc_n;        ///< The amount of descriptors of both ``dmadesc_tx`` and ``dmadesc_rx`` that the HAL can use.
+    uint32_t      tx_dma_chan;      ///< TX DMA channel
+    uint32_t      rx_dma_chan;      ///< RX DMA channel
 
     /*
      * configurations to be filled after ``spi_slave_hal_init``. Updated to
@@ -89,8 +91,8 @@ typedef struct {
 /**
  * Init the peripheral and the context.
  *
- * @param hal     Context of the HAL layer.
- * @param host_id Index of the SPI peripheral. 0 for SPI1, 1 for HSPI (SPI2) and 2 for VSPI (SPI3).
+ * @param hal        Context of the HAL layer.
+ * @param hal_config Configuration of the HAL
  */
 void spi_slave_hal_init(spi_slave_hal_context_t *hal, const spi_slave_hal_config_t *hal_config);
 

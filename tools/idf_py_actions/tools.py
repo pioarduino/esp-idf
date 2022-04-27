@@ -1,9 +1,10 @@
-import click
 import os
 import re
 import subprocess
 import sys
 from io import open
+
+import click
 
 from .constants import GENERATORS
 from .errors import FatalError
@@ -29,8 +30,8 @@ def realpath(path):
 
 
 def _idf_version_from_cmake():
-    version_path = os.path.join(os.environ["IDF_PATH"], "tools/cmake/version.cmake")
-    regex = re.compile(r"^\s*set\s*\(\s*IDF_VERSION_([A-Z]{5})\s+(\d+)")
+    version_path = os.path.join(os.environ['IDF_PATH'], 'tools/cmake/version.cmake')
+    regex = re.compile(r'^\s*set\s*\(\s*IDF_VERSION_([A-Z]{5})\s+(\d+)')
     ver = {}
     try:
         with open(version_path) as f:
@@ -40,10 +41,15 @@ def _idf_version_from_cmake():
                 if m:
                     ver[m.group(1)] = m.group(2)
 
-        return "v%s.%s.%s" % (ver["MAJOR"], ver["MINOR"], ver["PATCH"])
+        return 'v%s.%s.%s' % (ver['MAJOR'], ver['MINOR'], ver['PATCH'])
     except (KeyError, OSError):
-        sys.stderr.write("WARNING: Cannot find ESP-IDF version in version.cmake\n")
+        sys.stderr.write('WARNING: Cannot find ESP-IDF version in version.cmake\n')
         return None
+
+
+def get_target(path, sdkconfig_filename='sdkconfig'):
+    path = os.path.join(path, sdkconfig_filename)
+    return get_sdkconfig_value(path, 'CONFIG_IDF_TARGET')
 
 
 def idf_version():
@@ -52,28 +58,29 @@ def idf_version():
     #  Try to get version from git:
     try:
         version = subprocess.check_output([
-            "git",
-            "--git-dir=%s" % os.path.join(os.environ["IDF_PATH"], '.git'),
-            "--work-tree=%s" % os.environ["IDF_PATH"], "describe", "--tags", "--dirty"
+            'git',
+            '--git-dir=%s' % os.path.join(os.environ['IDF_PATH'], '.git'),
+            '--work-tree=%s' % os.environ['IDF_PATH'],
+            'describe', '--tags', '--dirty', '--match', 'v*.*',
         ]).decode('utf-8', 'ignore').strip()
     except (subprocess.CalledProcessError, UnicodeError):
         # if failed, then try to parse cmake.version file
-        sys.stderr.write("WARNING: Git version unavailable, reading from source\n")
+        sys.stderr.write('WARNING: Git version unavailable, reading from source\n')
         version = _idf_version_from_cmake()
 
     return version
 
 
-def run_tool(tool_name, args, cwd, env=dict()):
+def run_tool(tool_name, args, cwd, env=dict(), custom_error_handler=None):
     def quote_arg(arg):
         " Quote 'arg' if necessary "
-        if " " in arg and not (arg.startswith('"') or arg.startswith("'")):
+        if ' ' in arg and not (arg.startswith('"') or arg.startswith("'")):
             return "'" + arg + "'"
         return arg
 
     args = [str(arg) for arg in args]
-    display_args = " ".join(quote_arg(arg) for arg in args)
-    print("Running %s in directory %s" % (tool_name, quote_arg(cwd)))
+    display_args = ' '.join(quote_arg(arg) for arg in args)
+    print('Running %s in directory %s' % (tool_name, quote_arg(cwd)))
     print('Executing "%s"...' % str(display_args))
 
     env_copy = dict(os.environ)
@@ -90,16 +97,19 @@ def run_tool(tool_name, args, cwd, env=dict()):
         # Note: we explicitly pass in os.environ here, as we may have set IDF_PATH there during startup
         subprocess.check_call(args, env=env_copy, cwd=cwd)
     except subprocess.CalledProcessError as e:
-        raise FatalError("%s failed with exit code %d" % (tool_name, e.returncode))
+        if custom_error_handler:
+            custom_error_handler(e)
+        else:
+            raise FatalError('%s failed with exit code %d' % (tool_name, e.returncode))
 
 
-def run_target(target_name, args, env=dict()):
-    generator_cmd = GENERATORS[args.generator]["command"]
+def run_target(target_name, args, env=dict(), custom_error_handler=None):
+    generator_cmd = GENERATORS[args.generator]['command']
 
     if args.verbose:
-        generator_cmd += [GENERATORS[args.generator]["verbose_flag"]]
+        generator_cmd += [GENERATORS[args.generator]['verbose_flag']]
 
-    run_tool(generator_cmd[0], generator_cmd + [target_name], args.build_dir, env)
+    run_tool(generator_cmd[0], generator_cmd + [target_name], args.build_dir, env, custom_error_handler)
 
 
 def _strip_quotes(value, regexp=re.compile(r"^\"(.*)\"$|^'(.*)'$|^(.*)$")):
@@ -123,7 +133,7 @@ def _parse_cmakecache(path):
         for line in f:
             # cmake cache lines look like: CMAKE_CXX_FLAGS_DEBUG:STRING=-g
             # groups are name, type, value
-            m = re.match(r"^([^#/:=]+):([^:=]+)=(.*)\n$", line)
+            m = re.match(r'^([^#/:=]+):([^:=]+)=(.*)\n$', line)
             if m:
                 result[m.group(1)] = m.group(3)
     return result
@@ -137,7 +147,7 @@ def _new_cmakecache_entries(cache_path, new_cache_entries):
         current_cache = _parse_cmakecache(cache_path)
 
         for entry in new_cache_entries:
-            key, value = entry.split("=", 1)
+            key, value = entry.split('=', 1)
             current_value = current_cache.get(key, None)
             if current_value is None or _strip_quotes(value) != current_value:
                 return True
@@ -150,7 +160,7 @@ def _detect_cmake_generator(prog_name):
     Find the default cmake generator, if none was specified. Raises an exception if no valid generator is found.
     """
     for (generator_name,  generator) in GENERATORS.items():
-        if executable_exists(generator["version"]):
+        if executable_exists(generator['version']):
             return generator_name
     raise FatalError("To use %s, either the 'ninja' or 'GNU make' build tool must be available in the PATH" % prog_name)
 
@@ -169,11 +179,11 @@ def ensure_build_directory(args, prog_name, always_run_cmake=False):
     # Verify the project directory
     if not os.path.isdir(project_dir):
         if not os.path.exists(project_dir):
-            raise FatalError("Project directory %s does not exist" % project_dir)
+            raise FatalError('Project directory %s does not exist' % project_dir)
         else:
-            raise FatalError("%s must be a project directory" % project_dir)
-    if not os.path.exists(os.path.join(project_dir, "CMakeLists.txt")):
-        raise FatalError("CMakeLists.txt not found in project directory %s" % project_dir)
+            raise FatalError('%s must be a project directory' % project_dir)
+    if not os.path.exists(os.path.join(project_dir, 'CMakeLists.txt')):
+        raise FatalError('CMakeLists.txt not found in project directory %s' % project_dir)
 
     # Verify/create the build directory
     build_dir = args.build_dir
@@ -181,33 +191,33 @@ def ensure_build_directory(args, prog_name, always_run_cmake=False):
         os.makedirs(build_dir)
 
     # Parse CMakeCache, if it exists
-    cache_path = os.path.join(build_dir, "CMakeCache.txt")
+    cache_path = os.path.join(build_dir, 'CMakeCache.txt')
     cache = _parse_cmakecache(cache_path) if os.path.exists(cache_path) else {}
 
     # Validate or set IDF_TARGET
     _guess_or_check_idf_target(args, prog_name, cache)
 
-    args.define_cache_entry.append("CCACHE_ENABLE=%d" % args.ccache)
+    args.define_cache_entry.append('CCACHE_ENABLE=%d' % args.ccache)
 
     if always_run_cmake or _new_cmakecache_entries(cache_path, args.define_cache_entry):
         if args.generator is None:
             args.generator = _detect_cmake_generator(prog_name)
         try:
             cmake_args = [
-                "cmake",
-                "-G",
+                'cmake',
+                '-G',
                 args.generator,
-                "-DPYTHON_DEPS_CHECKED=1",
-                "-DESP_PLATFORM=1",
+                '-DPYTHON_DEPS_CHECKED=1',
+                '-DESP_PLATFORM=1',
             ]
             if args.cmake_warn_uninitialized:
-                cmake_args += ["--warn-uninitialized"]
+                cmake_args += ['--warn-uninitialized']
 
             if args.define_cache_entry:
-                cmake_args += ["-D" + d for d in args.define_cache_entry]
+                cmake_args += ['-D' + d for d in args.define_cache_entry]
             cmake_args += [project_dir]
 
-            run_tool("cmake", cmake_args, cwd=args.build_dir)
+            run_tool('cmake', cmake_args, cwd=args.build_dir)
         except Exception:
             # don't allow partially valid CMakeCache.txt files,
             # to keep the "should I run cmake?" logic simple
@@ -219,7 +229,7 @@ def ensure_build_directory(args, prog_name, always_run_cmake=False):
     cache = _parse_cmakecache(cache_path) if os.path.exists(cache_path) else {}
 
     try:
-        generator = cache["CMAKE_GENERATOR"]
+        generator = cache['CMAKE_GENERATOR']
     except KeyError:
         generator = _detect_cmake_generator(prog_name)
     if args.generator is None:
@@ -229,7 +239,7 @@ def ensure_build_directory(args, prog_name, always_run_cmake=False):
                          (generator, args.generator, prog_name))
 
     try:
-        home_dir = cache["CMAKE_HOME_DIRECTORY"]
+        home_dir = cache['CMAKE_HOME_DIRECTORY']
         if realpath(home_dir) != realpath(project_dir):
             raise FatalError(
                 "Build directory '%s' configured for project '%s' not '%s'. Run '%s fullclean' to start again." %
@@ -240,14 +250,14 @@ def ensure_build_directory(args, prog_name, always_run_cmake=False):
 
 def merge_action_lists(*action_lists):
     merged_actions = {
-        "global_options": [],
-        "actions": {},
-        "global_action_callbacks": [],
+        'global_options': [],
+        'actions': {},
+        'global_action_callbacks': [],
     }
     for action_list in action_lists:
-        merged_actions["global_options"].extend(action_list.get("global_options", []))
-        merged_actions["actions"].update(action_list.get("actions", {}))
-        merged_actions["global_action_callbacks"].extend(action_list.get("global_action_callbacks", []))
+        merged_actions['global_options'].extend(action_list.get('global_options', []))
+        merged_actions['actions'].update(action_list.get('actions', {}))
+        merged_actions['global_action_callbacks'].extend(action_list.get('global_action_callbacks', []))
     return merged_actions
 
 
@@ -256,14 +266,14 @@ def get_sdkconfig_value(sdkconfig_file, key):
     Return the value of given key from sdkconfig_file.
     If sdkconfig_file does not exist or the option is not present, returns None.
     """
-    assert key.startswith("CONFIG_")
+    assert key.startswith('CONFIG_')
     if not os.path.exists(sdkconfig_file):
         return None
     # keep track of the last seen value for the given key
     value = None
     # if the value is quoted, this excludes the quotes from the value
     pattern = re.compile(r"^{}=\"?([^\"]*)\"?$".format(key))
-    with open(sdkconfig_file, "r") as f:
+    with open(sdkconfig_file, 'r') as f:
         for line in f:
             match = re.match(pattern, line)
             if match:
@@ -275,7 +285,7 @@ def is_target_supported(project_path, supported_targets):
     """
     Returns True if the active target is supported, or False otherwise.
     """
-    return get_sdkconfig_value(os.path.join(project_path, "sdkconfig"), 'CONFIG_IDF_TARGET') in supported_targets
+    return get_target(project_path) in supported_targets
 
 
 def _guess_or_check_idf_target(args, prog_name, cache):
@@ -288,14 +298,11 @@ def _guess_or_check_idf_target(args, prog_name, cache):
     """
     # Default locations of sdkconfig files.
     # FIXME: they may be overridden in the project or by a CMake variable (IDF-1369).
-    sdkconfig_path = os.path.join(args.project_dir, "sdkconfig")
-    sdkconfig_defaults_path = os.path.join(args.project_dir, "sdkconfig.defaults")
-
     # These are used to guess the target from sdkconfig, or set the default target by sdkconfig.defaults.
-    idf_target_from_sdkconfig = get_sdkconfig_value(sdkconfig_path, "CONFIG_IDF_TARGET")
-    idf_target_from_sdkconfig_defaults = get_sdkconfig_value(sdkconfig_defaults_path, "CONFIG_IDF_TARGET")
-    idf_target_from_env = os.environ.get("IDF_TARGET")
-    idf_target_from_cache = cache.get("IDF_TARGET")
+    idf_target_from_sdkconfig = get_target(args.project_dir)
+    idf_target_from_sdkconfig_defaults = get_target(args.project_dir, 'sdkconfig.defaults')
+    idf_target_from_env = os.environ.get('IDF_TARGET')
+    idf_target_from_cache = cache.get('IDF_TARGET')
 
     if not cache and not idf_target_from_env:
         # CMakeCache.txt does not exist yet, and IDF_TARGET is not set in the environment.
@@ -303,7 +310,7 @@ def _guess_or_check_idf_target(args, prog_name, cache):
         if guessed_target:
             if args.verbose:
                 print("IDF_TARGET is not set, guessed '%s' from sdkconfig" % (guessed_target))
-            args.define_cache_entry.append("IDF_TARGET=" + guessed_target)
+            args.define_cache_entry.append('IDF_TARGET=' + guessed_target)
 
     elif idf_target_from_env:
         # Let's check that IDF_TARGET values are consistent
@@ -336,7 +343,7 @@ class TargetChoice(click.Choice):
 
     def convert(self, value, param, ctx):
         def normalize(str):
-            return str.lower().replace("-", "")
+            return str.lower().replace('-', '')
 
         saved_token_normalize_func = ctx.token_normalize_func
         ctx.token_normalize_func = normalize

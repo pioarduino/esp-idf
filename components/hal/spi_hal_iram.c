@@ -16,6 +16,7 @@
 // make these functions in a seperate file to make sure all LL functions are in the IRAM.
 
 #include "hal/spi_hal.h"
+#include "hal/assert.h"
 #include "soc/soc_caps.h"
 
 //This GDMA related part will be introduced by GDMA dedicated APIs in the future. Here we temporarily use macros.
@@ -23,15 +24,15 @@
 #include "soc/gdma_struct.h"
 #include "hal/gdma_ll.h"
 
-#define spi_dma_ll_rx_reset(dev)                             gdma_ll_rx_reset_channel(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL)
-#define spi_dma_ll_tx_reset(dev)                             gdma_ll_tx_reset_channel(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL);
-#define spi_dma_ll_rx_start(dev, addr) do {\
-            gdma_ll_rx_set_desc_addr(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL, (uint32_t)addr);\
-            gdma_ll_rx_start(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL);\
+#define spi_dma_ll_rx_reset(dev, chan)                             gdma_ll_rx_reset_channel(&GDMA, chan)
+#define spi_dma_ll_tx_reset(dev, chan)                             gdma_ll_tx_reset_channel(&GDMA, chan);
+#define spi_dma_ll_rx_start(dev, chan, addr) do {\
+            gdma_ll_rx_set_desc_addr(&GDMA, chan, (uint32_t)addr);\
+            gdma_ll_rx_start(&GDMA, chan);\
         } while (0)
-#define spi_dma_ll_tx_start(dev, addr) do {\
-            gdma_ll_tx_set_desc_addr(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL, (uint32_t)addr);\
-            gdma_ll_tx_start(&GDMA, SOC_GDMA_SPI2_DMA_CHANNEL);\
+#define spi_dma_ll_tx_start(dev, chan, addr) do {\
+            gdma_ll_tx_set_desc_addr(&GDMA, chan, (uint32_t)addr);\
+            gdma_ll_tx_start(&GDMA, chan);\
         } while (0)
 #endif
 
@@ -64,9 +65,9 @@ void spi_hal_setup_trans(spi_hal_context_t *hal, const spi_hal_dev_config_t *dev
     //clear int bit
     spi_ll_clear_int_stat(hal->hw);
     //We should be done with the transmission.
-    assert(spi_ll_get_running_cmd(hw) == 0);
-
-    spi_ll_master_set_io_mode(hw, trans->io_mode);
+    HAL_ASSERT(spi_ll_get_running_cmd(hw) == 0);
+    //set transaction line mode
+    spi_ll_master_set_line_mode(hw, trans->line_mode);
 
     int extra_dummy = 0;
     //when no_dummy is not set and in half-duplex mode, sets the dummy bit if RX phase exist
@@ -130,6 +131,9 @@ void spi_hal_setup_trans(spi_hal_context_t *hal, const spi_hal_dev_config_t *dev
     spi_ll_set_command(hw, trans->cmd, cmdlen, dev->tx_lsbfirst);
     spi_ll_set_address(hw, trans->addr, addrlen, dev->tx_lsbfirst);
 
+    //Configure keep active CS
+    spi_ll_master_keep_cs(hw, trans->cs_keep_active);
+
     //Save the transaction attributes for internal usage.
     memcpy(&hal->trans_config, trans, sizeof(spi_hal_trans_config_t));
 }
@@ -143,33 +147,38 @@ void spi_hal_prepare_data(spi_hal_context_t *hal, const spi_hal_dev_config_t *de
         if (!hal->dma_enabled) {
             //No need to setup anything; we'll copy the result out of the work registers directly later.
         } else {
-            lldesc_setup_link(hal->dma_config.dmadesc_rx, trans->rcv_buffer, ((trans->rx_bitlen + 7) / 8), true);
+            lldesc_setup_link(hal->dmadesc_rx, trans->rcv_buffer, ((trans->rx_bitlen + 7) / 8), true);
 
-            spi_dma_ll_rx_reset(hal->dma_in);
-            spi_ll_dma_rx_fifo_reset(hal->dma_in);
+            spi_dma_ll_rx_reset(hal->dma_in, hal->rx_dma_chan);
+            spi_ll_dma_rx_fifo_reset(hal->hw);
+            spi_ll_infifo_full_clr(hal->hw);
             spi_ll_dma_rx_enable(hal->hw, 1);
-            spi_dma_ll_rx_start(hal->dma_in, hal->dma_config.dmadesc_rx);
+            spi_dma_ll_rx_start(hal->dma_in, hal->rx_dma_chan, hal->dmadesc_rx);
         }
 
-    } else {
+    }
+#if CONFIG_IDF_TARGET_ESP32
+    else {
         //DMA temporary workaround: let RX DMA work somehow to avoid the issue in ESP32 v0/v1 silicon
-        if (hal->dma_enabled) {
+        if (hal->dma_enabled && !dev->half_duplex) {
             spi_ll_dma_rx_enable(hal->hw, 1);
-            spi_dma_ll_rx_start(hal->dma_in, 0);
+            spi_dma_ll_rx_start(hal->dma_in, hal->rx_dma_chan, 0);
         }
     }
+#endif
 
     if (trans->send_buffer) {
         if (!hal->dma_enabled) {
             //Need to copy data to registers manually
             spi_ll_write_buffer(hw, trans->send_buffer, trans->tx_bitlen);
         } else {
-            lldesc_setup_link(hal->dma_config.dmadesc_tx, trans->send_buffer, (trans->tx_bitlen + 7) / 8, false);
+            lldesc_setup_link(hal->dmadesc_tx, trans->send_buffer, (trans->tx_bitlen + 7) / 8, false);
 
-            spi_dma_ll_tx_reset(hal->dma_out);
-            spi_ll_dma_tx_fifo_reset(hal->dma_in);
+            spi_dma_ll_tx_reset(hal->dma_out, hal->tx_dma_chan);
+            spi_ll_dma_tx_fifo_reset(hal->hw);
+            spi_ll_outfifo_empty_clr(hal->hw);
             spi_ll_dma_tx_enable(hal->hw, 1);
-            spi_dma_ll_tx_start(hal->dma_out, hal->dma_config.dmadesc_tx);
+            spi_dma_ll_tx_start(hal->dma_out, hal->tx_dma_chan, hal->dmadesc_tx);
         }
     }
 

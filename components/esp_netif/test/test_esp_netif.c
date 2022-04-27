@@ -38,6 +38,8 @@ TEST_CASE("esp_netif: get from if_key", "[esp_netif][leaks=0]")
 
 }
 
+// This is a private esp-netif API, but include here to test it
+bool esp_netif_is_netif_listed(esp_netif_t *esp_netif);
 
 TEST_CASE("esp_netif: create and delete multiple netifs", "[esp_netif][leaks=0]")
 {
@@ -54,12 +56,19 @@ TEST_CASE("esp_netif: create and delete multiple netifs", "[esp_netif][leaks=0]"
         TEST_ASSERT_NOT_NULL(netifs[i]);
     }
 
-    // there's no AP within created stations
-    TEST_ASSERT_EQUAL(NULL, esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"));
+    // there's no AP within created netifs
+    TEST_ASSERT_NULL(esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"));
 
-    // destroy
+    // check that the created netifs are correctly found by their interface keys and globally listed
+    for (int i=0; i<nr_of_netifs; ++i) {
+        TEST_ASSERT_EQUAL(netifs[i], esp_netif_get_handle_from_ifkey(if_keys[i]));
+        TEST_ASSERT_TRUE(esp_netif_is_netif_listed(netifs[i]));
+    }
+
+    // destroy one by one and check it's been removed
     for (int i=0; i<nr_of_netifs; ++i) {
         esp_netif_destroy(netifs[i]);
+        TEST_ASSERT_FALSE(esp_netif_is_netif_listed(netifs[i]));
     }
 
 }
@@ -285,4 +294,62 @@ TEST_CASE("esp_netif: get/set hostname", "[esp_netif]")
     TEST_ASSERT_EQUAL_STRING(hostname, "new_name");
 
     esp_netif_destroy(esp_netif);
+}
+
+TEST_CASE("esp_netif: convert ip address from string", "[esp_netif]")
+{
+    const char *ipv4_src[] = {"127.168.1.1", "255.255.255.0", "305.500.721.801", "127.168.1..", "abc.def.***.ddd"};
+    esp_ip4_addr_t ipv4;
+    TEST_ASSERT_EQUAL(ESP_OK, esp_netif_str_to_ip4(ipv4_src[0], &ipv4));
+    TEST_ASSERT_EQUAL(ipv4.addr, ESP_IP4TOADDR(127, 168, 1, 1));
+    TEST_ASSERT_EQUAL(ESP_OK, esp_netif_str_to_ip4(ipv4_src[1], &ipv4));
+    TEST_ASSERT_EQUAL(ipv4.addr, ESP_IP4TOADDR(255, 255, 255, 0));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, esp_netif_str_to_ip4(ipv4_src[2], &ipv4));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, esp_netif_str_to_ip4(ipv4_src[3], &ipv4));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, esp_netif_str_to_ip4(ipv4_src[4], &ipv4));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_netif_str_to_ip4(NULL, &ipv4));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_netif_str_to_ip4(ipv4_src[0], NULL));
+
+    const char *ipv6_src[] = {"127:168:6:8:188:65:1:0", "255:255:255:0:0:0:65:56", "305:500:721:888:777:458:555:666", "EFGH.127:168::55"};
+    esp_ip6_addr_t ipv6;
+    TEST_ASSERT_EQUAL(ESP_OK, esp_netif_str_to_ip6(ipv6_src[0], &ipv6));
+    TEST_ASSERT_EQUAL(ESP_OK, esp_netif_str_to_ip6(ipv6_src[1], &ipv6));
+    TEST_ASSERT_EQUAL(ESP_OK, esp_netif_str_to_ip6(ipv6_src[2], &ipv6));
+    TEST_ASSERT_NOT_EQUAL(ESP_OK, esp_netif_str_to_ip6(ipv6_src[3], &ipv6));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_netif_str_to_ip6(NULL, &ipv6));
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG, esp_netif_str_to_ip6(ipv6_src[0], NULL));
+}
+
+TEST_CASE("esp_netif: create and destroy default wifi interfaces", "[esp_netif][leaks=0]")
+{
+    // Helper constants to refer default STA and AP's params
+    static const esp_netif_inherent_config_t default_sta_cfg = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
+    static const esp_netif_inherent_config_t default_ap_cfg = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+
+    // create default station
+    esp_netif_t *sta = esp_netif_create_default_wifi_sta();
+
+    // check it gets created and has default params
+    TEST_ASSERT_NOT_NULL(sta);
+    TEST_ASSERT_EQUAL_STRING(default_sta_cfg.if_desc, esp_netif_get_desc(sta));
+    TEST_ASSERT_EQUAL(default_sta_cfg.route_prio, esp_netif_get_route_prio(sta));
+
+    // create default access point
+    esp_netif_t *ap = esp_netif_create_default_wifi_ap();
+
+    // check it gets created and has default params
+    TEST_ASSERT_NOT_NULL(ap);
+    TEST_ASSERT_EQUAL_STRING(default_ap_cfg.if_desc, esp_netif_get_desc(ap));
+    TEST_ASSERT_EQUAL(default_ap_cfg.route_prio, esp_netif_get_route_prio(ap));
+
+    // destroy the station
+    esp_netif_destroy_default_wifi(sta);
+    // destroy the AP
+    esp_netif_destroy_default_wifi(ap);
+
+    // quick check on create-destroy cycle of the default station again
+    sta = NULL;
+    sta = esp_netif_create_default_wifi_sta();
+    TEST_ASSERT_NOT_NULL(sta);
+    esp_netif_destroy_default_wifi(sta);
 }

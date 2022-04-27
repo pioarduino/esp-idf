@@ -80,7 +80,6 @@ void mbedtls_sha1_free( mbedtls_sha1_context *ctx )
     if ( ctx == NULL ) {
         return;
     }
-
     mbedtls_zeroize( ctx, sizeof( mbedtls_sha1_context ) );
 }
 

@@ -238,6 +238,54 @@ void esp_netif_action_disconnected(void *esp_netif, esp_event_base_t base, int32
 void esp_netif_action_got_ip(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data);
 
 /**
+ * @brief Default building block for network interface action upon IPv6 multicast group join
+ *
+ * @note This API can be directly used as event handler
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param base
+ * @param event_id
+ * @param data
+ */
+void esp_netif_action_join_ip6_multicast_group(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data);
+
+/**
+ * @brief Default building block for network interface action upon IPv6 multicast group leave
+ *
+ * @note This API can be directly used as event handler
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param base
+ * @param event_id
+ * @param data
+ */
+void esp_netif_action_leave_ip6_multicast_group(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data);
+
+/**
+ * @brief Default building block for network interface action upon IPv6 address added by the underlying stack
+ *
+ * @note This API can be directly used as event handler
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param base
+ * @param event_id
+ * @param data
+ */
+void esp_netif_action_add_ip6_address(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data);
+
+/**
+ * @brief Default building block for network interface action upon IPv6 address removed by the underlying stack
+ *
+ * @note This API can be directly used as event handler
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param base
+ * @param event_id
+ * @param data
+ */
+void esp_netif_action_remove_ip6_address(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data);
+
+/**
  * @}
  */
 
@@ -615,7 +663,7 @@ esp_err_t esp_netif_get_dns_info(esp_netif_t *esp_netif, esp_netif_dns_type_t ty
 /** @addtogroup ESP_NETIF_NET_IP
  * @{
  */
-
+#if CONFIG_LWIP_IPV6
 /**
  * @brief  Create interface link-local IPv6 address
  *
@@ -674,6 +722,7 @@ esp_err_t esp_netif_get_ip6_global(esp_netif_t *esp_netif, esp_ip6_addr_t *if_ip
  *      number of returned IPv6 addresses
  */
 int esp_netif_get_all_ip6(esp_netif_t *esp_netif, esp_ip6_addr_t if_ip6[]);
+#endif
 
 /**
  * @brief Sets IPv4 address to the specified octets
@@ -706,6 +755,31 @@ char *esp_ip4addr_ntoa(const esp_ip4_addr_t *addr, char *buf, int buflen);
  * @return ip address in network order
 */
 uint32_t esp_ip4addr_aton(const char *addr);
+
+/**
+ * @brief Converts Ascii internet IPv4 address into esp_ip4_addr_t
+ *
+ * @param[in] src IPv4 address in ascii representation (e.g. "127.0.0.1")
+ * @param[out] dst Address of the target esp_ip4_addr_t structure to receive converted address
+ * @return
+ *         - ESP_OK on success
+ *         - ESP_FAIL if conversion failed
+ *         - ESP_ERR_INVALID_ARG if invalid parameter is passed into
+ */
+esp_err_t esp_netif_str_to_ip4(const char *src, esp_ip4_addr_t *dst);
+
+/**
+ * @brief Converts Ascii internet IPv6 address into esp_ip4_addr_t
+ * Zeros in the IP address can be stripped or completely ommited: "2001:db8:85a3:0:0:0:2:1" or "2001:db8::2:1")
+ *
+ * @param[in] src IPv6 address in ascii representation (e.g. ""2001:0db8:85a3:0000:0000:0000:0002:0001")
+ * @param[out] dst Address of the target esp_ip6_addr_t structure to receive converted address
+ * @return
+ *         - ESP_OK on success
+ *         - ESP_FAIL if conversion failed
+ *         - ESP_ERR_INVALID_ARG if invalid parameter is passed into
+ */
+esp_err_t esp_netif_str_to_ip6(const char *src, esp_ip6_addr_t *dst);
 
 /**
  * @}

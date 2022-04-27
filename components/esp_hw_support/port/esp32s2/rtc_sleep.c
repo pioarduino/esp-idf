@@ -1,22 +1,14 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdint.h>
 #include "soc/soc.h"
 #include "soc/rtc.h"
 #include "soc/rtc_cntl_reg.h"
-#include "soc/apb_ctrl_reg.h"
+#include "soc/syscon_reg.h"
 #include "soc/dport_reg.h"
 #include "soc/rtc.h"
 #include "soc/i2s_reg.h"
@@ -40,9 +32,9 @@ void rtc_sleep_pd(rtc_sleep_pd_config_t cfg)
     REG_SET_FIELD(RTC_CNTL_PWC_REG, RTC_CNTL_SLOWMEM_FORCE_LPU, cfg.rtc_fpu);
     REG_SET_FIELD(I2S_PD_CONF_REG(0), I2S_PLC_MEM_FORCE_PU, cfg.i2s_fpu);
     REG_SET_FIELD(I2S_PD_CONF_REG(0), I2S_FIFO_FORCE_PU, cfg.i2s_fpu);
-    REG_SET_FIELD(APB_CTRL_FRONT_END_MEM_PD_REG, APB_CTRL_DC_MEM_FORCE_PU, cfg.fe_fpu);
-    REG_SET_FIELD(APB_CTRL_FRONT_END_MEM_PD_REG, APB_CTRL_PBUS_MEM_FORCE_PU, cfg.fe_fpu);
-    REG_SET_FIELD(APB_CTRL_FRONT_END_MEM_PD_REG, APB_CTRL_AGC_MEM_FORCE_PU, cfg.fe_fpu);
+    REG_SET_FIELD(SYSCON_FRONT_END_MEM_PD_REG, SYSCON_DC_MEM_FORCE_PU, cfg.fe_fpu);
+    REG_SET_FIELD(SYSCON_FRONT_END_MEM_PD_REG, SYSCON_PBUS_MEM_FORCE_PU, cfg.fe_fpu);
+    REG_SET_FIELD(SYSCON_FRONT_END_MEM_PD_REG, SYSCON_AGC_MEM_FORCE_PU, cfg.fe_fpu);
     REG_SET_FIELD(BBPD_CTRL, BB_FFT_FORCE_PU, cfg.bb_fpu);
     REG_SET_FIELD(BBPD_CTRL, BB_DC_EST_FORCE_PU, cfg.bb_fpu);
     REG_SET_FIELD(NRXPD_CTRL, NRX_RX_ROT_FORCE_PU, cfg.nrx_fpu);
@@ -99,19 +91,32 @@ void rtc_sleep_init(rtc_sleep_config_t cfg)
 
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_MONITOR, RTC_CNTL_DBG_ATTEN_MONITOR_DEFAULT);
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_BIAS_SLEEP_MONITOR, RTC_CNTL_BIASSLP_MONITOR_DEFAULT);
-    REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_BIAS_SLEEP_DEEP_SLP, RTC_CNTL_BIASSLP_SLEEP_DEFAULT);
+    REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_BIAS_SLEEP_DEEP_SLP,
+            (!cfg.deep_slp && cfg.xtal_fpu) ? RTC_CNTL_BIASSLP_SLEEP_ON : RTC_CNTL_BIASSLP_SLEEP_DEFAULT);
     REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_PD_CUR_MONITOR, RTC_CNTL_PD_CUR_MONITOR_DEFAULT);
-    REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_PD_CUR_DEEP_SLP, RTC_CNTL_PD_CUR_SLEEP_DEFAULT);
+    REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_PD_CUR_DEEP_SLP,
+            (!cfg.deep_slp && cfg.xtal_fpu) ? RTC_CNTL_PD_CUR_SLEEP_ON : RTC_CNTL_PD_CUR_SLEEP_DEFAULT);
     if (cfg.deep_slp) {
+        CLEAR_PERI_REG_MASK(RTC_CNTL_REG, RTC_CNTL_REGULATOR_FORCE_PU);
         REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_DEEP_SLP, RTC_CNTL_DBG_ATTEN_DEEPSLEEP_DEFAULT);
         SET_PERI_REG_MASK(RTC_CNTL_DIG_PWC_REG, RTC_CNTL_DG_WRAP_PD_EN);
         CLEAR_PERI_REG_MASK(RTC_CNTL_ANA_CONF_REG,
                             RTC_CNTL_CKGEN_I2C_PU | RTC_CNTL_PLL_I2C_PU |
                             RTC_CNTL_RFRX_PBUS_PU | RTC_CNTL_TXRF_I2C_PU);
+        CLEAR_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, RTC_CNTL_BB_I2C_FORCE_PU);
     } else {
-	SET_PERI_REG_MASK(RTC_CNTL_REG, RTC_CNTL_REGULATOR_FORCE_PU);
+        SET_PERI_REG_MASK(RTC_CNTL_REG, RTC_CNTL_REGULATOR_FORCE_PU);
         CLEAR_PERI_REG_MASK(RTC_CNTL_DIG_PWC_REG, RTC_CNTL_DG_WRAP_PD_EN);
-        REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_DEEP_SLP, RTC_CNTL_DBG_ATTEN_LIGHTSLEEP_DEFAULT);
+        REG_SET_FIELD(RTC_CNTL_BIAS_CONF_REG, RTC_CNTL_DBG_ATTEN_DEEP_SLP,
+                cfg.int_8m_pd_en ? RTC_CNTL_DBG_ATTEN_LIGHTSLEEP_DEFAULT : RTC_CNTL_DBG_ATTEN_LIGHTSLEEP_NODROP);
+    }
+
+    //Keep the RTC8M_CLK on in light_sleep mode if the ledc low-speed channel is clocked by RTC8M_CLK.
+    if (!cfg.int_8m_pd_en && GET_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_DIG_CLK8M_EN_M)) {
+        REG_CLR_BIT(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_PD);
+        REG_SET_BIT(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_PU);
+    } else {
+        REG_CLR_BIT(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_PU);
     }
 
     /* enable VDDSDIO control by state machine */
@@ -125,6 +130,10 @@ void rtc_sleep_init(rtc_sleep_config_t cfg)
 
     REG_SET_FIELD(RTC_CNTL_SLP_REJECT_CONF_REG, RTC_CNTL_DEEP_SLP_REJECT_EN, cfg.deep_slp_reject);
     REG_SET_FIELD(RTC_CNTL_SLP_REJECT_CONF_REG, RTC_CNTL_LIGHT_SLP_REJECT_EN, cfg.light_slp_reject);
+    /* Set wait cycle for touch or COCPU after deep sleep and light sleep. */
+    REG_SET_FIELD(RTC_CNTL_TIMER2_REG, RTC_CNTL_ULPCP_TOUCH_START_WAIT, RTC_CNTL_ULPCP_TOUCH_START_WAIT_IN_SLEEP);
+
+    REG_SET_FIELD(RTC_CNTL_OPTIONS0_REG, RTC_CNTL_XTL_FORCE_PU, cfg.xtal_fpu);
 }
 
 void rtc_sleep_low_init(uint32_t slowclk_period)
@@ -142,8 +151,6 @@ void rtc_sleep_set_wakeup_time(uint64_t t)
 /* Read back 'reject' status when waking from light or deep sleep */
 static uint32_t rtc_sleep_finish(uint32_t lslp_mem_inf_fpu);
 
-static const unsigned DEEP_SLEEP_TOUCH_WAIT_CYCLE = 0xFF;
-
 uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu)
 {
     REG_SET_FIELD(RTC_CNTL_WAKEUP_STATE_REG, RTC_CNTL_WAKEUP_ENA, wakeup_opt);
@@ -152,8 +159,8 @@ uint32_t rtc_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp
         REG_SET_BIT(RTC_CNTL_SLP_REJECT_CONF_REG, RTC_CNTL_LIGHT_SLP_REJECT_EN);
     }
 
-    /* Set wait cycle for touch or COCPU after deep sleep. */
-    REG_SET_FIELD(RTC_CNTL_TIMER2_REG, RTC_CNTL_ULPCP_TOUCH_START_WAIT, DEEP_SLEEP_TOUCH_WAIT_CYCLE);
+    SET_PERI_REG_MASK(RTC_CNTL_INT_CLR_REG,
+                      RTC_CNTL_SLP_REJECT_INT_CLR | RTC_CNTL_SLP_WAKEUP_INT_CLR);
 
     /* Start entry into sleep mode */
     SET_PERI_REG_MASK(RTC_CNTL_STATE0_REG, RTC_CNTL_SLEEP_EN);
@@ -173,6 +180,9 @@ uint32_t rtc_deep_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt)
 {
     REG_SET_FIELD(RTC_CNTL_WAKEUP_STATE_REG, RTC_CNTL_WAKEUP_ENA, wakeup_opt);
     WRITE_PERI_REG(RTC_CNTL_SLP_REJECT_CONF_REG, reject_opt);
+
+    SET_PERI_REG_MASK(RTC_CNTL_INT_CLR_REG,
+                      RTC_CNTL_SLP_REJECT_INT_CLR | RTC_CNTL_SLP_WAKEUP_INT_CLR);
 
     /* Calculate RTC Fast Memory CRC (for wake stub) & go to deep sleep
 
@@ -212,23 +222,17 @@ uint32_t rtc_deep_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt)
                  "s32i a2, %4, 0\n"
                  "memw\n"
 
-                 /* Set wait cycle for touch or COCPU after deep sleep (can be moved to C code part?) */
-                 "l32i a2, %5, 0\n"
-                 "and a2, a2, %6\n"
-                 "or a2, a2, %7\n"
-                 "s32i a2, %5, 0\n"
-
                  /* Set register bit to go into deep sleep */
-                 "l32i a2, %8, 0\n"
-                 "or   a2, a2, %9\n"
-                 "s32i a2, %8, 0\n"
+                 "l32i a2, %5, 0\n"
+                 "or   a2, a2, %6\n"
+                 "s32i a2, %5, 0\n"
                  "memw\n"
 
                  /* Wait for sleep reject interrupt (never finishes if successful) */
                  ".Lwaitsleep:"
                  "memw\n"
-                 "l32i a2, %10, 0\n"
-                 "and a2, a2, %11\n"
+                 "l32i a2, %7, 0\n"
+                 "and a2, a2, %8\n"
                  "beqz a2, .Lwaitsleep\n"
 
                  :
@@ -239,13 +243,10 @@ uint32_t rtc_deep_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt)
                    "r" (DPORT_RTC_MEM_CRC_START), // %2
                    "r" (DPORT_RTC_FASTMEM_CRC_REG), // %3
                    "r" (RTC_MEMORY_CRC_REG), // %4
-                   "r" (RTC_CNTL_TIMER2_REG), // %5
-                   "r" (~RTC_CNTL_ULPCP_TOUCH_START_WAIT_M), // %6
-                   "r" (DEEP_SLEEP_TOUCH_WAIT_CYCLE << RTC_CNTL_ULPCP_TOUCH_START_WAIT_S), // %7
-                   "r" (RTC_CNTL_STATE0_REG), // %8
-                   "r" (RTC_CNTL_SLEEP_EN), // %9
-                   "r" (RTC_CNTL_INT_RAW_REG), // %10
-                   "r" (RTC_CNTL_SLP_REJECT_INT_RAW | RTC_CNTL_SLP_WAKEUP_INT_RAW) // %11
+                   "r" (RTC_CNTL_STATE0_REG), // %5
+                   "r" (RTC_CNTL_SLEEP_EN), // %6
+                   "r" (RTC_CNTL_INT_RAW_REG), // %7
+                   "r" (RTC_CNTL_SLP_REJECT_INT_RAW | RTC_CNTL_SLP_WAKEUP_INT_RAW) // %8
                  : "a2" // working register
                  );
 
@@ -264,5 +265,9 @@ static uint32_t rtc_sleep_finish(uint32_t lslp_mem_inf_fpu)
         rtc_sleep_pd_config_t pd_cfg = RTC_SLEEP_PD_CONFIG_ALL(0);
         rtc_sleep_pd(pd_cfg);
     }
+
+    /* Recover default wait cycle for touch or COCPU after wakeup. */
+    REG_SET_FIELD(RTC_CNTL_TIMER2_REG, RTC_CNTL_ULPCP_TOUCH_START_WAIT, RTC_CNTL_ULPCP_TOUCH_START_WAIT_DEFAULT);
+
     return reject;
 }

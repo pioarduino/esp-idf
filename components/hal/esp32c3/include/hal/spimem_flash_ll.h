@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "soc/spi_periph.h"
+#include "soc/spi_mem_struct.h"
 #include "hal/spi_types.h"
 #include "hal/spi_flash_types.h"
 
@@ -103,6 +104,147 @@ static inline void spimem_flash_ll_erase_sector(spi_mem_dev_t *dev)
 static inline void spimem_flash_ll_erase_block(spi_mem_dev_t *dev)
 {
     dev->cmd.flash_be = 1;
+}
+
+/**
+ * Suspend erase/program operation.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ */
+static inline void spimem_flash_ll_suspend(spi_mem_dev_t *dev)
+{
+    dev->flash_sus_ctrl.flash_pes = 1;
+}
+
+/**
+ * Resume suspended erase/program operation.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ */
+static inline void spimem_flash_ll_resume(spi_mem_dev_t *dev)
+{
+    dev->flash_sus_ctrl.flash_per = 1;
+}
+
+/**
+ * Initialize auto suspend mode, and esp32c3 doesn't support disable auto-suspend.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param auto_sus Enable/disable Flash Auto-Suspend.
+ */
+static inline void spimem_flash_ll_auto_suspend_init(spi_mem_dev_t *dev, bool auto_sus)
+{
+    dev->flash_sus_ctrl.flash_pes_en = auto_sus;
+}
+
+/**
+ * Initialize auto resume mode
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param auto_res Enable/Disable Flash Auto-Resume.
+ *
+ */
+static inline void spimem_flash_ll_auto_resume_init(spi_mem_dev_t *dev, bool auto_res)
+{
+    dev->flash_sus_ctrl.pes_per_en = auto_res;
+}
+
+/**
+ * Setup the flash suspend command, may vary from chips to chips.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param sus_cmd Flash suspend command.
+ *
+ */
+static inline void spimem_flash_ll_suspend_cmd_setup(spi_mem_dev_t *dev, uint32_t sus_cmd)
+{
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->flash_sus_cmd, flash_pes_command, sus_cmd);
+}
+
+/**
+ * Setup the flash resume command, may vary from chips to chips.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param res_cmd Flash resume command.
+ *
+ */
+static inline void spimem_flash_ll_resume_cmd_setup(spi_mem_dev_t *dev, uint32_t res_cmd)
+{
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->flash_sus_cmd, flash_per_command, res_cmd);
+}
+
+/**
+ * Setup the flash read suspend status command, may vary from chips to chips.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param pesr_cmd Flash read suspend status command.
+ *
+ */
+static inline void spimem_flash_ll_rd_sus_cmd_setup(spi_mem_dev_t *dev, uint32_t pesr_cmd)
+{
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->flash_sus_cmd, wait_pesr_command, pesr_cmd);
+}
+
+/**
+ * Setup to check SUS/SUS1/SUS2 to ensure the suspend status of flashs.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param sus_check_sus_en 1: enable, 0: disable.
+ *
+ */
+static inline void spimem_flash_ll_sus_check_sus_setup(spi_mem_dev_t *dev, bool sus_check_sus_en)
+{
+    dev->flash_sus_ctrl.sus_timeout_cnt = 5;
+    dev->flash_sus_ctrl.pes_end_en = sus_check_sus_en;
+}
+
+/**
+ * Setup to check SUS/SUS1/SUS2 to ensure the resume status of flashs.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param sus_check_sus_en 1: enable, 0: disable.
+ *
+ */
+static inline void spimem_flash_ll_res_check_sus_setup(spi_mem_dev_t *dev, bool res_check_sus_en)
+{
+    dev->flash_sus_ctrl.sus_timeout_cnt = 5;
+    dev->flash_sus_ctrl.per_end_en = res_check_sus_en;
+}
+
+/**
+ * Set 8 bit command to read suspend status
+ *
+ * @param dev Beginning address of the peripheral registers.
+ */
+static inline void spimem_flash_ll_set_read_sus_status(spi_mem_dev_t *dev, uint32_t sus_conf)
+{
+    dev->flash_sus_ctrl.frd_sus_2b = 0;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->flash_sus_ctrl, pesr_end_msk, sus_conf);
+}
+
+/**
+ * Initialize auto wait idle mode
+ *
+ * @param dev Beginning address of the peripheral registers.
+ * @param auto_waiti Enable/disable auto wait-idle function
+ */
+static inline void spimem_flash_ll_auto_wait_idle_init(spi_mem_dev_t *dev, bool auto_waiti)
+{
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->flash_waiti_ctrl, waiti_cmd, 0x05);
+    dev->flash_sus_ctrl.flash_per_wait_en = auto_waiti;
+    dev->flash_sus_ctrl.flash_pes_wait_en = auto_waiti;
+}
+
+/**
+ * Return the suspend status of erase or program operations.
+ *
+ * @param dev Beginning address of the peripheral registers.
+ *
+ * @return true if suspended, otherwise false.
+ */
+static inline bool spimem_flash_ll_sus_status(spi_mem_dev_t *dev)
+{
+    return dev->sus_status.flash_sus;
 }
 
 /**
@@ -406,6 +548,12 @@ static inline void spimem_flash_ll_set_hold(spi_mem_dev_t *dev, uint32_t hold_n)
 {
     dev->ctrl2.cs_hold_time = hold_n - 1;
     dev->user.cs_hold = (hold_n > 0? 1: 0);
+}
+
+static inline void spimem_flash_ll_set_cs_setup(spi_mem_dev_t *dev, uint32_t cs_setup_time)
+{
+    dev->user.cs_setup = (cs_setup_time > 0 ? 1 : 0);
+    dev->ctrl2.cs_setup_time = cs_setup_time - 1;
 }
 
 #ifdef __cplusplus

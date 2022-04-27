@@ -1,9 +1,9 @@
-// Copyright 2017-2020 Espressif Systems (Shanghai) PTE LTD
+// Copyright 2017-2021 Espressif Systems (Shanghai) PTE LTD
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-//
+
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
@@ -11,7 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#pragma once
+#ifndef _SOC_GPIO_SIG_MAP_H_
+#define _SOC_GPIO_SIG_MAP_H_
 
 #define SPIQ_IN_IDX                   0
 #define SPIQ_OUT_IDX                  0
@@ -118,7 +119,8 @@
 #define BB_DIAG17_IDX                 52
 #define I2S0I_SD3_IN_IDX              53
 #define BB_DIAG18_IDX                 53
-#define BB_DIAG19_IDX                 54
+#define CORE1_GPIO_IN7_IDX            54
+#define CORE1_GPIO_OUT7_IDX           54
 #define USB_EXTPHY_VP_IDX             55
 #define USB_EXTPHY_OEN_IDX            55
 #define USB_EXTPHY_VM_IDX             56
@@ -168,6 +170,10 @@
 #define RMT_SIG_OUT2_IDX              83
 #define RMT_SIG_IN3_IDX               84
 #define RMT_SIG_OUT3_IDX              84
+#define USB_JTAG_TCK_IDX              85
+#define USB_JTAG_TMS_IDX              86
+#define USB_JTAG_TDI_IDX              87
+#define USB_JTAG_TDO_IDX              88
 #define I2CEXT0_SCL_IN_IDX            89
 #define I2CEXT0_SCL_OUT_IDX           89
 #define I2CEXT0_SDA_IN_IDX            90
@@ -226,6 +232,13 @@
 #define SUBSPICS1_OUT_IDX             125
 #define FSPIDQS_OUT_IDX               126
 #define SPI3_CS2_OUT_IDX              127
+#define I2S0O_SD1_OUT_IDX             128
+#define CORE1_GPIO_IN0_IDX            129
+#define CORE1_GPIO_OUT0_IDX           129
+#define CORE1_GPIO_IN1_IDX            130
+#define CORE1_GPIO_OUT1_IDX           130
+#define CORE1_GPIO_IN2_IDX            131
+#define CORE1_GPIO_OUT2_IDX           131
 #define LCD_CS_IDX                    132
 #define CAM_DATA_IN0_IDX              133
 #define LCD_DATA_OUT0_IDX             133
@@ -367,16 +380,16 @@
 #define ANT_SEL5_IDX                  205
 #define ANT_SEL6_IDX                  206
 #define ANT_SEL7_IDX                  207
-#define SIG_IN_FUNC_223_IDX           208
-#define SIG_IN_FUNC223_IDX            208
-#define SIG_IN_FUNC_224_IDX           209
-#define SIG_IN_FUNC224_IDX            209
-#define SIG_IN_FUNC_225_IDX           210
-#define SIG_IN_FUNC225_IDX            210
-#define SIG_IN_FUNC_226_IDX           211
-#define SIG_IN_FUNC226_IDX            211
-#define SIG_IN_FUNC_227_IDX           212
-#define SIG_IN_FUNC227_IDX            212
+#define SIG_IN_FUNC_208_IDX           208
+#define SIG_IN_FUNC208_IDX            208
+#define SIG_IN_FUNC_209_IDX           209
+#define SIG_IN_FUNC209_IDX            209
+#define SIG_IN_FUNC_210_IDX           210
+#define SIG_IN_FUNC210_IDX            210
+#define SIG_IN_FUNC_211_IDX           211
+#define SIG_IN_FUNC211_IDX            211
+#define SIG_IN_FUNC_212_IDX           212
+#define SIG_IN_FUNC212_IDX            212
 #define SDHOST_CDATA_IN_20_IDX        213
 #define SDHOST_CDATA_OUT_20_IDX       213
 #define SDHOST_CDATA_IN_21_IDX        214
@@ -431,4 +444,16 @@
 #define RX_STATUS_IDX                 248
 #define CLK_GPIO_IDX                  249
 #define NBT_BLE_IDX                   250
+#define USB_JTAG_TDO_BRIDGE_IDX       251
+#define USB_JTAG_TRST_IDX             251
+#define CORE1_GPIO_IN3_IDX            252
+#define CORE1_GPIO_OUT3_IDX           252
+#define CORE1_GPIO_IN4_IDX            253
+#define CORE1_GPIO_OUT4_IDX           253
+#define CORE1_GPIO_IN5_IDX            254
+#define CORE1_GPIO_OUT5_IDX           254
+#define CORE1_GPIO_IN6_IDX            255
+#define CORE1_GPIO_OUT6_IDX           255
 #define SIG_GPIO_OUT_IDX              256
+#define GPIO_MAP_DATE_IDX             0x1907040
+#endif  /* _SOC_GPIO_SIG_MAP_H_ */

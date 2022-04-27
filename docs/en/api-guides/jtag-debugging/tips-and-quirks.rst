@@ -4,7 +4,6 @@ Tips and Quirks
 
 This section provides collection of all tips and quirks referred to from various parts of this guide.
 
-
 .. _jtag-debugging-tip-breakpoints:
 
 Breakpoints and watchpoints available
@@ -38,7 +37,7 @@ Offset should be in hex format. To reset to the default behaviour you can specif
 
     .. highlight:: bash
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: run-openocd-appimage-offset
         :end-before: ---
 
@@ -72,8 +71,6 @@ FreeRTOS support
 
 OpenOCD has explicit support for the ESP-IDF FreeRTOS. GDB can see FreeRTOS tasks as threads. Viewing them all can be done using the GDB ``i threads`` command, changing to a certain task is done with ``thread n``, with ``n`` being the number of the thread. FreeRTOS detection can be disabled in target's configuration. For more details see :ref:`jtag-debugging-tip-openocd-configure-target`.
 
-
-
 .. only:: esp32
 
     .. _jtag-debugging-tip-code-flash-voltage:
@@ -86,7 +83,6 @@ OpenOCD has explicit support for the ESP-IDF FreeRTOS. GDB can see FreeRTOS task
     To handle this issue OpenOCD's board configuration file (e.g. ``board\esp32-wrover-kit-3.3v.cfg`` for ESP-WROVER-KIT board) provides ``ESP32_FLASH_VOLTAGE`` parameter to set the idle state of the ``TDO`` line to a specified binary level, therefore reducing the chance of a bad bootup of application due to incorrect flash voltage.
 
     Check specification of ESP32 module connected to JTAG, what is the power supply voltage of SPI flash chip. Then set ``ESP32_FLASH_VOLTAGE`` accordingly. Most WROOM modules use 3.3 V flash. WROVER earlier than ESP32-WROVER-B use 1.8 V flash, while ESP32-WROVER-B and -E modules use 3.3 V flash.
-
 
     .. _jtag-debugging-tip-optimize-jtag-speed:
 
@@ -132,7 +128,7 @@ There are several kinds of OpenOCD configuration files (``*.cfg``). All configur
 
 The following configuration files are available for {IDF_TARGET_NAME}:
 
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
     :start-after: openocd-cfg-files
     :end-before: ---
 
@@ -180,7 +176,7 @@ It is important to set the variable before including the ESP-specific configurat
     * - ``ESP_SEMIHOST_BASEDIR``
       - Set to the path (on the host) which will be the default directory for semihosting functions.
 
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
     :start-after: openocd-target-specific-config-vars
     :end-before: ---
 
@@ -197,9 +193,9 @@ The board can be reset by entering ``mon reset`` or ``mon reset halt`` into GDB.
 Do not use JTAG pins for something else
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Operation of JTAG may be disturbed, if some other h/w is connected to JTAG pins besides {IDF_TARGET_NAME} module and JTAG adapter. {IDF_TARGET_NAME} JTAG us using the following pins:
+Operation of JTAG may be disturbed, if some other h/w is connected to JTAG pins besides {IDF_TARGET_NAME} module and JTAG adapter. {IDF_TARGET_NAME} JTAG is using the following pins:
 
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
     :start-after: jtag-pins
     :end-before: ---
 
@@ -267,19 +263,19 @@ In case you encounter a problem with OpenOCD or GDB programs itself and do not f
 
     OpenOCD:
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: run-openocd-d3
         :end-before: ---
 
     Logging to a file this way will prevent information displayed on the terminal. This may be a good thing taken amount of information provided, when increased debug level ``-d3`` is set. If you still like to see the log on the screen, then use another command instead:
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: run-openocd-d3-tee
         :end-before: ---
 
     Debugger:
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: run-gdb-remotelog
         :end-before: ---
 

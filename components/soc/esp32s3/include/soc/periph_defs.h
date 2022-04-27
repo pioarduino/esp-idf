@@ -1,16 +1,8 @@
-// Copyright 2015-2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 
@@ -28,6 +20,7 @@ typedef enum {
     PERIPH_I2C1_MODULE,
     PERIPH_I2S0_MODULE,
     PERIPH_I2S1_MODULE,
+    PERIPH_LCD_CAM_MODULE,
     PERIPH_TIMG0_MODULE,
     PERIPH_TIMG1_MODULE,
     PERIPH_PWM0_MODULE,
@@ -38,10 +31,9 @@ typedef enum {
     PERIPH_UHCI1_MODULE,
     PERIPH_RMT_MODULE,
     PERIPH_PCNT_MODULE,
-    PERIPH_SPI_MODULE,  //SPI1
-    PERIPH_FSPI_MODULE, //SPI2
-    PERIPH_HSPI_MODULE, //SPI3
-    PERIPH_VSPI_MODULE, //SPI4
+    PERIPH_SPI_MODULE,
+    PERIPH_SPI2_MODULE,
+    PERIPH_SPI3_MODULE,
     PERIPH_SDMMC_MODULE,
     PERIPH_TWAI_MODULE,
     PERIPH_RNG_MODULE,
@@ -52,10 +44,13 @@ typedef enum {
     PERIPH_BT_LC_MODULE,
     PERIPH_AES_MODULE,
     PERIPH_SHA_MODULE,
+    PERIPH_HMAC_MODULE,
+    PERIPH_DS_MODULE,
     PERIPH_RSA_MODULE,
     PERIPH_SYSTIMER_MODULE,
     PERIPH_GDMA_MODULE,
     PERIPH_DEDIC_GPIO_MODULE,
+    PERIPH_SARADC_MODULE,
     PERIPH_MODULE_MAX
 } periph_module_t;
 
@@ -84,8 +79,7 @@ typedef enum {
     ETS_SPI1_INTR_SOURCE,                       /**< interrupt of SPI1, level, SPI1 is for flash read/write, do not use this*/
     ETS_SPI2_INTR_SOURCE,                       /**< interrupt of SPI2, level*/
     ETS_SPI3_INTR_SOURCE,                       /**< interrupt of SPI3, level*/
-    ETS_SPI4_INTR_SOURCE,                       /**< interrupt of SPI4, level*/
-    ETS_LCD_CAM_INTR_SOURCE,                    /**< interrupt of LCD camera, level*/
+    ETS_LCD_CAM_INTR_SOURCE = 24,               /**< interrupt of LCD camera, level*/
     ETS_I2S0_INTR_SOURCE,                       /**< interrupt of I2S0, level*/
     ETS_I2S1_INTR_SOURCE,                       /**< interrupt of I2S1, level*/
     ETS_UART0_INTR_SOURCE,                      /**< interrupt of UART0, level*/
@@ -93,11 +87,8 @@ typedef enum {
     ETS_UART2_INTR_SOURCE,                      /**< interrupt of UART2, level*/
     ETS_SDIO_HOST_INTR_SOURCE,                  /**< interrupt of SD/SDIO/MMC HOST, level*/
     ETS_PWM0_INTR_SOURCE,                       /**< interrupt of PWM0, level, Reserved*/
-
-    ETS_PWM1_INTR_SOURCE = 32,                  /**< interrupt of PWM1, level, Reserved*/
-    ETS_PWM2_INTR_SOURCE,                       /**< interrupt of PWM2, level*/
-    ETS_PWM3_INTR_SOURCE,                       /**< interruot of PWM3, level*/
-    ETS_LEDC_INTR_SOURCE,                       /**< interrupt of LED PWM, level*/
+    ETS_PWM1_INTR_SOURCE,                       /**< interrupt of PWM1, level, Reserved*/
+    ETS_LEDC_INTR_SOURCE = 35,                  /**< interrupt of LED PWM, level*/
     ETS_EFUSE_INTR_SOURCE,                      /**< interrupt of efuse, level, not likely to use*/
     ETS_TWAI_INTR_SOURCE,                       /**< interrupt of can, level*/
     ETS_USB_INTR_SOURCE,                        /**< interrupt of USB, level*/
@@ -108,8 +99,7 @@ typedef enum {
     ETS_I2C_EXT1_INTR_SOURCE,                   /**< interrupt of I2C controller0, level*/
     ETS_SPI2_DMA_INTR_SOURCE,                   /**< interrupt of SPI2 DMA, level*/
     ETS_SPI3_DMA_INTR_SOURCE,                   /**< interrupt of SPI3 DMA, level*/
-    ETS_SPI4_DMA_INTR_SOURCE,                   /**< interrupt of SPI4 DMA, level*/
-    ETS_WDT_INTR_SOURCE,                        /**< will be cancelled*/
+    ETS_WDT_INTR_SOURCE = 47,                   /**< will be cancelled*/
 
     ETS_TIMER1_INTR_SOURCE = 48,
     ETS_TIMER2_INTR_SOURCE,
@@ -129,18 +119,23 @@ typedef enum {
     ETS_DCACHE_SYNC0_INTR_SOURCE,               /**< interrupt of data cache sync done, LEVEL*/
     ETS_ICACHE_SYNC0_INTR_SOURCE,               /**< interrupt of instruction cache sync done, LEVEL*/
     ETS_APB_ADC_INTR_SOURCE,                    /**< interrupt of APB ADC, LEVEL*/
-    ETS_DMA_CH0_INTR_SOURCE,                    /**< interrupt of general DMA channel 0, LEVEL*/
-    ETS_DMA_CH1_INTR_SOURCE,                    /**< interrupt of general DMA channel 1, LEVEL*/
-    ETS_DMA_CH2_INTR_SOURCE,                    /**< interrupt of general DMA channel 2, LEVEL*/
-    ETS_DMA_CH3_INTR_SOURCE,                    /**< interrupt of general DMA channel 3, LEVEL*/
-    ETS_DMA_CH4_INTR_SOURCE,                    /**< interrupt of general DMA channel 4, LEVEL*/
+    ETS_DMA_IN_CH0_INTR_SOURCE,                 /**< interrupt of general DMA RX channel 0, LEVEL*/
+    ETS_DMA_IN_CH1_INTR_SOURCE,                 /**< interrupt of general DMA RX channel 1, LEVEL*/
+    ETS_DMA_IN_CH2_INTR_SOURCE,                 /**< interrupt of general DMA RX channel 2, LEVEL*/
+    ETS_DMA_IN_CH3_INTR_SOURCE,                 /**< interrupt of general DMA RX channel 3, LEVEL*/
+    ETS_DMA_IN_CH4_INTR_SOURCE,                 /**< interrupt of general DMA RX channel 4, LEVEL*/
+    ETS_DMA_OUT_CH0_INTR_SOURCE,                /**< interrupt of general DMA TX channel 0, LEVEL*/
+    ETS_DMA_OUT_CH1_INTR_SOURCE,                /**< interrupt of general DMA TX channel 1, LEVEL*/
+    ETS_DMA_OUT_CH2_INTR_SOURCE,                /**< interrupt of general DMA TX channel 2, LEVEL*/
+    ETS_DMA_OUT_CH3_INTR_SOURCE,                /**< interrupt of general DMA TX channel 3, LEVEL*/
+    ETS_DMA_OUT_CH4_INTR_SOURCE,                /**< interrupt of general DMA TX channel 4, LEVEL*/
     ETS_RSA_INTR_SOURCE,                        /**< interrupt of RSA accelerator, level*/
     ETS_AES_INTR_SOURCE,                        /**< interrupt of AES accelerator, level*/
     ETS_SHA_INTR_SOURCE,                        /**< interrupt of SHA accelerator, level*/
     ETS_FROM_CPU_INTR0_SOURCE,                  /**< interrupt0 generated from a CPU, level*/ /* Used for FreeRTOS */
     ETS_FROM_CPU_INTR1_SOURCE,                  /**< interrupt1 generated from a CPU, level*/ /* Used for FreeRTOS */
-    ETS_FROM_CPU_INTR2_SOURCE,                  /**< interrupt2 generated from a CPU, level*/ /* Used for DPORT Access */
-    ETS_FROM_CPU_INTR3_SOURCE,                  /**< interrupt3 generated from a CPU, level*/ /* Used for DPORT Access */
+    ETS_FROM_CPU_INTR2_SOURCE,                  /**< interrupt2 generated from a CPU, level*/ /* Used for IPC_ISR */
+    ETS_FROM_CPU_INTR3_SOURCE,                  /**< interrupt3 generated from a CPU, level*/ /* Used for IPC_ISR */
     ETS_ASSIST_DEBUG_INTR_SOURCE,               /**< interrupt of Assist debug module, LEVEL*/
     ETS_DMA_APBPERI_PMS_INTR_SOURCE,
     ETS_CORE0_IRAM0_PMS_INTR_SOURCE,
@@ -151,10 +146,13 @@ typedef enum {
     ETS_CORE1_DRAM0_PMS_INTR_SOURCE,
     ETS_CORE1_PIF_PMS_INTR_SOURCE,
     ETS_CORE1_PIF_PMS_SIZE_INTR_SOURCE,
+    ETS_BACKUP_PMS_VIOLATE_INTR_SOURCE,
     ETS_CACHE_CORE0_ACS_INTR_SOURCE,
     ETS_CACHE_CORE1_ACS_INTR_SOURCE,
+    ETS_USB_SERIAL_JTAG_INTR_SOURCE,
+    ETS_PREI_BACKUP_INTR_SOURCE,
+    ETS_DMA_EXTMEM_REJECT_SOURCE,
     ETS_MAX_INTR_SOURCE,                        /**< number of interrupt sources */
-
 } periph_interrput_t;
 
 #ifdef __cplusplus

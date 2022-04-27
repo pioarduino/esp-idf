@@ -22,6 +22,7 @@
 
 #include "soc/soc.h"
 #include "soc/rtc_cntl_reg.h"
+#include "soc/reset_reasons.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,6 +72,8 @@ extern "C" {
 #define RTC_RESET_CAUSE_REG     RTC_CNTL_STORE6_REG
 #define RTC_MEMORY_CRC_REG      RTC_CNTL_STORE7_REG
 
+#define RTC_DISABLE_ROM_LOG ((1 << 0) | (1 << 16)) //!< Disable logging from the ROM code.
+
 typedef enum {
     AWAKE = 0,             //<CPU ON
     LIGHT_SLEEP = BIT0,    //CPU waiti, PLL ON.  We don't need explicitly set this mode.
@@ -95,6 +98,21 @@ typedef enum {
     SUPER_WDT_RESET        = 18,    /**<18, super watchdog reset digital core and rtc module*/
     GLITCH_RTC_RESET       = 19,    /**<19, glitch reset digital core and rtc module*/
 } RESET_REASON;
+
+// Check if the reset reason defined in ROM is compatible with soc/reset_reasons.h
+_Static_assert((soc_reset_reason_t)POWERON_RESET == RESET_REASON_CHIP_POWER_ON, "POWERON_RESET != RESET_REASON_CHIP_POWER_ON");
+_Static_assert((soc_reset_reason_t)RTC_SW_SYS_RESET == RESET_REASON_CORE_SW, "RTC_SW_SYS_RESET != RESET_REASON_CORE_SW");
+_Static_assert((soc_reset_reason_t)DEEPSLEEP_RESET == RESET_REASON_CORE_DEEP_SLEEP, "DEEPSLEEP_RESET != RESET_REASON_CORE_DEEP_SLEEP");
+_Static_assert((soc_reset_reason_t)TG0WDT_SYS_RESET == RESET_REASON_CORE_MWDT0, "TG0WDT_SYS_RESET != RESET_REASON_CORE_MWDT0");
+_Static_assert((soc_reset_reason_t)TG1WDT_SYS_RESET == RESET_REASON_CORE_MWDT1, "TG1WDT_SYS_RESET != RESET_REASON_CORE_MWDT1");
+_Static_assert((soc_reset_reason_t)RTCWDT_SYS_RESET == RESET_REASON_CORE_RTC_WDT, "RTCWDT_SYS_RESET != RESET_REASON_CORE_RTC_WDT");
+_Static_assert((soc_reset_reason_t)TG0WDT_CPU_RESET == RESET_REASON_CPU0_MWDT0, "TG0WDT_CPU_RESET != RESET_REASON_CPU0_MWDT0");
+_Static_assert((soc_reset_reason_t)RTC_SW_CPU_RESET == RESET_REASON_CPU0_SW, "RTC_SW_CPU_RESET != RESET_REASON_CPU0_SW");
+_Static_assert((soc_reset_reason_t)RTCWDT_CPU_RESET == RESET_REASON_CPU0_RTC_WDT, "RTCWDT_CPU_RESET != RESET_REASON_CPU0_RTC_WDT");
+_Static_assert((soc_reset_reason_t)RTCWDT_BROWN_OUT_RESET == RESET_REASON_SYS_BROWN_OUT, "RTCWDT_BROWN_OUT_RESET != RESET_REASON_SYS_BROWN_OUT");
+_Static_assert((soc_reset_reason_t)RTCWDT_RTC_RESET == RESET_REASON_SYS_RTC_WDT, "RTCWDT_RTC_RESET != RESET_REASON_SYS_RTC_WDT");
+_Static_assert((soc_reset_reason_t)SUPER_WDT_RESET == RESET_REASON_SYS_SUPER_WDT, "SUPER_WDT_RESET != RESET_REASON_SYS_SUPER_WDT");
+_Static_assert((soc_reset_reason_t)GLITCH_RTC_RESET == RESET_REASON_SYS_CLK_GLITCH, "GLITCH_RTC_RESET != RESET_REASON_SYS_CLK_GLITCH");
 
 typedef enum {
     NO_SLEEP        = 0,
@@ -171,6 +189,24 @@ uint32_t calc_rtc_memory_crc(uint32_t start_addr, uint32_t crc_len);
   * @return None
   */
 void set_rtc_memory_crc(void);
+
+/**
+  * @brief Suppress ROM log by setting specific RTC control register.
+  * @note This is not a permanent disable of ROM logging since the RTC register can not retain after chip reset.
+  *
+  * @param  None
+  *
+  * @return None
+  */
+static inline void rtc_suppress_rom_log(void)
+{
+    /* To disable logging in the ROM, only the least significant bit of the register is used,
+     * but since this register is also used to store the frequency of the main crystal (RTC_XTAL_FREQ_REG),
+     * you need to write to this register in the same format.
+     * Namely, the upper 16 bits and lower should be the same.
+     */
+    REG_SET_BIT(RTC_CNTL_STORE4_REG, RTC_DISABLE_ROM_LOG);
+}
 
 /**
   * @brief Fetch entry from RTC memory and RTC STORE reg

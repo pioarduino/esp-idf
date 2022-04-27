@@ -1,6 +1,6 @@
 # This script should be sourced, not executed.
 
-function idf_export_main
+function __main
     if not set -q IDF_PATH
         echo "IDF_PATH must be set before sourcing this script"
         return 1
@@ -8,11 +8,14 @@ function idf_export_main
 
     set oldpath = $PATH
 
+    echo "Detecting the Python interpreter"
+    source "$IDF_PATH"/tools/detect_python.fish
+
     echo "Adding ESP-IDF tools to PATH..."
     # Call idf_tools.py to export tool paths
     set -x IDF_TOOLS_EXPORT_CMD "$IDF_PATH"/export.fish
     set -x IDF_TOOLS_INSTALL_CMD "$IDF_PATH"/install.fish
-    set idf_exports ("$IDF_PATH"/tools/idf_tools.py export) || return 1
+    set idf_exports ("$ESP_PYTHON" "$IDF_PATH"/tools/idf_tools.py export) || return 1
     eval "$idf_exports"
 
     echo "Checking if Python packages are up to date..."
@@ -50,6 +53,7 @@ function idf_export_main
     set -e path_entry
     set -e IDF_ADD_PATHS_EXTRAS
     set -e idf_exports
+    set -e ESP_PYTHON
 
     # Not unsetting IDF_PYTHON_ENV_PATH, it can be used by IDF build system
     # to check whether we are using a private Python environment
@@ -61,8 +65,14 @@ function idf_export_main
     echo ""
 end
 
-idf_export_main
+__main
 
-eval (env _IDF.PY_COMPLETE=source_fish idf.py)
+set click_version (python -c 'import click; print(click.__version__.split(".")[0])')
+if test $click_version -lt 8
+    eval (env _IDF.PY_COMPLETE=source_fish idf.py)
+else
+    eval (env _IDF.PY_COMPLETE=fish_source idf.py)
+end
 
-set -e idf_export_main
+
+set -e __main

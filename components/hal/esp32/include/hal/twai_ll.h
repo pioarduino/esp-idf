@@ -29,8 +29,10 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include "sdkconfig.h"
+#include "hal/misc.h"
 #include "hal/twai_types.h"
 #include "soc/twai_periph.h"
+#include "soc/twai_struct.h"
 
 /* ------------------------- Defines and Typedefs --------------------------- */
 
@@ -84,6 +86,70 @@ typedef union {
 } __attribute__((packed)) twai_ll_frame_buffer_t;
 
 _Static_assert(sizeof(twai_ll_frame_buffer_t) == 13, "TX/RX buffer type should be 13 bytes");
+
+#if defined(CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID) || defined(CONFIG_TWAI_ERRATA_FIX_RX_FIFO_CORRUPT)
+/**
+ * Some errata workarounds will require a hardware reset of the peripheral. Thus
+ * certain registers must be saved before the reset, and then restored after the
+ * reset. This structure is used to hold some of those registers.
+ */
+typedef struct {
+    uint8_t mode_reg;
+    uint8_t interrupt_enable_reg;
+    uint8_t bus_timing_0_reg;
+    uint8_t bus_timing_1_reg;
+    uint8_t error_warning_limit_reg;
+    uint8_t acr_reg[4];
+    uint8_t amr_reg[4];
+    uint8_t rx_error_counter_reg;
+    uint8_t tx_error_counter_reg;
+    uint8_t clock_divider_reg;
+} __attribute__((packed)) twai_ll_reg_save_t;
+#endif  //defined(CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID) || defined(CONFIG_TWAI_ERRATA_FIX_RX_FIFO_CORRUPT)
+
+#ifdef CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID
+typedef enum {
+    TWAI_LL_ERR_BIT = 0,
+    TWAI_LL_ERR_FORM,
+    TWAI_LL_ERR_STUFF,
+    TWAI_LL_ERR_OTHER,
+    TWAI_LL_ERR_MAX,
+} twai_ll_err_type_t;
+
+typedef enum {
+    TWAI_LL_ERR_DIR_TX = 0,
+    TWAI_LL_ERR_DIR_RX,
+    TWAI_LL_ERR_DIR_MAX,
+} twai_ll_err_dir_t;
+
+typedef enum {
+    TWAI_LL_ERR_SEG_SOF = 0,
+    TWAI_LL_ERR_SEG_ID_28_21 = 2,
+    TWAI_LL_ERR_SEG_SRTR = 4,
+    TWAI_LL_ERR_SEG_IDE = 5,
+    TWAI_LL_ERR_SEG_ID_20_18 = 6,
+    TWAI_LL_ERR_SEG_ID_17_13 = 7,
+    TWAI_LL_ERR_SEG_CRC_SEQ = 8,
+    TWAI_LL_ERR_SEG_R0 = 9,
+    TWAI_LL_ERR_SEG_DATA = 10,
+    TWAI_LL_ERR_SEG_DLC = 11,
+    TWAI_LL_ERR_SEG_RTR = 12,
+    TWAI_LL_ERR_SEG_R1 = 13,
+    TWAI_LL_ERR_SEG_ID_4_0 = 14,
+    TWAI_LL_ERR_SEG_ID_12_5 = 15,
+    TWAI_LL_ERR_SEG_ACT_FLAG = 17,
+    TWAI_LL_ERR_SEG_INTER = 18,
+    TWAI_LL_ERR_SEG_SUPERPOS = 19,
+    TWAI_LL_ERR_SEG_PASS_FLAG = 22,
+    TWAI_LL_ERR_SEG_ERR_DELIM = 23,
+    TWAI_LL_ERR_SEG_CRC_DELIM = 24,
+    TWAI_LL_ERR_SEG_ACK_SLOT = 25,
+    TWAI_LL_ERR_SEG_EOF = 26,
+    TWAI_LL_ERR_SEG_ACK_DELIM = 27,
+    TWAI_LL_ERR_SEG_OVRLD_FLAG = 28,
+    TWAI_LL_ERR_SEG_MAX = 29,
+} twai_ll_err_seg_t;
+#endif
 
 /* ---------------------------- Mode Register ------------------------------- */
 
@@ -331,7 +397,7 @@ static inline uint32_t twai_ll_get_and_clear_intrs(twai_dev_t *hw)
  */
 static inline void twai_ll_set_enabled_intrs(twai_dev_t *hw, uint32_t intr_mask)
 {
-#if TWAI_BRP_DIV_SUPPORTED
+#if SOC_TWAI_BRP_DIV_SUPPORTED
     //ESP32 Rev 2 or later has brp div field. Need to mask it out
     hw->interrupt_enable_reg.val = (hw->interrupt_enable_reg.val & 0x10) | intr_mask;
 #else
@@ -357,7 +423,7 @@ static inline void twai_ll_set_enabled_intrs(twai_dev_t *hw, uint32_t intr_mask)
  */
 static inline void twai_ll_set_bus_timing(twai_dev_t *hw, uint32_t brp, uint32_t sjw, uint32_t tseg1, uint32_t tseg2, bool triple_sampling)
 {
-#if TWAI_BRP_DIV_SUPPORTED
+#if SOC_TWAI_BRP_DIV_SUPPORTED
     if (brp > SOC_TWAI_BRP_DIV_THRESH) {
         //Need to set brp_div bit
         hw->interrupt_enable_reg.brp_div = 1;
@@ -401,6 +467,19 @@ static inline void twai_ll_clear_err_code_cap(twai_dev_t *hw)
     (void)hw->error_code_capture_reg.val;
 }
 
+#ifdef CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID
+static inline void twai_ll_parse_err_code_cap(twai_dev_t *hw,
+                                              twai_ll_err_type_t *type,
+                                              twai_ll_err_dir_t *dir,
+                                              twai_ll_err_seg_t *seg)
+{
+    uint32_t ecc = hw->error_code_capture_reg.val;
+    *type = (twai_ll_err_type_t) ((ecc >> 6) & 0x3);
+    *dir = (twai_ll_err_dir_t) ((ecc >> 5) & 0x1);
+    *seg = (twai_ll_err_seg_t) (ecc & 0x1F);
+}
+#endif
+
 /* ----------------------------- EWL Register ------------------------------- */
 
 /**
@@ -413,7 +492,7 @@ static inline void twai_ll_clear_err_code_cap(twai_dev_t *hw)
  */
 static inline void twai_ll_set_err_warn_lim(twai_dev_t *hw, uint32_t ewl)
 {
-    hw->error_warning_limit_reg.ewl = ewl;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->error_warning_limit_reg, ewl, ewl);
 }
 
 /**
@@ -453,7 +532,7 @@ static inline uint32_t twai_ll_get_rec(twai_dev_t *hw)
  */
 static inline void twai_ll_set_rec(twai_dev_t *hw, uint32_t rec)
 {
-    hw->rx_error_counter_reg.rxerr = rec;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->rx_error_counter_reg, rxerr, rec);
 }
 
 /* ------------------------ TX Error Count Register ------------------------- */
@@ -481,7 +560,7 @@ static inline uint32_t twai_ll_get_tec(twai_dev_t *hw)
  */
 static inline void twai_ll_set_tec(twai_dev_t *hw, uint32_t tec)
 {
-    hw->tx_error_counter_reg.txerr = tec;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(hw->tx_error_counter_reg, txerr, tec);
 }
 
 /* ---------------------- Acceptance Filter Registers ----------------------- */
@@ -497,11 +576,11 @@ static inline void twai_ll_set_tec(twai_dev_t *hw, uint32_t tec)
  */
 static inline void twai_ll_set_acc_filter(twai_dev_t* hw, uint32_t code, uint32_t mask, bool single_filter)
 {
-    uint32_t code_swapped = __builtin_bswap32(code);
-    uint32_t mask_swapped = __builtin_bswap32(mask);
+    uint32_t code_swapped = HAL_SWAP32(code);
+    uint32_t mask_swapped = HAL_SWAP32(mask);
     for (int i = 0; i < 4; i++) {
-        hw->acceptance_filter.acr[i].byte = ((code_swapped >> (i * 8)) & 0xFF);
-        hw->acceptance_filter.amr[i].byte = ((mask_swapped >> (i * 8)) & 0xFF);
+        HAL_FORCE_MODIFY_U32_REG_FIELD(hw->acceptance_filter.acr[i], byte, ((code_swapped >> (i * 8)) & 0xFF));
+        HAL_FORCE_MODIFY_U32_REG_FIELD(hw->acceptance_filter.amr[i], byte, ((mask_swapped >> (i * 8)) & 0xFF));
     }
     hw->mode_reg.afm = single_filter;
 }
@@ -536,7 +615,7 @@ static inline void twai_ll_get_rx_buffer(twai_dev_t *hw, twai_ll_frame_buffer_t 
 {
     //Copy RX buffer registers into frame
     for (int i = 0; i < 13; i++) {
-        rx_frame->bytes[i] =  hw->tx_rx_buffer[i].byte;
+        rx_frame->bytes[i] =  HAL_FORCE_READ_U32_REG_FIELD(hw->tx_rx_buffer[i], byte);
     }
 }
 
@@ -570,12 +649,12 @@ static inline void twai_ll_format_frame_buffer(uint32_t id, uint8_t dlc, const u
 
     //Set ID. The ID registers are big endian and left aligned, therefore a bswap will be required
     if (is_extd) {
-        uint32_t id_temp = __builtin_bswap32((id & TWAI_EXTD_ID_MASK) << 3); //((id << 3) >> 8*(3-i))
+        uint32_t id_temp = HAL_SWAP32((id & TWAI_EXTD_ID_MASK) << 3); //((id << 3) >> 8*(3-i))
         for (int i = 0; i < 4; i++) {
             tx_frame->extended.id[i] = (id_temp >> (8 * i)) & 0xFF;
         }
     } else {
-        uint32_t id_temp =  __builtin_bswap16((id & TWAI_STD_ID_MASK) << 5); //((id << 5) >> 8*(1-i))
+        uint32_t id_temp =  HAL_SWAP16((id & TWAI_STD_ID_MASK) << 5); //((id << 5) >> 8*(1-i))
         for (int i = 0; i < 2; i++) {
             tx_frame->standard.id[i] = (id_temp >> (8 * i)) & 0xFF;
         }
@@ -615,14 +694,14 @@ static inline void twai_ll_prase_frame_buffer(twai_ll_frame_buffer_t *rx_frame, 
         for (int i = 0; i < 4; i++) {
             id_temp |= rx_frame->extended.id[i] << (8 * i);
         }
-        id_temp = __builtin_bswap32(id_temp) >> 3;  //((byte[i] << 8*(3-i)) >> 3)
+        id_temp = HAL_SWAP32(id_temp) >> 3;  //((byte[i] << 8*(3-i)) >> 3)
         *id = id_temp & TWAI_EXTD_ID_MASK;
     } else {
         uint32_t id_temp = 0;
         for (int i = 0; i < 2; i++) {
             id_temp |= rx_frame->standard.id[i] << (8 * i);
         }
-        id_temp = __builtin_bswap16(id_temp) >> 5;  //((byte[i] << 8*(1-i)) >> 5)
+        id_temp = HAL_SWAP16(id_temp) >> 5;  //((byte[i] << 8*(1-i)) >> 5)
         *id = id_temp & TWAI_STD_ID_MASK;
     }
 
@@ -692,6 +771,65 @@ static inline void twai_ll_enable_extended_reg_layout(twai_dev_t *hw)
 {
     hw->clock_divider_reg.cm = 1;
 }
+
+/* ------------------------- Register Save/Restore -------------------------- */
+
+#if defined(CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID) || defined(CONFIG_TWAI_ERRATA_FIX_RX_FIFO_CORRUPT)
+/**
+ * @brief   Saves the current values of the TWAI controller's registers
+ *
+ * This function saves the current values of the some of the TWAI controller's
+ * registers in preparation for a hardware reset of the controller.
+ *
+ * @param hw Start address of the TWAI registers
+ * @param reg_save Pointer to structure to store register values
+ * @note Must be called in reset mode so that config registers become accessible.
+ * @note Some registers are cleared on entering reset mode so must be saved
+ *       separate from this function.
+ */
+static inline void twai_ll_save_reg(twai_dev_t *hw, twai_ll_reg_save_t *reg_save)
+{
+    reg_save->mode_reg = (uint8_t) hw->mode_reg.val;
+    reg_save->interrupt_enable_reg = (uint8_t) hw->interrupt_enable_reg.val;
+    reg_save->bus_timing_0_reg = (uint8_t) hw->bus_timing_0_reg.val;
+    reg_save->bus_timing_1_reg = (uint8_t) hw->bus_timing_1_reg.val;
+    reg_save->error_warning_limit_reg = (uint8_t) hw->error_warning_limit_reg.val;
+    for (int i = 0; i < 4; i++) {
+        reg_save->acr_reg[i] = HAL_FORCE_READ_U32_REG_FIELD(hw->acceptance_filter.acr[i], byte);
+        reg_save->amr_reg[i] = HAL_FORCE_READ_U32_REG_FIELD(hw->acceptance_filter.amr[i], byte);
+    }
+    reg_save->rx_error_counter_reg = (uint8_t) hw->rx_error_counter_reg.val;
+    reg_save->tx_error_counter_reg = (uint8_t) hw->tx_error_counter_reg.val;
+    reg_save->clock_divider_reg = (uint8_t) hw->clock_divider_reg.val;
+}
+
+/**
+ * @brief   Restores the previous values of the TWAI controller's registers
+ *
+ * This function restores the previous values of some of the TWAI controller's
+ * registers following a hardware reset of the controller.
+ *
+ * @param hw Start address of the TWAI registers
+ * @param reg_save Pointer to structure to storing register values to restore
+ * @note Must be called in reset mode so that config registers become accessible
+ * @note Some registers are read only thus cannot be restored
+ */
+static inline void twai_ll_restore_reg(twai_dev_t *hw, twai_ll_reg_save_t *reg_save)
+{
+    hw->mode_reg.val = reg_save->mode_reg;
+    hw->interrupt_enable_reg.val = reg_save->interrupt_enable_reg;
+    hw->bus_timing_0_reg.val = reg_save->bus_timing_0_reg;
+    hw->bus_timing_1_reg.val = reg_save->bus_timing_1_reg;
+    hw->error_warning_limit_reg.val = reg_save->error_warning_limit_reg;
+    for (int i = 0; i < 4; i++) {
+        HAL_FORCE_MODIFY_U32_REG_FIELD(hw->acceptance_filter.acr[i], byte, reg_save->acr_reg[i]);
+        HAL_FORCE_MODIFY_U32_REG_FIELD(hw->acceptance_filter.amr[i], byte, reg_save->amr_reg[i]);
+    }
+    hw->rx_error_counter_reg.val = reg_save->rx_error_counter_reg;
+    hw->tx_error_counter_reg.val = reg_save->tx_error_counter_reg;
+    hw->clock_divider_reg.val = reg_save->clock_divider_reg;
+}
+#endif  //defined(CONFIG_TWAI_ERRATA_FIX_RX_FRAME_INVALID) || defined(CONFIG_TWAI_ERRATA_FIX_RX_FIFO_CORRUPT)
 
 #ifdef __cplusplus
 }

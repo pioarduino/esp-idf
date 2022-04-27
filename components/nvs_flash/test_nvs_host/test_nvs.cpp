@@ -313,7 +313,8 @@ TEST_CASE("HashList is cleaned up as soon as items are erased", "[nvs]")
     INFO("Added " << count << " items, " << hashlist.getBlockCount() << " blocks");
     // Remove them in reverse order
     for (size_t i = count; i > 0; --i) {
-        hashlist.erase(i - 1, true);
+        // Make sure that the element existed before it's erased
+        CHECK(hashlist.erase(i - 1) == true);
     }
     CHECK(hashlist.getBlockCount() == 0);
     // Add again
@@ -326,7 +327,7 @@ TEST_CASE("HashList is cleaned up as soon as items are erased", "[nvs]")
     INFO("Added " << count << " items, " << hashlist.getBlockCount() << " blocks");
     // Remove them in the same order
     for (size_t i = 0; i < count; ++i) {
-        hashlist.erase(i, true);
+        CHECK(hashlist.erase(i) == true);
     }
     CHECK(hashlist.getBlockCount() == 0);
 }
@@ -1220,9 +1221,9 @@ TEST_CASE("nvs api tests, starting with random data in flash", "[nvs][long]")
             nvs_close(handle_2);
         }
         nvs_close(handle_1);
-    }
 
-    TEST_ESP_OK(nvs_flash_deinit_partition(NVS_DEFAULT_PART_NAME));
+        TEST_ESP_OK(nvs_flash_deinit_partition(f.part.get_partition_name()));
+    }
 }
 extern "C" void nvs_dump(const char *partName);
 
@@ -1519,17 +1520,16 @@ TEST_CASE("test recovery from sudden poweroff", "[long][nvs][recovery][monkey]")
     gen.seed(seed);
     const size_t iter_count = 2000;
 
-    PartitionEmulationFixture f(0, 10);
-
-    const uint32_t NVS_FLASH_SECTOR = 2;
-    const uint32_t NVS_FLASH_SECTOR_COUNT_MIN = 8;
-
-    f.emu.setBounds(NVS_FLASH_SECTOR, NVS_FLASH_SECTOR + NVS_FLASH_SECTOR_COUNT_MIN);
-
     size_t totalOps = 0;
     int lastPercent = -1;
     for (uint32_t errDelay = 0; ; ++errDelay) {
         INFO(errDelay);
+
+        PartitionEmulationFixture f(0, 10);
+        const uint32_t NVS_FLASH_SECTOR = 2;
+        const uint32_t NVS_FLASH_SECTOR_COUNT_MIN = 8;
+        f.emu.setBounds(NVS_FLASH_SECTOR, NVS_FLASH_SECTOR + NVS_FLASH_SECTOR_COUNT_MIN);
+
         f.emu.randomize(seed);
         f.emu.clearStats();
         f.emu.failAfter(errDelay);
@@ -1550,14 +1550,18 @@ TEST_CASE("test recovery from sudden poweroff", "[long][nvs][recovery][monkey]")
         if (NVSPartitionManager::get_instance()->init_custom(&f.part,
                 NVS_FLASH_SECTOR,
                 NVS_FLASH_SECTOR_COUNT_MIN) == ESP_OK) {
+            auto res = ESP_ERR_FLASH_OP_FAIL;
             if (nvs_open("namespace1", NVS_READWRITE, &handle) == ESP_OK) {
-                if(test.doRandomThings(handle, gen, count) != ESP_ERR_FLASH_OP_FAIL) {
-                    nvs_close(handle);
-                    break;
-                }
+                res = test.doRandomThings(handle, gen, count);
                 nvs_close(handle);
             }
+
             TEST_ESP_OK(nvs_flash_deinit_partition(NVS_DEFAULT_PART_NAME));
+            if (res != ESP_ERR_FLASH_OP_FAIL) {
+                // This means we got to the end without an error due to f.emu.failAfter(), therefore errDelay
+                // is high enough that we're not triggering it any more, therefore we're done
+                break;
+            }
         }
 
         TEST_ESP_OK(NVSPartitionManager::get_instance()->init_custom(&f.part,
@@ -1575,6 +1579,7 @@ TEST_CASE("test recovery from sudden poweroff", "[long][nvs][recovery][monkey]")
         TEST_ESP_OK(nvs_flash_deinit_partition(NVS_DEFAULT_PART_NAME));
     }
 }
+
 TEST_CASE("test for memory leaks in open/set", "[leaks]")
 {
     PartitionEmulationFixture f(0, 10);

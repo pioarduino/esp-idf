@@ -1,16 +1,8 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 
@@ -29,6 +21,7 @@ extern "C" {
 #include "hal/rmt_types.h"
 
 #define RMT_CHANNEL_FLAGS_AWARE_DFS (1 << 0) /*!< Channel can work during APB clock scaling */
+#define RMT_CHANNEL_FLAGS_INVERT_SIG (1 << 1) /*!< Invert RMT signal */
 
 /** @cond */
 #define RMT_CHANNEL_FLAGS_ALWAYS_ON RMT_CHANNEL_FLAGS_AWARE_DFS  /*!< Deprecated name, defined here for compatibility */
@@ -38,7 +31,7 @@ extern "C" {
  * @brief Define memory space of each RMT channel (in words = 4 bytes)
  *
  */
-#define RMT_MEM_ITEM_NUM SOC_RMT_CHANNEL_MEM_WORDS
+#define RMT_MEM_ITEM_NUM SOC_RMT_MEM_WORDS_PER_CHANNEL
 
 /**
 * @brief Data struct of RMT TX configure parameters
@@ -384,6 +377,7 @@ esp_err_t rmt_rx_memory_reset(rmt_channel_t channel);
 
 /**
 * @brief Set RMT memory owner.
+* @note Setting memroy is only valid for RX channel.
 *
 * @param channel RMT channel
 * @param owner To set when the transmitter or receiver can process the memory of channel.
@@ -571,17 +565,18 @@ esp_err_t rmt_set_tx_intr_en(rmt_channel_t channel, bool en);
 esp_err_t rmt_set_tx_thr_intr_en(rmt_channel_t channel, bool en, uint16_t evt_thresh);
 
 /**
-* @brief Set RMT pin
+* @brief Configure the GPIO used by RMT channel
 *
 * @param channel RMT channel
-* @param mode TX or RX mode for RMT
-* @param gpio_num GPIO number to transmit or receive the signal.
+* @param mode RMT mode, either RMT_MODE_TX or RMT_MODE_RX
+* @param gpio_num GPIO number, which is connected with certain RMT signal
+* @param invert_signal Invert RMT signal physically by GPIO matrix
 *
 * @return
-*     - ESP_ERR_INVALID_ARG Parameter error
-*     - ESP_OK Success
+*     - ESP_ERR_INVALID_ARG Configure RMT GPIO failed because of wrong parameter
+*     - ESP_OK Configure RMT GPIO successfully
 */
-esp_err_t rmt_set_pin(rmt_channel_t channel, rmt_mode_t mode, gpio_num_t gpio_num);
+esp_err_t rmt_set_gpio(rmt_channel_t channel, rmt_mode_t mode, gpio_num_t gpio_num, bool invert_signal);
 
 /**
 * @brief Configure RMT parameters
@@ -835,9 +830,9 @@ rmt_tx_end_callback_t rmt_register_tx_end_callback(rmt_tx_end_fn_t function, voi
 esp_err_t rmt_set_rx_thr_intr_en(rmt_channel_t channel, bool en, uint16_t evt_thresh);
 #endif
 
-#if SOC_RMT_SUPPORT_TX_GROUP
+#if SOC_RMT_SUPPORT_TX_SYNCHRO
 /**
-* @brief Add channel into a group (channels in the same group will transmit simultaneously)
+* @brief Add channel into a synchronous group (channels in the same group can start transaction simultaneously)
 *
 * @param channel RMT channel
 *
@@ -858,6 +853,38 @@ esp_err_t rmt_add_channel_to_group(rmt_channel_t channel);
 */
 esp_err_t rmt_remove_channel_from_group(rmt_channel_t channel);
 #endif
+
+#if SOC_RMT_SUPPORT_TX_LOOP_COUNT
+/**
+ * @brief Set loop count threshold value for RMT TX channel
+ *
+ * When tx loop count reaches this value, an ISR callback will notify user
+ *
+ * @param channel RMT channel
+ * @param count loop count, 1 ~ 1023
+ * @return
+ *      - ESP_ERR_INVALID_ARG Parameter error
+ *      - ESP_OK Success
+ */
+esp_err_t rmt_set_tx_loop_count(rmt_channel_t channel, uint32_t count);
+
+/**
+ * @brief Enable or disable the feature that when loop count reaches the threshold, RMT will stop transmitting.
+ *
+ * - When the loop auto-stop feature is enabled will halt RMT transmission after the loop count reaches a certain threshold
+ * - When disabled, the RMT transmission continue indefinitely until halted by the users
+ *
+ * @note The auto-stop feature is implemented in hardware on particular targets (i.e. those with SOC_RMT_SUPPORT_TX_LOOP_AUTOSTOP defined).
+ *       Otherwise, the auto-stop feature is implemented in software via the interrupt.
+ *
+ * @param channel RMT channel
+ * @param en enable bit
+ * @return
+ *      - ESP_ERR_INVALID_ARG Parameter error
+ *      - ESP_OK Success
+ */
+esp_err_t rmt_enable_tx_loop_autostop(rmt_channel_t channel, bool en);
+#endif // SOC_RMT_SUPPORT_TX_LOOP_COUNT
 
 /**
 * @brief Reset RMT TX/RX memory index.
@@ -888,6 +915,20 @@ __attribute__((deprecated("interrupt should be handled by driver")));
 */
 void rmt_clr_intr_enable_mask(uint32_t mask)
 __attribute__((deprecated("interrupt should be handled by driver")));
+
+/**
+* @brief Set RMT pin
+*
+* @param channel RMT channel
+* @param mode TX or RX mode for RMT
+* @param gpio_num GPIO number to transmit or receive the signal.
+*
+* @return
+*     - ESP_ERR_INVALID_ARG Parameter error
+*     - ESP_OK Success
+*/
+esp_err_t rmt_set_pin(rmt_channel_t channel, rmt_mode_t mode, gpio_num_t gpio_num)
+__attribute__((deprecated("use rmt_set_gpio instead")));
 
 #ifdef __cplusplus
 }

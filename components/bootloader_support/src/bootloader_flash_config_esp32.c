@@ -1,16 +1,8 @@
-// Copyright 2018 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2018-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include <stdbool.h>
 #include <assert.h>
 #include "string.h"
@@ -25,6 +17,7 @@
 #include "soc/spi_reg.h"
 #include "soc/soc_caps.h"
 #include "soc/soc_pins.h"
+#include "hal/gpio_hal.h"
 #include "flash_qio_mode.h"
 #include "bootloader_common.h"
 #include "bootloader_flash_config.h"
@@ -87,7 +80,7 @@ void IRAM_ATTR bootloader_flash_gpio_config(const esp_image_header_t* pfhdr)
         pkg_ver == EFUSE_RD_CHIP_VER_PKG_ESP32PICOV302) {
         // For ESP32D2WD or ESP32-PICO series,the SPI pins are already configured
         // flash clock signal should come from IO MUX.
-        PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_CLK_U, FUNC_SD_CLK_SPICLK);
+        gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_CLK_U, FUNC_SD_CLK_SPICLK);
         SET_PERI_REG_BITS(PERIPHS_IO_MUX_SD_CLK_U, FUN_DRV, drv, FUN_DRV_S);
     } else {
         const uint32_t spiconfig = esp_rom_efuse_get_flash_gpio_info();
@@ -102,14 +95,14 @@ void IRAM_ATTR bootloader_flash_gpio_config(const esp_image_header_t* pfhdr)
             esp_rom_gpio_connect_out_signal(SPI_IOMUX_PIN_NUM_HD, SPIHD_OUT_IDX, 0, 0);
             esp_rom_gpio_connect_in_signal(SPI_IOMUX_PIN_NUM_HD, SPIHD_IN_IDX, 0);
             //select pin function gpio
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA0_U, PIN_FUNC_GPIO);
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA1_U, PIN_FUNC_GPIO);
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA2_U, PIN_FUNC_GPIO);
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_DATA3_U, PIN_FUNC_GPIO);
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_CMD_U, PIN_FUNC_GPIO);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_DATA0_U, PIN_FUNC_GPIO);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_DATA1_U, PIN_FUNC_GPIO);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_DATA2_U, PIN_FUNC_GPIO);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_DATA3_U, PIN_FUNC_GPIO);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_CMD_U, PIN_FUNC_GPIO);
             // flash clock signal should come from IO MUX.
             // set drive ability for clock
-            PIN_FUNC_SELECT(PERIPHS_IO_MUX_SD_CLK_U, FUNC_SD_CLK_SPICLK);
+            gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_SD_CLK_U, FUNC_SD_CLK_SPICLK);
             SET_PERI_REG_BITS(PERIPHS_IO_MUX_SD_CLK_U, FUN_DRV, drv, FUN_DRV_S);
 
             uint32_t flash_id = g_rom_flashchip.device_id;
@@ -178,9 +171,9 @@ int bootloader_flash_get_wp_pin(void)
     uint8_t chip_ver;
     uint32_t pkg_ver = bootloader_common_get_chip_ver_pkg();
     switch(pkg_ver) {
+    case EFUSE_RD_CHIP_VER_PKG_ESP32U4WDH:
     case EFUSE_RD_CHIP_VER_PKG_ESP32D2WDQ5:
         return ESP32_D2WD_WP_GPIO;
-    case EFUSE_RD_CHIP_VER_PKG_ESP32PICOD2:
     case EFUSE_RD_CHIP_VER_PKG_ESP32PICOD4:
         /* Same package IDs are used for ESP32-PICO-V3 and ESP32-PICO-D4, silicon version differentiates */
         chip_ver = bootloader_common_get_chip_revision();

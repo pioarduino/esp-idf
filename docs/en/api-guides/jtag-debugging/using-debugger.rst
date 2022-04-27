@@ -6,7 +6,7 @@ This section covers configuration and running debugger using several methods:
 
 * from :ref:`jtag-debugging-using-debugger-eclipse`
 * from :ref:`jtag-debugging-using-debugger-command-line`
-* using :ref:`jtag-debugging-with-idf-py`.
+* using :ref:`jtag-debugging-with-idf-py`
 
 
 .. _jtag-debugging-using-debugger-eclipse:
@@ -43,7 +43,7 @@ Once installation is complete, configure debugging session following steps below
 
         Configuration of GDB Hardware Debugging - Main tab
 
-6.  Click "Debugger" tab. In field "GDB Command" enter ``xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf-gdb`` to invoke debugger.
+6.  Click "Debugger" tab. In field "GDB Command" enter ``{IDF_TARGET_TOOLCHAIN_PREFIX}-gdb`` to invoke debugger.
 
 7.  Change default configuration of "Remote host" by entering ``3333`` under the "Port number".
 
@@ -141,7 +141,7 @@ Command Line
 
     ::
 
-        xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf-gdb -x gdbinit build/blink.elf
+        {IDF_TARGET_TOOLCHAIN_PREFIX}-gdb -x gdbinit build/blink.elf
 
 .. highlight:: none
 
@@ -149,14 +149,14 @@ Command Line
 
     ::
 
-        user-name@computer-name:~/esp/blink$ xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf-gdb -x gdbinit build/blink.elf
+        user-name@computer-name:~/esp/blink$ {IDF_TARGET_TOOLCHAIN_PREFIX}-gdb -x gdbinit build/blink.elf
         GNU gdb (crosstool-NG crosstool-ng-1.22.0-61-gab8375a) 7.10
         Copyright (C) 2015 Free Software Foundation, Inc.
         License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
         This is free software: you are free to change and redistribute it.
         There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
         and "show warranty" for details.
-        This GDB was configured as "--host=x86_64-build_pc-linux-gnu --target=xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf".
+        This GDB was configured as "--host=x86_64-build_pc-linux-gnu --target={IDF_TARGET_TOOLCHAIN_PREFIX}".
         Type "show configuration" for configuration details.
         For bug reporting instructions, please see:
         <http://www.gnu.org/software/gdb/bugs/>.
@@ -206,24 +206,19 @@ It is also possible to execute the described debugging tools conveniently from `
 
 1.  ``idf.py openocd``
 
-    Runs OpenOCD in a console with configuration defined in the environment or via command line.
-    It uses default script directory defined as ``OPENOCD_SCRIPTS`` environmental variable, which is automatically added
-    from an Export script (``export.sh`` or ``export.bat``). It is possible to override the script location
-    using command line argument ``--openocd-scripts``.
+    Runs OpenOCD in a console with configuration defined in the environment or via command line. It uses default script directory defined as ``OPENOCD_SCRIPTS`` environmental variable, which is automatically added from an Export script (``export.sh`` or ``export.bat``). 
+    It is possible to override the script location using command line argument ``--openocd-scripts``.
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: idf-py-openocd-default-cfg
         :end-before: ---
 
-    As for the JTAG configuration of the current board, please use the environmental variable ``OPENOCD_COMMANDS``
-    or ``--openocd-commands`` command line argument. If none of the above is defined,
-    OpenOCD is started with |idf-py-def-cfg| board definition.
+    As for the JTAG configuration of the current board, please use the environmental variable ``OPENOCD_COMMANDS`` or ``--openocd-commands`` command line argument. If none of the above is defined, OpenOCD is started with |idf-py-def-cfg| board definition.
 
 
 2.  ``idf.py gdb``
 
-    Starts the gdb the same way as the :ref:`jtag-debugging-using-debugger-command-line`, but generates the initial gdb scripts
-    referring to the current project elf file.
+    Starts the gdb the same way as the :ref:`jtag-debugging-using-debugger-command-line`, but generates the initial gdb scripts referring to the current project elf file.
 
 
 3.  ``idf.py gdbtui``
@@ -236,14 +231,11 @@ It is also possible to execute the described debugging tools conveniently from `
     Starts `gdbgui <https://www.gdbgui.com>`_ debugger frontend enabling out-of-the-box debugging in a browser window.
 
 
-    It is possible to combine these debugging actions on a single command line allowing convenient 
-    setup of blocking and non-blocking actions in one step. ``idf.py`` implements a simple logic to move the background
-    actions (such as openocd) to the beginning and the interactive ones (such as gdb, monitor) to the end of the action list.
+    It is possible to combine these debugging actions on a single command line allowing convenient setup of blocking and non-blocking actions in one step. ``idf.py`` implements a simple logic to move the background actions (such as openocd) to the beginning and the interactive ones (such as gdb, monitor) to the end of the action list.
 
     An example of a very useful combination is::
 
         idf.py openocd gdbgui monitor
 
 
-    The above command runs OpenOCD in the background, starts `gdbgui <https://www.gdbgui.com>`_ to open a browser window
-    with active debugger frontend and opens a serial monitor in the active console.
+    The above command runs OpenOCD in the background, starts `gdbgui <https://www.gdbgui.com>`_ to open a browser window with active debugger frontend and opens a serial monitor in the active console.

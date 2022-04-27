@@ -1,16 +1,8 @@
-// Copyright 2010-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2010-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 // Internal header, don't use it in the user code
 
@@ -65,7 +57,9 @@ typedef struct {
     spi_bus_config_t bus_cfg;   ///< Config used to initialize the bus
     uint32_t flags;             ///< Flags (attributes) of the bus
     int max_transfer_sz;        ///< Maximum length of bytes available to send
-    int dma_chan;               ///< DMA channel used
+    bool dma_enabled;           ///< To enable DMA or not
+    int tx_dma_chan;            ///< TX DMA channel, on ESP32 and ESP32S2, tx_dma_chan and rx_dma_chan are same
+    int rx_dma_chan;            ///< RX DMA channel, on ESP32 and ESP32S2, tx_dma_chan and rx_dma_chan are same
     int dma_desc_num;           ///< DMA descriptor number of dmadesc_tx or dmadesc_rx.
     lldesc_t *dmadesc_tx;       ///< DMA descriptor array for TX
     lldesc_t *dmadesc_rx;       ///< DMA descriptor array for RX
@@ -116,47 +110,29 @@ bool spicommon_periph_in_use(spi_host_device_t host);
 bool spicommon_periph_free(spi_host_device_t host);
 
 /**
- * @brief Try to claim a SPI DMA channel
+ * @brief Alloc DMA for SPI
  *
- *  Call this if your driver wants to use SPI with a DMA channnel.
+ * @param host_id                      SPI host ID
+ * @param dma_chan                     DMA channel to be used
+ * @param[out] out_actual_tx_dma_chan  Actual TX DMA channel (if you choose to assign a specific DMA channel, this will be the channel you assigned before)
+ * @param[out] out_actual_rx_dma_chan  Actual RX DMA channel (if you choose to assign a specific DMA channel, this will be the channel you assigned before)
  *
- * @param dma_chan channel to claim
- *
- * @note This public API is deprecated.
- *
- * @return True if success; false otherwise.
+ * @return
+ *        - ESP_OK:                On success
+ *        - ESP_ERR_NO_MEM:        No enough memory
+ *        - ESP_ERR_NOT_FOUND:     There is no available DMA channel
  */
-bool spicommon_dma_chan_claim(int dma_chan);
+esp_err_t spicommon_dma_chan_alloc(spi_host_device_t host_id, spi_dma_chan_t dma_chan, uint32_t *out_actual_tx_dma_chan, uint32_t *out_actual_rx_dma_chan);
 
 /**
- * @brief Check whether the spi DMA channel is in use.
+ * @brief Free DMA for SPI
  *
- * @param dma_chan DMA channel to check.
+ * @param host_id  SPI host ID
  *
- * @note This public API is deprecated.
- *
- * @return True if in use, otherwise false.
+ * @return
+ *        - ESP_OK: On success
  */
-bool spicommon_dma_chan_in_use(int dma_chan);
-
-/**
- * @brief Return the SPI DMA channel so other driver can claim it, or just to power down DMA.
- *
- * @param dma_chan channel to return
- *
- * @note This public API is deprecated.
- *
- * @return True if success; false otherwise.
- */
-bool spicommon_dma_chan_free(int dma_chan);
-
-/**
- * @brief Connect SPI and DMA peripherals
- *
- * @param host     SPI peripheral
- * @param dma_chan DMA channel
- */
-void spicommon_connect_spi_and_dma(spi_host_device_t host, int dma_chan);
+esp_err_t spicommon_dma_chan_free(spi_host_device_t host_id);
 
 /**
  * @brief Connect a SPI peripheral to GPIO pins
@@ -170,7 +146,6 @@ void spicommon_connect_spi_and_dma(spi_host_device_t host, int dma_chan);
  *
  * @param host SPI peripheral to be routed
  * @param bus_config Pointer to a spi_bus_config struct detailing the GPIO pins
- * @param dma_chan DMA-channel (1 or 2) to use, or 0 for no DMA.
  * @param flags Combination of SPICOMMON_BUSFLAG_* flags, set to ensure the pins set are capable with some functions:
  *              - ``SPICOMMON_BUSFLAG_MASTER``: Initialize I/O in master mode
  *              - ``SPICOMMON_BUSFLAG_SLAVE``: Initialize I/O in slave mode
@@ -180,6 +155,8 @@ void spicommon_connect_spi_and_dma(spi_host_device_t host, int dma_chan);
  *              - ``SPICOMMON_BUSFLAG_DUAL``: Make sure both MISO and MOSI are output capable so that DIO mode is capable.
  *              - ``SPICOMMON_BUSFLAG_WPHD`` Make sure WP and HD are set to valid output GPIOs.
  *              - ``SPICOMMON_BUSFLAG_QUAD``: Combination of ``SPICOMMON_BUSFLAG_DUAL`` and ``SPICOMMON_BUSFLAG_WPHD``.
+ *              - ``SPICOMMON_BUSFLAG_IO4_IO7``: Make sure spi data4 ~ spi data7 are set to valid output GPIOs.
+ *              - ``SPICOMMON_BUSFLAG_OCTAL``: Combination of ``SPICOMMON_BUSFLAG_QUAL`` and ``SPICOMMON_BUSFLAG_IO4_IO7``.
  * @param[out] flags_o A SPICOMMON_BUSFLAG_* flag combination of bus abilities will be written to this address.
  *              Leave to NULL if not needed.
  *              - ``SPICOMMON_BUSFLAG_IOMUX_PINS``: The bus is connected to iomux pins.
@@ -188,11 +165,13 @@ void spicommon_connect_spi_and_dma(spi_host_device_t host, int dma_chan);
  *              - ``SPICOMMON_BUSFLAG_DUAL``: The bus is capable with DIO mode.
  *              - ``SPICOMMON_BUSFLAG_WPHD`` The bus has WP and HD connected.
  *              - ``SPICOMMON_BUSFLAG_QUAD``: Combination of ``SPICOMMON_BUSFLAG_DUAL`` and ``SPICOMMON_BUSFLAG_WPHD``.
+ *              - ``SPICOMMON_BUSFLAG_IO4_IO7``: The bus has spi data4 ~ spi data7 connected.
+ *              - ``SPICOMMON_BUSFLAG_OCTAL``: Combination of ``SPICOMMON_BUSFLAG_QUAL`` and ``SPICOMMON_BUSFLAG_IO4_IO7``.
  * @return
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
  *         - ESP_OK                on success
  */
-esp_err_t spicommon_bus_initialize_io(spi_host_device_t host, const spi_bus_config_t *bus_config, int dma_chan, uint32_t flags, uint32_t *flags_o);
+esp_err_t spicommon_bus_initialize_io(spi_host_device_t host, const spi_bus_config_t *bus_config, uint32_t flags, uint32_t *flags_o);
 
 /**
  * @brief Free the IO used by a SPI peripheral

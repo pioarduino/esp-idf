@@ -15,6 +15,8 @@
 #include "esp_freertos_hooks.h"
 #include "esp_rom_sys.h"
 
+#define SEC  (1000000)
+
 #if CONFIG_ESP_TIMER_IMPL_FRC2
 #include "soc/frc_timer_reg.h"
 #endif
@@ -55,12 +57,12 @@ static void teardown_overflow(void)
 
 #endif // CONFIG_ESP_TIMER_IMPL_FRC2
 
+static void dummy_cb(void* arg)
+{
+}
+
 TEST_CASE("esp_timer orders timers correctly", "[esp_timer]")
 {
-    void dummy_cb(void* arg)
-    {
-    }
-
     uint64_t timeouts[] = { 10000, 1000, 10000, 5000, 20000, 1000 };
     size_t indices[] = { 3, 0, 4, 2, 5, 1 };
     const size_t num_timers = sizeof(timeouts)/sizeof(timeouts[0]);
@@ -87,8 +89,13 @@ TEST_CASE("esp_timer orders timers correctly", "[esp_timer]")
     }
     fflush(stream);
     fseek(stream, 0, SEEK_SET);
+
+    /* Discard header lines */
+    char line[128];
+    TEST_ASSERT_NOT_NULL(fgets(line, sizeof(line), stream));
+    TEST_ASSERT_NOT_NULL(fgets(line, sizeof(line), stream));
+
     for (size_t i = 0; i < num_timers; ++i) {
-        char line[128];
         TEST_ASSERT_NOT_NULL(fgets(line, sizeof(line), stream));
 #if WITH_PROFILING
         int timer_id;
@@ -109,28 +116,28 @@ TEST_CASE("esp_timer orders timers correctly", "[esp_timer]")
     fclose(stream);
 }
 
+static const int test_time_sec = 10;
+
+static void set_alarm_task(void* arg)
+{
+    SemaphoreHandle_t done = (SemaphoreHandle_t) arg;
+
+    int64_t start = esp_timer_impl_get_time();
+    int64_t now = start;
+    int count = 0;
+    const int delays[] = {50, 5000, 10000000};
+    const int delays_count = sizeof(delays)/sizeof(delays[0]);
+    while (now - start < test_time_sec * 1000000) {
+        now = esp_timer_impl_get_time();
+        esp_timer_impl_set_alarm(now + delays[count % delays_count]);
+        ++count;
+    }
+    xSemaphoreGive(done);
+    vTaskDelete(NULL);
+}
+
 TEST_CASE("esp_timer_impl_set_alarm stress test", "[esp_timer]")
 {
-    const int test_time_sec = 10;
-
-    void set_alarm_task(void* arg)
-    {
-        SemaphoreHandle_t done = (SemaphoreHandle_t) arg;
-
-        int64_t start = esp_timer_impl_get_time();
-        int64_t now = start;
-        int count = 0;
-        const int delays[] = {50, 5000, 10000000};
-        const int delays_count = sizeof(delays)/sizeof(delays[0]);
-        while (now - start < test_time_sec * 1000000) {
-            now = esp_timer_impl_get_time();
-            esp_timer_impl_set_alarm(now + delays[count % delays_count]);
-            ++count;
-        }
-        xSemaphoreGive(done);
-        vTaskDelete(NULL);
-    }
-
     SemaphoreHandle_t done = xSemaphoreCreateCounting(portNUM_PROCESSORS, 0);
     setup_overflow();
     xTaskCreatePinnedToCore(&set_alarm_task, "set_alarm_0", 4096, done, UNITY_FREERTOS_PRIORITY, NULL, 0);
@@ -146,18 +153,18 @@ TEST_CASE("esp_timer_impl_set_alarm stress test", "[esp_timer]")
     vSemaphoreDelete(done);
 }
 
+static void test_correct_delay_timer_func(void* arg)
+{
+    int64_t* p_end = (int64_t*) arg;
+    *p_end = ref_clock_get();
+}
+
 TEST_CASE("esp_timer produces correct delay", "[esp_timer]")
 {
-    void timer_func(void* arg)
-    {
-        int64_t* p_end = (int64_t*) arg;
-        *p_end = ref_clock_get();
-    }
-
     int64_t t_end;
     esp_timer_handle_t timer1;
     esp_timer_create_args_t args = {
-            .callback = &timer_func,
+            .callback = &test_correct_delay_timer_func,
             .arg = &t_end,
             .name = "timer1"
     };
@@ -189,41 +196,41 @@ TEST_CASE("esp_timer produces correct delay", "[esp_timer]")
     esp_timer_delete(timer1);
 }
 
-TEST_CASE("periodic esp_timer produces correct delays", "[esp_timer]")
-{
-    // no, we can't make this a const size_t (§6.7.5.2)
+// no, we can't make this a const size_t (§6.7.5.2)
 #define NUM_INTERVALS 16
 
-    typedef struct {
-        esp_timer_handle_t timer;
-        size_t cur_interval;
-        int intervals[NUM_INTERVALS];
-        int64_t t_start;
-        SemaphoreHandle_t done;
-    } test_args_t;
+typedef struct {
+    esp_timer_handle_t timer;
+    size_t cur_interval;
+    int intervals[NUM_INTERVALS];
+    int64_t t_start;
+    SemaphoreHandle_t done;
+} test_periodic_correct_delays_args_t;
 
-    void timer_func(void* arg)
-    {
-        test_args_t* p_args = (test_args_t*) arg;
-        int64_t t_end = ref_clock_get();
-        int32_t ms_diff = (t_end - p_args->t_start) / 1000;
-        printf("timer #%d %dms\n", p_args->cur_interval, ms_diff);
-        p_args->intervals[p_args->cur_interval++] = ms_diff;
-        // Deliberately make timer handler run longer.
-        // We check that this doesn't affect the result.
-        esp_rom_delay_us(10*1000);
-        if (p_args->cur_interval == NUM_INTERVALS) {
-            printf("done\n");
-            TEST_ESP_OK(esp_timer_stop(p_args->timer));
-            xSemaphoreGive(p_args->done);
-        }
+static void test_periodic_correct_delays_timer_func(void* arg)
+{
+    test_periodic_correct_delays_args_t* p_args = (test_periodic_correct_delays_args_t*) arg;
+    int64_t t_end = ref_clock_get();
+    int32_t ms_diff = (t_end - p_args->t_start) / 1000;
+    printf("timer #%d %dms\n", p_args->cur_interval, ms_diff);
+    p_args->intervals[p_args->cur_interval++] = ms_diff;
+    // Deliberately make timer handler run longer.
+    // We check that this doesn't affect the result.
+    esp_rom_delay_us(10*1000);
+    if (p_args->cur_interval == NUM_INTERVALS) {
+        printf("done\n");
+        TEST_ESP_OK(esp_timer_stop(p_args->timer));
+        xSemaphoreGive(p_args->done);
     }
+}
 
+TEST_CASE("periodic esp_timer produces correct delays", "[esp_timer]")
+{
     const int delay_ms = 100;
-    test_args_t args = {0};
+    test_periodic_correct_delays_args_t args = {0};
     esp_timer_handle_t timer1;
     esp_timer_create_args_t create_args = {
-            .callback = &timer_func,
+            .callback = &test_periodic_correct_delays_timer_func,
             .arg = &args,
             .name = "timer1",
     };
@@ -247,58 +254,58 @@ TEST_CASE("periodic esp_timer produces correct delays", "[esp_timer]")
 
     TEST_ESP_OK( esp_timer_delete(timer1) );
     vSemaphoreDelete(args.done);
+}
 #undef NUM_INTERVALS
+
+
+#define N 5
+
+typedef struct {
+    const int order[N * 3];
+    size_t count;
+} test_timers_ordered_correctly_common_t;
+
+typedef struct {
+    int timer_index;
+    const int intervals[N];
+    size_t intervals_count;
+    esp_timer_handle_t timer;
+    test_timers_ordered_correctly_common_t* common;
+    bool pass;
+    SemaphoreHandle_t done;
+    int64_t t_start;
+} test_timers_ordered_correctly_args_t;
+
+static void test_timers_ordered_correctly_timer_func(void* arg)
+{
+    test_timers_ordered_correctly_args_t* p_args = (test_timers_ordered_correctly_args_t*) arg;
+    // check order
+    size_t count = p_args->common->count;
+    int expected_index = p_args->common->order[count];
+    int ms_since_start = (ref_clock_get() - p_args->t_start) / 1000;
+    printf("Time %dms, at count %d, expected timer %d, got timer %d\n",
+            ms_since_start, count, expected_index, p_args->timer_index);
+    if (expected_index != p_args->timer_index) {
+        p_args->pass = false;
+        esp_timer_stop(p_args->timer);
+        xSemaphoreGive(p_args->done);
+        return;
+    }
+    p_args->common->count++;
+    if (++p_args->intervals_count == N) {
+        esp_timer_stop(p_args->timer);
+        xSemaphoreGive(p_args->done);
+        return;
+    }
+    int next_interval = p_args->intervals[p_args->intervals_count];
+    printf("starting timer %d interval #%d, %d ms\n",
+            p_args->timer_index, p_args->intervals_count, next_interval);
+    esp_timer_start_once(p_args->timer, next_interval * 1000);
 }
 
 TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
 {
-#define N 5
-
-    typedef struct {
-        const int order[N * 3];
-        size_t count;
-    } test_common_t;
-
-    typedef struct {
-        int timer_index;
-        const int intervals[N];
-        size_t intervals_count;
-        esp_timer_handle_t timer;
-        test_common_t* common;
-        bool pass;
-        SemaphoreHandle_t done;
-        int64_t t_start;
-    } test_args_t;
-
-    void timer_func(void* arg)
-    {
-        test_args_t* p_args = (test_args_t*) arg;
-        // check order
-        size_t count = p_args->common->count;
-        int expected_index = p_args->common->order[count];
-        int ms_since_start = (ref_clock_get() - p_args->t_start) / 1000;
-        printf("Time %dms, at count %d, expected timer %d, got timer %d\n",
-                ms_since_start, count, expected_index, p_args->timer_index);
-        if (expected_index != p_args->timer_index) {
-            p_args->pass = false;
-            esp_timer_stop(p_args->timer);
-            xSemaphoreGive(p_args->done);
-            return;
-        }
-        p_args->common->count++;
-        if (++p_args->intervals_count == N) {
-            esp_timer_stop(p_args->timer);
-            xSemaphoreGive(p_args->done);
-            return;
-        }
-        int next_interval = p_args->intervals[p_args->intervals_count];
-        printf("starting timer %d interval #%d, %d ms\n",
-                p_args->timer_index, p_args->intervals_count, next_interval);
-        esp_timer_start_once(p_args->timer, next_interval * 1000);
-    }
-
-
-    test_common_t common = {
+    test_timers_ordered_correctly_common_t common = {
         .order = {1, 2, 3, 2, 1, 3, 1, 2, 1, 3, 2, 1, 3, 3, 2},
         .count = 0
     };
@@ -308,7 +315,7 @@ TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
     ref_clock_init();
     int64_t now = ref_clock_get();
 
-    test_args_t args1 = {
+    test_timers_ordered_correctly_args_t args1 = {
             .timer_index = 1,
             .intervals = {10, 40, 20, 40, 30},
             .common = &common,
@@ -317,7 +324,7 @@ TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
             .t_start = now
     };
 
-    test_args_t args2 = {
+    test_timers_ordered_correctly_args_t args2 = {
             .timer_index = 2,
             .intervals = {20, 20, 60, 30, 40},
             .common = &common,
@@ -326,7 +333,7 @@ TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
             .t_start = now
     };
 
-    test_args_t args3 = {
+    test_timers_ordered_correctly_args_t args3 = {
             .timer_index = 3,
             .intervals = {30, 30, 60, 30, 10},
             .common = &common,
@@ -337,7 +344,7 @@ TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
 
 
     esp_timer_create_args_t create_args = {
-            .callback = &timer_func,
+            .callback = &test_timers_ordered_correctly_timer_func,
             .arg = &args1,
             .name = "1"
     };
@@ -371,8 +378,14 @@ TEST_CASE("multiple timers are ordered correctly", "[esp_timer]")
     TEST_ESP_OK( esp_timer_delete(args1.timer) );
     TEST_ESP_OK( esp_timer_delete(args2.timer) );
     TEST_ESP_OK( esp_timer_delete(args3.timer) );
-
+}
 #undef N
+
+
+static void test_short_intervals_timer_func(void* arg) {
+    SemaphoreHandle_t done = (SemaphoreHandle_t) arg;
+    xSemaphoreGive(done);
+    printf(".");
 }
 
 /* Create two timers, start them around the same time, and search through
@@ -383,14 +396,8 @@ TEST_CASE("esp_timer for very short intervals", "[esp_timer]")
 {
     SemaphoreHandle_t semaphore = xSemaphoreCreateCounting(2, 0);
 
-    void timer_func(void* arg) {
-        SemaphoreHandle_t done = (SemaphoreHandle_t) arg;
-        xSemaphoreGive(done);
-        printf(".");
-    }
-
     esp_timer_create_args_t timer_args = {
-            .callback = &timer_func,
+            .callback = &test_short_intervals_timer_func,
             .arg = (void*) semaphore,
             .name = "foo"
     };
@@ -437,68 +444,68 @@ static int64_t IRAM_ATTR __attribute__((noinline)) get_clock_diff(void)
     return hs_time - ref_time;
 }
 
+typedef struct {
+    SemaphoreHandle_t done;
+    bool pass;
+    int test_cnt;
+    int error_cnt;
+    int64_t max_error;
+    int64_t avg_diff;
+    int64_t dummy;
+} test_monotonic_values_state_t;
+
+static void timer_test_monotonic_values_task(void* arg) {
+    test_monotonic_values_state_t* state = (test_monotonic_values_state_t*) arg;
+    state->pass = true;
+
+    /* make sure both functions are in cache */
+    state->dummy = get_clock_diff();
+
+    /* calculate the difference between the two clocks */
+    portDISABLE_INTERRUPTS();
+    int64_t delta = get_clock_diff();
+    portENABLE_INTERRUPTS();
+    int64_t start_time = ref_clock_get();
+    int error_repeat_cnt = 0;
+    while (ref_clock_get() - start_time < 10000000) {  /* 10 seconds */
+        /* Get values of both clocks again, and check that they are close to 'delta'.
+         * We don't disable interrupts here, because esp_timer_get_time doesn't lock
+         * interrupts internally, so we check if it can get "broken" by a well placed
+         * interrupt.
+         */
+        int64_t diff = get_clock_diff() - delta;
+        /* Allow some difference due to rtos tick interrupting task between
+         * getting 'hs_now' and 'now'.
+         */
+        if (abs(diff) > 100) {
+            error_repeat_cnt++;
+            state->error_cnt++;
+        } else {
+            error_repeat_cnt = 0;
+        }
+        if (error_repeat_cnt > 2) {
+            printf("diff=%lld\n", diff);
+            state->pass = false;
+        }
+        state->avg_diff += diff;
+        state->max_error = MAX(state->max_error, abs(diff));
+        state->test_cnt++;
+    }
+    state->avg_diff /= state->test_cnt;
+    xSemaphoreGive(state->done);
+    vTaskDelete(NULL);
+ }
+
 TEST_CASE("esp_timer_get_time returns monotonic values", "[esp_timer]")
 {
-    typedef struct {
-        SemaphoreHandle_t done;
-        bool pass;
-        int test_cnt;
-        int error_cnt;
-        int64_t max_error;
-        int64_t avg_diff;
-        int64_t dummy;
-    } test_state_t;
-
-    void timer_test_task(void* arg) {
-        test_state_t* state = (test_state_t*) arg;
-        state->pass = true;
-
-        /* make sure both functions are in cache */
-        state->dummy = get_clock_diff();
-
-        /* calculate the difference between the two clocks */
-        portDISABLE_INTERRUPTS();
-        int64_t delta = get_clock_diff();
-        portENABLE_INTERRUPTS();
-        int64_t start_time = ref_clock_get();
-        int error_repeat_cnt = 0;
-        while (ref_clock_get() - start_time < 10000000) {  /* 10 seconds */
-            /* Get values of both clocks again, and check that they are close to 'delta'.
-             * We don't disable interrupts here, because esp_timer_get_time doesn't lock
-             * interrupts internally, so we check if it can get "broken" by a well placed
-             * interrupt.
-             */
-            int64_t diff = get_clock_diff() - delta;
-            /* Allow some difference due to rtos tick interrupting task between
-             * getting 'hs_now' and 'now'.
-             */
-            if (abs(diff) > 100) {
-                error_repeat_cnt++;
-                state->error_cnt++;
-            } else {
-                error_repeat_cnt = 0;
-            }
-            if (error_repeat_cnt > 2) {
-                printf("diff=%lld\n", diff);
-                state->pass = false;
-            }
-            state->avg_diff += diff;
-            state->max_error = MAX(state->max_error, abs(diff));
-            state->test_cnt++;
-        }
-        state->avg_diff /= state->test_cnt;
-        xSemaphoreGive(state->done);
-        vTaskDelete(NULL);
-    }
-
     ref_clock_init();
     setup_overflow();
 
-    test_state_t states[portNUM_PROCESSORS] = {0};
+    test_monotonic_values_state_t states[portNUM_PROCESSORS] = {0};
     SemaphoreHandle_t done = xSemaphoreCreateCounting(portNUM_PROCESSORS, 0);
     for (int i = 0; i < portNUM_PROCESSORS; ++i) {
         states[i].done = done;
-        xTaskCreatePinnedToCore(&timer_test_task, "test", 4096, &states[i], 6, NULL, i);
+        xTaskCreatePinnedToCore(&timer_test_monotonic_values_task, "test", 4096, &states[i], 6, NULL, i);
     }
 
     for (int i = 0; i < portNUM_PROCESSORS; ++i) {
@@ -523,27 +530,27 @@ TEST_CASE("Can dump esp_timer stats", "[esp_timer]")
     esp_timer_dump(stdout);
 }
 
+typedef struct {
+    SemaphoreHandle_t notify_from_timer_cb;
+    esp_timer_handle_t timer;
+} test_delete_from_callback_arg_t;
+
+static void test_delete_from_callback_timer_func(void* varg)
+{
+    test_delete_from_callback_arg_t arg = *(test_delete_from_callback_arg_t*) varg;
+    esp_timer_delete(arg.timer);
+    printf("Timer %p is deleted\n", arg.timer);
+    xSemaphoreGive(arg.notify_from_timer_cb);
+}
+
 TEST_CASE("Can delete timer from callback", "[esp_timer]")
 {
-    typedef struct {
-        SemaphoreHandle_t notify_from_timer_cb;
-        esp_timer_handle_t timer;
-    } test_arg_t;
-
-    void timer_func(void* varg)
-    {
-        test_arg_t arg = *(test_arg_t*) varg;
-        esp_timer_delete(arg.timer);
-        printf("Timer %p is deleted\n", arg.timer);
-        xSemaphoreGive(arg.notify_from_timer_cb);
-    }
-
-    test_arg_t args = {
+    test_delete_from_callback_arg_t args = {
             .notify_from_timer_cb = xSemaphoreCreateBinary(),
     };
 
     esp_timer_create_args_t timer_args = {
-            .callback = &timer_func,
+            .callback = &test_delete_from_callback_timer_func,
             .arg = &args,
             .name = "self_deleter"
     };
@@ -623,24 +630,23 @@ TEST_CASE("esp_timer_impl_advance moves time base correctly", "[esp_timer]")
     TEST_ASSERT_INT_WITHIN(1000, diff_us, (int) t_delta);
 }
 
+typedef struct {
+    int64_t cb_time;
+} test_run_when_expected_state_t;
+
+static void test_run_when_expected_timer_func(void* varg) {
+    test_run_when_expected_state_t* arg = (test_run_when_expected_state_t*) varg;
+    arg->cb_time = ref_clock_get();
+}
 
 TEST_CASE("after esp_timer_impl_advance, timers run when expected", "[esp_timer]")
 {
-    typedef struct {
-        int64_t cb_time;
-    } test_state_t;
-
-    void timer_func(void* varg) {
-        test_state_t* arg = (test_state_t*) varg;
-        arg->cb_time = ref_clock_get();
-    }
-
     ref_clock_init();
 
-    test_state_t state = { 0 };
+    test_run_when_expected_state_t state = { 0 };
 
     esp_timer_create_args_t timer_args = {
-            .callback = &timer_func,
+            .callback = &test_run_when_expected_timer_func,
             .arg = &state
     };
     esp_timer_handle_t timer;
@@ -688,15 +694,15 @@ static void IRAM_ATTR test_tick_hook(void)
     }
 }
 
+static void test_start_stop_timer_func(void* arg)
+{
+    printf("timer cb\n");
+}
+
 TEST_CASE("Can start/stop timer from ISR context", "[esp_timer]")
 {
-    void timer_func(void* arg)
-    {
-        printf("timer cb\n");
-    }
-
     esp_timer_create_args_t create_args = {
-        .callback = &timer_func,
+        .callback = &test_start_stop_timer_func,
     };
     TEST_ESP_OK(esp_timer_create(&create_args, &timer1));
     sem = xSemaphoreCreateBinary();
@@ -916,3 +922,236 @@ TEST_CASE("Test a latency between a call of callback and real event", "[esp_time
     TEST_ESP_OK(esp_timer_stop(periodic_timer));
     TEST_ESP_OK(esp_timer_delete(periodic_timer));
 }
+
+#ifdef CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD
+static int64_t old_time[2];
+
+static void timer_isr_callback(void* arg)
+{
+    int num_timer = *((int*)arg);
+    int64_t now = esp_timer_get_time();
+    int64_t dt = now - old_time[num_timer];
+    old_time[num_timer] = now;
+    if (num_timer == 1) {
+        esp_rom_printf("(%lld): \t\t\t\t timer ISR, dt: %lld us\n", now, dt);
+        assert(xPortInIsrContext());
+    } else {
+        esp_rom_printf("(%lld): timer TASK, dt: %lld us\n", now, dt);
+        assert(!xPortInIsrContext());
+    }
+}
+
+TEST_CASE("Test ESP_TIMER_ISR dispatch method", "[esp_timer]")
+{
+    TEST_ESP_OK(esp_timer_dump(stdout));
+    int timer[2]= {1, 2};
+    const esp_timer_create_args_t periodic_timer1_args = {
+        .callback = &timer_isr_callback,
+        .dispatch_method = ESP_TIMER_ISR,
+        .arg = &timer[0],
+        .name = "ISR",
+    };
+
+    esp_timer_handle_t periodic_timer1;
+    TEST_ESP_OK(esp_timer_create(&periodic_timer1_args, &periodic_timer1));
+    TEST_ESP_OK(esp_timer_start_periodic(periodic_timer1, 400000));
+
+    const esp_timer_create_args_t periodic_timer2_args = {
+        .callback = &timer_isr_callback,
+        .dispatch_method = ESP_TIMER_TASK,
+        .arg = &timer[1],
+        .name = "TASK",
+    };
+
+    esp_timer_handle_t periodic_timer2;
+    TEST_ESP_OK(esp_timer_create(&periodic_timer2_args, &periodic_timer2));
+    TEST_ESP_OK(esp_timer_start_periodic(periodic_timer2, 500000));
+
+    printf("timers created\n");
+
+    vTaskDelay(10 * 1000 / portTICK_PERIOD_MS);
+    TEST_ESP_OK(esp_timer_stop(periodic_timer1));
+    TEST_ESP_OK(esp_timer_stop(periodic_timer2));
+
+    TEST_ESP_OK(esp_timer_dump(stdout));
+
+    TEST_ESP_OK(esp_timer_delete(periodic_timer1));
+    TEST_ESP_OK(esp_timer_delete(periodic_timer2));
+    printf("timers deleted\n");
+    TEST_ESP_OK(esp_timer_dump(stdout));
+}
+
+static void dump_task(void* arg)
+{
+    bool* stop_dump_task = (bool*) arg;
+    while (*stop_dump_task == false) {
+        TEST_ESP_OK(esp_timer_dump(NULL));
+    }
+    vTaskDelete(NULL);
+}
+
+static void isr_callback(void* arg)
+{
+    assert(xPortInIsrContext());
+}
+
+static void task_callback(void* arg)
+{
+    assert(!xPortInIsrContext());
+}
+
+TEST_CASE("Test ESP_TIMER_ISR dispatch method is not blocked", "[esp_timer]")
+{
+    const esp_timer_create_args_t periodic_timer1_args = {
+        .callback = &isr_callback,
+        .dispatch_method = ESP_TIMER_ISR,
+        .arg = NULL,
+        .name = "ISR",
+    };
+
+    esp_timer_handle_t periodic_timer1;
+    TEST_ESP_OK(esp_timer_create(&periodic_timer1_args, &periodic_timer1));
+    TEST_ESP_OK(esp_timer_start_periodic(periodic_timer1, 500));
+
+    const esp_timer_create_args_t periodic_timer2_args = {
+        .callback = &task_callback,
+        .dispatch_method = ESP_TIMER_TASK,
+        .arg = NULL,
+        .name = "TASK",
+    };
+
+    esp_timer_handle_t periodic_timer2;
+    TEST_ESP_OK(esp_timer_create(&periodic_timer2_args, &periodic_timer2));
+    TEST_ESP_OK(esp_timer_start_periodic(periodic_timer2, 5000));
+    printf("timers created\n");
+
+    bool stop_dump_task = false;
+    xTaskCreatePinnedToCore(&dump_task, "dump", 4096, &stop_dump_task, UNITY_FREERTOS_PRIORITY, NULL, 0);
+    vTaskDelay(10 * 1000 / portTICK_PERIOD_MS);
+    stop_dump_task = true;
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    TEST_ESP_OK(esp_timer_stop(periodic_timer1));
+    TEST_ESP_OK(esp_timer_stop(periodic_timer2));
+
+    TEST_ESP_OK(esp_timer_dump(stdout));
+
+    TEST_ESP_OK(esp_timer_delete(periodic_timer1));
+    TEST_ESP_OK(esp_timer_delete(periodic_timer2));
+    printf("timer deleted\n");
+}
+
+static void isr_callback1(void* arg)
+{
+    assert(xPortInIsrContext());
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    esp_rom_printf("isr_callback1: timer ISR\n");
+    SemaphoreHandle_t done = *(SemaphoreHandle_t*) arg;
+    xSemaphoreGiveFromISR(done, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) {
+        esp_timer_isr_dispatch_need_yield();
+    }
+}
+
+static void task_callback1(void* arg)
+{
+    assert(0);
+}
+
+TEST_CASE("Test ESP_TIMER_ISR, stop API cleans alarm reg if TASK timer list is empty", "[esp_timer]")
+{
+    SemaphoreHandle_t done = xSemaphoreCreateBinary();
+    const esp_timer_create_args_t timer1_args = {
+        .callback = &isr_callback1,
+        .dispatch_method = ESP_TIMER_ISR,
+        .arg = &done,
+        .name = "ISR",
+    };
+
+    esp_timer_handle_t timer1;
+    TEST_ESP_OK(esp_timer_create(&timer1_args, &timer1));
+    TEST_ESP_OK(esp_timer_start_periodic(timer1, 5 * SEC));
+
+    const esp_timer_create_args_t timer2_args = {
+        .callback = &task_callback1,
+        .dispatch_method = ESP_TIMER_TASK,
+        .arg = NULL,
+        .name = "TASK",
+    };
+
+    esp_timer_handle_t timer2;
+    TEST_ESP_OK(esp_timer_create(&timer2_args, &timer2));
+    TEST_ESP_OK(esp_timer_start_once(timer2, 3 * SEC));
+    printf("timers created\n");
+
+    printf("stop timer2\n");
+    TEST_ESP_OK(esp_timer_stop(timer2));
+
+    TEST_ASSERT(xSemaphoreTake(done, 6 * 1000 / portTICK_PERIOD_MS));
+
+    printf("stop timer1\n");
+    TEST_ESP_OK(esp_timer_stop(timer1));
+
+    TEST_ESP_OK(esp_timer_dump(stdout));
+
+    TEST_ESP_OK(esp_timer_delete(timer1));
+    TEST_ESP_OK(esp_timer_delete(timer2));
+    vSemaphoreDelete(done);
+    printf("timer deleted\n");
+}
+
+static void isr_callback2(void* arg)
+{
+    assert(0);
+}
+
+static void task_callback2(void* arg)
+{
+    assert(!xPortInIsrContext());
+    esp_rom_printf("task_callback2: timer TASK\n");
+    SemaphoreHandle_t done = *(SemaphoreHandle_t*) arg;
+    xSemaphoreGive(done);
+}
+
+TEST_CASE("Test ESP_TIMER_ISR, stop API cleans alarm reg if ISR timer list is empty", "[esp_timer]")
+{
+    SemaphoreHandle_t done = xSemaphoreCreateBinary();
+    const esp_timer_create_args_t timer1_args = {
+        .callback = &isr_callback2,
+        .dispatch_method = ESP_TIMER_ISR,
+        .arg = NULL,
+        .name = "ISR",
+    };
+
+    esp_timer_handle_t timer1;
+    TEST_ESP_OK(esp_timer_create(&timer1_args, &timer1));
+    TEST_ESP_OK(esp_timer_start_once(timer1, 3 * SEC));
+
+    const esp_timer_create_args_t timer2_args = {
+        .callback = &task_callback2,
+        .dispatch_method = ESP_TIMER_TASK,
+        .arg = &done,
+        .name = "TASK",
+    };
+
+    esp_timer_handle_t timer2;
+    TEST_ESP_OK(esp_timer_create(&timer2_args, &timer2));
+    TEST_ESP_OK(esp_timer_start_periodic(timer2, 5 * SEC));
+    printf("timers created\n");
+
+    printf("stop timer1\n");
+    TEST_ESP_OK(esp_timer_stop(timer1));
+
+    TEST_ASSERT(xSemaphoreTake(done, 6 * 1000 / portTICK_PERIOD_MS));
+
+    printf("stop timer2\n");
+    TEST_ESP_OK(esp_timer_stop(timer2));
+
+    TEST_ESP_OK(esp_timer_dump(stdout));
+
+    TEST_ESP_OK(esp_timer_delete(timer1));
+    TEST_ESP_OK(esp_timer_delete(timer2));
+    vSemaphoreDelete(done);
+    printf("timer deleted\n");
+}
+#endif // CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD

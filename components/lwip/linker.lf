@@ -62,7 +62,6 @@ entries:
     pbuf:pbuf_header_impl (noflash_text)
     pbuf:pbuf_header (noflash_text)
     pbuf:pbuf_free (noflash_text)
-    timeouts:sys_timeouts_mbox_fetch (noflash_text)
     udp:udp_input_local_match (noflash_text)
     udp:udp_input (noflash_text)
     udp:udp_send (noflash_text)
@@ -82,9 +81,6 @@ entries:
     ethernetif:ethernetif_input (noflash_text)
     wlanif:low_level_output (noflash_text)
     wlanif:wlanif_input (noflash_text)
-  else:
-
-    * (default)
 
   if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
     * (extram_bss)

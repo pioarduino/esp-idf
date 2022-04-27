@@ -466,23 +466,15 @@ TEST_CASE("multi_heap aligned allocations", "[multi_heap]")
         uint8_t *buf = (uint8_t *)multi_heap_aligned_alloc(heap, (aligments + 137), aligments );
         if(((aligments & (aligments - 1)) != 0) || (!aligments)) {
             REQUIRE( buf == NULL );
-            //printf("[ALIGNED_ALLOC] alignment: %u is not a power of two, don't allow allocation \n", aligments);
         } else {
             REQUIRE( buf != NULL );
             REQUIRE((intptr_t)buf >= (intptr_t)test_heap);
             REQUIRE((intptr_t)buf < (intptr_t)(test_heap + sizeof(test_heap)));
 
             printf("[ALIGNED_ALLOC] alignment required: %u \n", aligments);
-            //printf("[ALIGNED_ALLOC] allocated size: %d \n", multi_heap_get_allocated_size(heap, buf));
             printf("[ALIGNED_ALLOC] address of allocated memory: %p \n\n", (void *)buf);
             //Address of obtained block must be aligned with selected value
-            if((aligments & 0x03) == 0) {
-                //Alignment is a multiple of four:
-                REQUIRE(((intptr_t)buf & 0x03) == 0);
-            } else {
-                //Exotic alignments:
-                REQUIRE(((intptr_t)buf & (aligments - 1)) == 0);
-            }
+            REQUIRE(((intptr_t)buf & (aligments - 1)) == 0);
 
             //Write some data, if it corrupts memory probably the heap
             //canary verification will fail:
@@ -491,6 +483,22 @@ TEST_CASE("multi_heap aligned allocations", "[multi_heap]")
             multi_heap_free(heap, buf);
         }
     }
+
+    /* Check that TLSF doesn't allocate a memory space smaller than required.
+     * In any case, TLSF will write data in the previous block than the one
+     * allocated. Thus, we should try to get/allocate this previous block. If
+     * the poisoned filled pattern has beeen overwritten by TLSF, then this
+     * previous block will trigger an exception.
+     * More info on this bug in !16296. */
+    const size_t size = 50; /* TLSF will round the size up */
+    uint8_t *buf1 = (uint8_t *)multi_heap_aligned_alloc(heap, size, 4);
+    uint8_t *buf2 = (uint8_t *)multi_heap_aligned_alloc(heap, size, 4);
+    multi_heap_free(heap, buf1);
+    /* By specifying a size equal of the gap between buf1 and buf2. We are
+     * trying to force TLSF to allocate two consecutive blocks. */
+    buf1 = (uint8_t *)multi_heap_aligned_alloc(heap, buf2 - buf1, 4);
+    multi_heap_free(heap, buf2);
+
 
     printf("[ALIGNED_ALLOC] heap_size after: %d \n", multi_heap_free_size(heap));
     REQUIRE((old_size - multi_heap_free_size(heap)) <= leakage);

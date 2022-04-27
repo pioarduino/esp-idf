@@ -1,17 +1,25 @@
 # Designed to be included from an IDF app's CMakeLists.txt file
 cmake_minimum_required(VERSION 3.5)
 
+include(${CMAKE_CURRENT_LIST_DIR}/targets.cmake)
+# Initialize build target for this build using the environment variable or
+# value passed externally.
+__target_init()
+
 # The mere inclusion of this CMake file sets up some interal build properties.
 # These properties can be modified in between this inclusion the the idf_build_process
 # call.
 include(${CMAKE_CURRENT_LIST_DIR}/idf.cmake)
 
+# setting PYTHON variable here for compatibility only, new code should use
+# idf_build_get_property(variable PYTHON)
+idf_build_get_property(PYTHON PYTHON)
+if(NOT PYTHON)
+    message(FATAL_ERROR "Internal error, PYTHON build property not set correctly.")
+endif()
+
+# legacy variable for compatibility
 set(IDFTOOL ${PYTHON} "${IDF_PATH}/tools/idf.py")
-# Internally, the Python interpreter is already set to 'python'. Re-set here
-# to be absolutely sure.
-set_default(PYTHON "python")
-file(TO_CMAKE_PATH ${PYTHON} PYTHON)
-idf_build_set_property(PYTHON ${PYTHON})
 
 # On processing, checking Python required modules can be turned off if it was
 # already checked externally.
@@ -29,10 +37,6 @@ if(WARN_UNINITIALIZED)
 else()
     idf_build_set_property(EXTRA_CMAKE_ARGS "")
 endif()
-
-# Initialize build target for this build using the environment variable or
-# value passed externally.
-__target_init()
 
 #
 # Get the project version from either a version file or the Git revision. This is passed
@@ -153,13 +157,14 @@ function(__project_init components_var test_components_var)
 
     function(__project_component_dir component_dir)
         get_filename_component(component_dir "${component_dir}" ABSOLUTE)
+        # The directory itself is a valid idf component
         if(EXISTS ${component_dir}/CMakeLists.txt)
             idf_build_component(${component_dir})
         else()
+            # otherwise, check whether the subfolders are potential idf components
             file(GLOB component_dirs ${component_dir}/*)
             foreach(component_dir ${component_dirs})
-                if(EXISTS ${component_dir}/CMakeLists.txt)
-                    get_filename_component(base_dir ${component_dir} NAME)
+                if(IS_DIRECTORY ${component_dir})
                     __component_dir_quick_check(is_component ${component_dir})
                     if(is_component)
                         idf_build_component(${component_dir})
@@ -168,8 +173,6 @@ function(__project_init components_var test_components_var)
             endforeach()
         endif()
     endfunction()
-
-    idf_build_set_property(IDF_COMPONENT_MANAGER "$ENV{IDF_COMPONENT_MANAGER}")
 
     # Add component directories to the build, given the component filters, exclusions
     # extra directories, etc. passed from the root CMakeLists.txt.
@@ -181,41 +184,8 @@ function(__project_init components_var test_components_var)
             __project_component_dir(${component_dir})
         endforeach()
     else()
-        # Add project manifest and lock file to the list of dependencies
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/idf_project.yml")
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/dependencies.lock")
-
-        idf_build_get_property(idf_component_manager IDF_COMPONENT_MANAGER)
-        if(idf_component_manager)
-            if(idf_component_manager EQUAL "0")
-                message(VERBOSE "IDF Component manager was explicitly disabled by setting IDF_COMPONENT_MANAGER=0")
-            elseif(idf_component_manager EQUAL "1")
-                set(managed_components_list_file ${CMAKE_BINARY_DIR}/managed_components_list.temp.cmake)
-
-                # Call for package manager to prepare remote dependencies
-                execute_process(COMMAND ${PYTHON}
-                    "-m"
-                    "idf_component_manager.prepare_components"
-                    "--project_dir=${CMAKE_CURRENT_LIST_DIR}"
-                    "prepare_dependencies"
-                    "--managed_components_list_file=${managed_components_list_file}"
-                    RESULT_VARIABLE result
-                    ERROR_VARIABLE error)
-
-                if(NOT result EQUAL 0)
-                    message(FATAL_ERROR "${error}")
-                endif()
-
-                # Include managed components
-                include(${managed_components_list_file})
-                file(REMOVE ${managed_components_list_file})
-            else()
-                message(WARNING "IDF_COMPONENT_MANAGER environment variable is set to unknown value "
-                        "\"${idf_component_manager}\". If you want to use component manager set it to 1.")
-            endif()
-        elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/idf_project.yml")
-            message(WARNING "\"idf_project.yml\" file is found in project directory, "
-                    "but component manager is not enabled. Please set IDF_COMPONENT_MANAGER environment variable.")
+        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/main")
+            __project_component_dir("${CMAKE_CURRENT_LIST_DIR}/main")
         endif()
 
         spaces2list(EXTRA_COMPONENT_DIRS)
@@ -223,14 +193,26 @@ function(__project_init components_var test_components_var)
             __project_component_dir("${component_dir}")
         endforeach()
 
-        __project_component_dir("${CMAKE_CURRENT_LIST_DIR}/components")
-
         # Look for components in the usual places: CMAKE_CURRENT_LIST_DIR/main,
-        # CMAKE_CURRENT_LIST_DIR/components, and the extra component dirs
-        if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/main")
-            __project_component_dir("${CMAKE_CURRENT_LIST_DIR}/main")
-        endif()
+        # extra component dirs, and CMAKE_CURRENT_LIST_DIR/components
+        __project_component_dir("${CMAKE_CURRENT_LIST_DIR}/components")
     endif()
+
+    # For bootloader components, we only need to set-up the Kconfig files.
+    # Indeed, bootloader is currently compiled as a subproject, thus,
+    # its components are not part of the main project.
+    # However, in order to be able to configure these bootloader components
+    # using menuconfig, we need to look for their Kconfig-related files now.
+    file(GLOB bootloader_component_dirs "${CMAKE_CURRENT_LIST_DIR}/bootloader_components/*")
+    list(SORT bootloader_component_dirs)
+    foreach(bootloader_component_dir ${bootloader_component_dirs})
+        if(IS_DIRECTORY ${bootloader_component_dir})
+            __component_dir_quick_check(is_component ${bootloader_component_dir})
+            if(is_component)
+                __kconfig_bootloader_component_add("${bootloader_component_dir}")
+            endif()
+        endif()
+    endforeach()
 
     spaces2list(COMPONENTS)
     spaces2list(EXCLUDE_COMPONENTS)
@@ -308,7 +290,7 @@ macro(project project_name)
     __project(${project_name} C CXX ASM)
 
     # Generate compile_commands.json (needs to come after project call).
-    set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
     # Since components can import third-party libraries, the original definition of project() should be restored
     # before the call to add components to the build.
@@ -460,8 +442,10 @@ macro(project project_name)
     endif()
     target_link_libraries(${project_elf} ${build_components})
 
-    set(mapfile "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map")
-    target_link_libraries(${project_elf} "-Wl,--cref -Wl,--Map=${mapfile}")
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        set(mapfile "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map")
+        target_link_libraries(${project_elf} "-Wl,--cref" "-Wl,--Map=\"${mapfile}\"")
+    endif()
 
     set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" APPEND PROPERTY
         ADDITIONAL_MAKE_CLEAN_FILES
@@ -477,15 +461,15 @@ macro(project project_name)
 
     # Add size targets, depend on map file, run idf_size.py
     add_custom_target(size
-        DEPENDS ${project_elf}
+        DEPENDS ${mapfile}
         COMMAND ${idf_size} ${mapfile}
         )
     add_custom_target(size-files
-        DEPENDS ${project_elf}
+        DEPENDS ${mapfile}
         COMMAND ${idf_size} --files ${mapfile}
         )
     add_custom_target(size-components
-        DEPENDS ${project_elf}
+        DEPENDS ${mapfile}
         COMMAND ${idf_size} --archives ${mapfile}
         )
 

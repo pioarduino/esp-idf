@@ -5,8 +5,8 @@
 #if __has_include("soc/soc.h")
 #include "soc/soc.h"
 #endif
-#if __has_include("esp_ds.h")
-#include "esp_ds.h"
+#if __has_include("esp_dpp.h")
+#include "esp_dpp.h"
 #endif
 #if __has_include("esp_efuse.h")
 #include "esp_efuse.h"
@@ -23,6 +23,9 @@
 #if __has_include("esp_image_format.h")
 #include "esp_image_format.h"
 #endif
+#if __has_include("esp_memprot_err.h")
+#include "esp_memprot_err.h"
+#endif
 #if __has_include("esp_mesh.h")
 #include "esp_mesh.h"
 #endif
@@ -38,26 +41,26 @@
 #if __has_include("esp_ping.h")
 #include "esp_ping.h"
 #endif
-#if __has_include("esp_serial_slave_link/essl.h")
-#include "esp_serial_slave_link/essl.h"
-#endif
 #if __has_include("esp_spi_flash.h")
 #include "esp_spi_flash.h"
 #endif
-#if __has_include("esp_supplicant/esp_wps.h")
-#include "esp_supplicant/esp_wps.h"
-#endif
-#if __has_include("esp_tls.h")
-#include "esp_tls.h"
+#if __has_include("esp_tls_errors.h")
+#include "esp_tls_errors.h"
 #endif
 #if __has_include("esp_wifi.h")
 #include "esp_wifi.h"
+#endif
+#if __has_include("esp_wps.h")
+#include "esp_wps.h"
 #endif
 #if __has_include("hal/esp_flash_err.h")
 #include "hal/esp_flash_err.h"
 #endif
 #if __has_include("nvs.h")
 #include "nvs.h"
+#endif
+#if __has_include("soc/esp32s2/esp_ds.h")
+#include "soc/esp32s2/esp_ds.h"
 #endif
 #if __has_include("ulp_common.h")
 #include "ulp_common.h"
@@ -112,9 +115,8 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_INVALID_MAC
     ERR_TBL_IT(ESP_ERR_INVALID_MAC),                            /*   267 0x10b MAC address was invalid */
 #   endif
-    // components/esp_serial_slave_link/include/esp_serial_slave_link/essl.h
 #   ifdef      ESP_ERR_NOT_FINISHED
-    ERR_TBL_IT(ESP_ERR_NOT_FINISHED),                           /*   513 0x201 */
+    ERR_TBL_IT(ESP_ERR_NOT_FINISHED),                           /*   268 0x10c There are items remained to retrieve */
 #   endif
     // components/nvs_flash/include/nvs.h
 #   ifdef      ESP_ERR_NVS_BASE
@@ -294,6 +296,13 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_NOT_ENOUGH_UNUSED_KEY_BLOCKS
     ERR_TBL_IT(ESP_ERR_NOT_ENOUGH_UNUSED_KEY_BLOCKS),           /*  5637 0x1605 Error not enough unused key blocks available */
 #   endif
+#   ifdef      ESP_ERR_DAMAGED_READING
+    ERR_TBL_IT(ESP_ERR_DAMAGED_READING),                        /*  5638 0x1606 Error. Burn or reset was done during a
+                                                                                reading operation leads to damage read
+                                                                                data. This error is internal to the
+                                                                                efuse component and not returned by any
+                                                                                public API. */
+#   endif
     // components/bootloader_support/include/esp_image_format.h
 #   ifdef      ESP_ERR_IMAGE_BASE
     ERR_TBL_IT(ESP_ERR_IMAGE_BASE),                             /*  8192 0x2000 */
@@ -370,7 +379,7 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_WIFI_TX_DISALLOW
     ERR_TBL_IT(ESP_ERR_WIFI_TX_DISALLOW),                       /* 12310 0x3016 The WiFi TX is disallowed */
 #   endif
-    // components/wpa_supplicant/include/esp_supplicant/esp_wps.h
+    // components/wpa_supplicant/esp_supplicant/include/esp_wps.h
 #   ifdef      ESP_ERR_WIFI_REGISTRAR
     ERR_TBL_IT(ESP_ERR_WIFI_REGISTRAR),                         /* 12339 0x3033 WPS registrar is not supported */
 #   endif
@@ -407,6 +416,16 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   endif
 #   ifdef      ESP_ERR_ESPNOW_IF
     ERR_TBL_IT(ESP_ERR_ESPNOW_IF),                              /* 12396 0x306c Interface error */
+#   endif
+    // components/wpa_supplicant/esp_supplicant/include/esp_dpp.h
+#   ifdef      ESP_ERR_DPP_FAILURE
+    ERR_TBL_IT(ESP_ERR_DPP_FAILURE),                            /* 12439 0x3097 Generic failure during DPP Operation */
+#   endif
+#   ifdef      ESP_ERR_DPP_TX_FAILURE
+    ERR_TBL_IT(ESP_ERR_DPP_TX_FAILURE),                         /* 12440 0x3098 DPP Frame Tx failed OR not Acked */
+#   endif
+#   ifdef      ESP_ERR_DPP_INVALID_ATTR
+    ERR_TBL_IT(ESP_ERR_DPP_INVALID_ATTR),                       /* 12441 0x3099 Encountered invalid DPP Attribute */
 #   endif
     // components/esp_common/include/esp_err.h
 #   ifdef      ESP_ERR_MESH_BASE
@@ -525,6 +544,12 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_ESP_NETIF_DNS_NOT_CONFIGURED
     ERR_TBL_IT(ESP_ERR_ESP_NETIF_DNS_NOT_CONFIGURED),           /* 20490 0x500a */
 #   endif
+#   ifdef      ESP_ERR_ESP_NETIF_MLD6_FAILED
+    ERR_TBL_IT(ESP_ERR_ESP_NETIF_MLD6_FAILED),                  /* 20491 0x500b */
+#   endif
+#   ifdef      ESP_ERR_ESP_NETIF_IP6_ADDR_FAILED
+    ERR_TBL_IT(ESP_ERR_ESP_NETIF_IP6_ADDR_FAILED),              /* 20492 0x500c */
+#   endif
     // components/esp_common/include/esp_err.h
 #   ifdef      ESP_ERR_FLASH_BASE
     ERR_TBL_IT(ESP_ERR_FLASH_BASE),                             /* 24576 0x6000 Starting number of flash error codes */
@@ -575,7 +600,10 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_HTTP_EAGAIN
     ERR_TBL_IT(ESP_ERR_HTTP_EAGAIN),                            /* 28679 0x7007 Mapping of errno EAGAIN to esp_err_t */
 #   endif
-    // components/esp-tls/esp_tls.h
+#   ifdef      ESP_ERR_HTTP_CONNECTION_CLOSED
+    ERR_TBL_IT(ESP_ERR_HTTP_CONNECTION_CLOSED),                 /* 28680 0x7008 Read FIN from peer and the connection closed */
+#   endif
+    // components/esp-tls/esp_tls_errors.h
 #   ifdef      ESP_ERR_ESP_TLS_BASE
     ERR_TBL_IT(ESP_ERR_ESP_TLS_BASE),                           /* 32768 0x8000 Starting number of ESP-TLS error codes */
 #   endif
@@ -593,74 +621,80 @@ static const esp_err_msg_t esp_err_msg_table[] = {
     ERR_TBL_IT(ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST),         /* 32772 0x8004 Failed to connect to host */
 #   endif
 #   ifdef      ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED
-    ERR_TBL_IT(ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED),           /* 32773 0x8005 failed to set socket option */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_CERT_PARTLY_OK
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_CERT_PARTLY_OK),                 /* 32774 0x8006 mbedtls parse certificates was partly successful */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_CTR_DRBG_SEED_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_CTR_DRBG_SEED_FAILED),           /* 32775 0x8007 mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_SET_HOSTNAME_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_SET_HOSTNAME_FAILED),        /* 32776 0x8008 mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED),     /* 32777 0x8009 mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_ALPN_PROTOCOLS_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_ALPN_PROTOCOLS_FAILED), /* 32778 0x800a mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED),          /* 32779 0x800b mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_OWN_CERT_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_OWN_CERT_FAILED),       /* 32780 0x800c mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_SETUP_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_SETUP_FAILED),               /* 32781 0x800d mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_WRITE_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_WRITE_FAILED),               /* 32782 0x800e mbedtls api returned error */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_PK_PARSE_KEY_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_PK_PARSE_KEY_FAILED),            /* 32783 0x800f mbedtls api returned failed */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED),           /* 32784 0x8010 mbedtls api returned failed */
-#   endif
-#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_PSK_FAILED
-    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_PSK_FAILED),            /* 32785 0x8011 mbedtls api returned failed */
+    ERR_TBL_IT(ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED),           /* 32773 0x8005 failed to set/get socket option */
 #   endif
 #   ifdef      ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT
-    ERR_TBL_IT(ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT),             /* 32786 0x8012 new connection in esp_tls_low_level_conn
+    ERR_TBL_IT(ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT),             /* 32774 0x8006 new connection in esp_tls_low_level_conn
                                                                                 connection timeouted */
 #   endif
+#   ifdef      ESP_ERR_ESP_TLS_SE_FAILED
+    ERR_TBL_IT(ESP_ERR_ESP_TLS_SE_FAILED),                      /* 32775 0x8007 */
+#   endif
+#   ifdef      ESP_ERR_ESP_TLS_TCP_CLOSED_FIN
+    ERR_TBL_IT(ESP_ERR_ESP_TLS_TCP_CLOSED_FIN),                 /* 32776 0x8008 */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_CERT_PARTLY_OK
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_CERT_PARTLY_OK),                 /* 32784 0x8010 mbedtls parse certificates was partly successful */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_CTR_DRBG_SEED_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_CTR_DRBG_SEED_FAILED),           /* 32785 0x8011 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_SET_HOSTNAME_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_SET_HOSTNAME_FAILED),        /* 32786 0x8012 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED),     /* 32787 0x8013 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_ALPN_PROTOCOLS_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_ALPN_PROTOCOLS_FAILED), /* 32788 0x8014 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED),          /* 32789 0x8015 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_OWN_CERT_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_OWN_CERT_FAILED),       /* 32790 0x8016 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_SETUP_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_SETUP_FAILED),               /* 32791 0x8017 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_WRITE_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_WRITE_FAILED),               /* 32792 0x8018 mbedtls api returned error */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_PK_PARSE_KEY_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_PK_PARSE_KEY_FAILED),            /* 32793 0x8019 mbedtls api returned failed */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED),           /* 32794 0x801a mbedtls api returned failed */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_CONF_PSK_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_CONF_PSK_FAILED),            /* 32795 0x801b mbedtls api returned failed */
+#   endif
+#   ifdef      ESP_ERR_MBEDTLS_SSL_TICKET_SETUP_FAILED
+    ERR_TBL_IT(ESP_ERR_MBEDTLS_SSL_TICKET_SETUP_FAILED),        /* 32796 0x801c mbedtls api returned failed */
+#   endif
 #   ifdef      ESP_ERR_WOLFSSL_SSL_SET_HOSTNAME_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_SET_HOSTNAME_FAILED),        /* 32787 0x8013 wolfSSL api returned error */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_SET_HOSTNAME_FAILED),        /* 32817 0x8031 wolfSSL api returned error */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_SSL_CONF_ALPN_PROTOCOLS_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_CONF_ALPN_PROTOCOLS_FAILED), /* 32788 0x8014 wolfSSL api returned error */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_CONF_ALPN_PROTOCOLS_FAILED), /* 32818 0x8032 wolfSSL api returned error */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_CERT_VERIFY_SETUP_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_CERT_VERIFY_SETUP_FAILED),       /* 32789 0x8015 wolfSSL api returned error */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_CERT_VERIFY_SETUP_FAILED),       /* 32819 0x8033 wolfSSL api returned error */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_KEY_VERIFY_SETUP_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_KEY_VERIFY_SETUP_FAILED),        /* 32790 0x8016 wolfSSL api returned error */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_KEY_VERIFY_SETUP_FAILED),        /* 32820 0x8034 wolfSSL api returned error */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_SSL_HANDSHAKE_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_HANDSHAKE_FAILED),           /* 32791 0x8017 wolfSSL api returned failed */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_HANDSHAKE_FAILED),           /* 32821 0x8035 wolfSSL api returned failed */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_CTX_SETUP_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_CTX_SETUP_FAILED),               /* 32792 0x8018 wolfSSL api returned failed */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_CTX_SETUP_FAILED),               /* 32822 0x8036 wolfSSL api returned failed */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_SSL_SETUP_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_SETUP_FAILED),               /* 32793 0x8019 wolfSSL api returned failed */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_SETUP_FAILED),               /* 32823 0x8037 wolfSSL api returned failed */
 #   endif
 #   ifdef      ESP_ERR_WOLFSSL_SSL_WRITE_FAILED
-    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_WRITE_FAILED),               /* 32794 0x801a wolfSSL api returned failed */
-#   endif
-#   ifdef      ESP_ERR_ESP_TLS_SE_FAILED
-    ERR_TBL_IT(ESP_ERR_ESP_TLS_SE_FAILED),                      /* 32795 0x801b */
+    ERR_TBL_IT(ESP_ERR_WOLFSSL_SSL_WRITE_FAILED),               /* 32824 0x8038 wolfSSL api returned failed */
 #   endif
     // components/esp_https_ota/include/esp_https_ota.h
 #   ifdef      ESP_ERR_HTTPS_OTA_BASE
@@ -715,7 +749,7 @@ static const esp_err_msg_t esp_err_msg_table[] = {
     ERR_TBL_IT(ESP_ERR_HW_CRYPTO_BASE),                         /* 49152 0xc000 Starting number of HW cryptography
                                                                                 module error codes */
 #   endif
-    // components/esp32s2/include/esp_ds.h
+    // components/esp_hw_support/include/soc/esp32s2/esp_ds.h
 #   ifdef      ESP_ERR_HW_CRYPTO_DS_HMAC_FAIL
     ERR_TBL_IT(ESP_ERR_HW_CRYPTO_DS_HMAC_FAIL),                 /* 49153 0xc001 HMAC peripheral problem */
 #   endif
@@ -727,6 +761,33 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   endif
 #   ifdef      ESP_ERR_HW_CRYPTO_DS_INVALID_PADDING
     ERR_TBL_IT(ESP_ERR_HW_CRYPTO_DS_INVALID_PADDING),           /* 49157 0xc005 */
+#   endif
+    // components/esp_common/include/esp_err.h
+#   ifdef      ESP_ERR_MEMPROT_BASE
+    ERR_TBL_IT(ESP_ERR_MEMPROT_BASE),                           /* 53248 0xd000 Starting number of Memory Protection API
+                                                                                error codes */
+#   endif
+    // components/esp_hw_support/include/esp_memprot_err.h
+#   ifdef      ESP_ERR_MEMPROT_MEMORY_TYPE_INVALID
+    ERR_TBL_IT(ESP_ERR_MEMPROT_MEMORY_TYPE_INVALID),            /* 53249 0xd001 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_SPLIT_ADDR_INVALID
+    ERR_TBL_IT(ESP_ERR_MEMPROT_SPLIT_ADDR_INVALID),             /* 53250 0xd002 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_SPLIT_ADDR_OUT_OF_RANGE
+    ERR_TBL_IT(ESP_ERR_MEMPROT_SPLIT_ADDR_OUT_OF_RANGE),        /* 53251 0xd003 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_SPLIT_ADDR_UNALIGNED
+    ERR_TBL_IT(ESP_ERR_MEMPROT_SPLIT_ADDR_UNALIGNED),           /* 53252 0xd004 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_UNIMGMT_BLOCK_INVALID
+    ERR_TBL_IT(ESP_ERR_MEMPROT_UNIMGMT_BLOCK_INVALID),          /* 53253 0xd005 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_WORLD_INVALID
+    ERR_TBL_IT(ESP_ERR_MEMPROT_WORLD_INVALID),                  /* 53254 0xd006 */
+#   endif
+#   ifdef      ESP_ERR_MEMPROT_AREA_INVALID
+    ERR_TBL_IT(ESP_ERR_MEMPROT_AREA_INVALID),                   /* 53255 0xd007 */
 #   endif
 };
 #endif //CONFIG_ESP_ERR_TO_NAME_LOOKUP

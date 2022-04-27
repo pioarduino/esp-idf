@@ -212,8 +212,10 @@
 #define WLAN_EID_FAST_BSS_TRANSITION 55
 #define WLAN_EID_TIMEOUT_INTERVAL 56
 #define WLAN_EID_RIC_DATA 57
+#define WLAN_EID_SUPPORTED_OPERATING_CLASSES 59
 #define WLAN_EID_HT_OPERATION 61
 #define WLAN_EID_SECONDARY_CHANNEL_OFFSET 62
+#define WLAN_EID_WAPI 68
 #define WLAN_EID_RRM_ENABLED_CAPABILITIES 70
 #define WLAN_EID_20_40_BSS_COEXISTENCE 72
 #define WLAN_EID_20_40_BSS_INTOLERANT 73
@@ -262,6 +264,13 @@
 #define WLAN_ACTION_UNPROTECTED_WNM 11
 #define WLAN_ACTION_WMM 17 /* WMM Specification 1.1 */
 
+/* Public action codes (IEEE Std 802.11-2016, 9.6.8.1, Table 9-307) */
+#define WLAN_PA_VENDOR_SPECIFIC 9
+#define WLAN_PA_GAS_INITIAL_REQ 10
+#define WLAN_PA_GAS_INITIAL_RESP 11
+#define WLAN_PA_GAS_COMEBACK_REQ 12
+#define WLAN_PA_GAS_COMEBACK_RESP 13
+
 /* SA Query Action frame (IEEE 802.11w/D8.0, 7.4.9) */
 #define WLAN_SA_QUERY_REQUEST 0
 #define WLAN_SA_QUERY_RESPONSE 1
@@ -273,6 +282,8 @@
 #define WLAN_TIMEOUT_KEY_LIFETIME 2
 #define WLAN_TIMEOUT_ASSOC_COMEBACK 3
 
+#define OUI_WFA 0x506f9a
+#define DPP_OUI_TYPE 0x1A
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)
@@ -342,110 +353,37 @@ enum lci_req_subelem {
 	LCI_REQ_SUBELEM_MAX_AGE = 4,
 };
 
-struct ieee80211_mgmt {
-	le16 frame_control;
-	le16 duration;
-	u8 da[6];
-	u8 sa[6];
-	u8 bssid[6];
-	le16 seq_ctrl;
-	union {
-		struct {
-			le16 auth_alg;
-			le16 auth_transaction;
-			le16 status_code;
-			/* possibly followed by Challenge text */
-			u8 variable[0];
-		} STRUCT_PACKED auth;
-		struct {
-			le16 reason_code;
-		} STRUCT_PACKED deauth;
-		struct {
-			le16 capab_info;
-			le16 listen_interval;
-			/* followed by SSID and Supported rates */
-			u8 variable[0];
-		} STRUCT_PACKED assoc_req;
-		struct {
-			le16 capab_info;
-			le16 status_code;
-			le16 aid;
-			/* followed by Supported rates */
-			u8 variable[0];
-		} STRUCT_PACKED assoc_resp, reassoc_resp;
-		struct {
-			le16 capab_info;
-			le16 listen_interval;
-			u8 current_ap[6];
-			/* followed by SSID and Supported rates */
-			u8 variable[0];
-		} STRUCT_PACKED reassoc_req;
-		struct {
-			le16 reason_code;
-		} STRUCT_PACKED disassoc;
-		struct {
-			u8 timestamp[8];
-			le16 beacon_int;
-			le16 capab_info;
-			/* followed by some of SSID, Supported rates,
-			 * FH Params, DS Params, CF Params, IBSS Params, TIM */
-			u8 variable[0];
-		} STRUCT_PACKED beacon;
-		struct {
-			/* only variable items: SSID, Supported rates */
-			u8 variable[0];
-		} STRUCT_PACKED probe_req;
-		struct {
-			u8 timestamp[8];
-			le16 beacon_int;
-			le16 capab_info;
-			/* followed by some of SSID, Supported rates,
-			 * FH Params, DS Params, CF Params, IBSS Params */
-			u8 variable[0];
-		} STRUCT_PACKED probe_resp;
-		struct {
-			u8 category;
-			union {
-				struct {
-					u8 action_code;
-					u8 dialog_token;
-					u8 status_code;
-					u8 variable[0];
-				} STRUCT_PACKED wmm_action;
-				struct{
-					u8 action_code;
-					u8 element_id;
-					u8 length;
-					u8 switch_mode;
-					u8 new_chan;
-					u8 switch_count;
-				} STRUCT_PACKED chan_switch;
-				struct {
-					u8 action;
-					u8 sta_addr[ETH_ALEN];
-					u8 target_ap_addr[ETH_ALEN];
-					u8 variable[0]; /* FT Request */
-				} STRUCT_PACKED ft_action_req;
-				struct {
-					u8 action;
-					u8 sta_addr[ETH_ALEN];
-					u8 target_ap_addr[ETH_ALEN];
-					le16 status_code;
-					u8 variable[0]; /* FT Request */
-				} STRUCT_PACKED ft_action_resp;
-				struct {
-					u8 action;
-					u8 trans_id[WLAN_SA_QUERY_TR_ID_LEN];
-				} STRUCT_PACKED sa_query_req;
-				struct {
-					u8 action; /* */
-					u8 trans_id[WLAN_SA_QUERY_TR_ID_LEN];
-				} STRUCT_PACKED sa_query_resp;
-			} u;
-		} STRUCT_PACKED action;
-	} u;
+#ifdef ESP_SUPPLICANT
+struct ieee80211_pa_vendor {
+    u8 oui[3];
+    u8 wfa_stype;
+    u8 vendor_data[];
 } STRUCT_PACKED;
 
+struct ieee80211_gas_resp {
+    u8 diag_token;
+    u16 status_code;
+    u16 comeback_delay;
+    u8 type;
+    u8 length;
+    u8 data[];
+} STRUCT_PACKED;
+
+struct ieee80211_public_action {
+    u8 action;
+    union {
+        struct ieee80211_pa_vendor pa_vendor_spec;
+        struct ieee80211_gas_resp pa_gas_resp;
+    } v;
+} STRUCT_PACKED;
+
+struct ieee80211_action {
+    u8 category;
+    union {
+        struct ieee80211_public_action public_action;
+    } u;
+} STRUCT_PACKED;
+#endif /* ESP_SUPPLICANT */
 
 #define IEEE80211_MAX_MMPDU_SIZE 2304
 struct ieee80211_ht_capabilities {
@@ -599,6 +537,13 @@ struct ieee80211_ht_operation {
 /* 2 - Reserved */
 #define WMM_TSPEC_DIRECTION_BI_DIRECTIONAL 3
 
+#define MBO_IE_VENDOR_TYPE 0x506f9a16
+#define OSEN_IE_VENDOR_TYPE 0x506f9a12
+#define MBO_OUI_TYPE 22
+#define OCE_STA BIT(0)
+#define OCE_STA_CFON BIT(1)
+#define OCE_AP BIT(2)
+
 /*
  * WMM Information Element (used in (Re)Association Request frames; may also be
  * used in Beacon frames)
@@ -685,6 +630,45 @@ enum wmm_ac {
 	WMM_AC_NUM = 4
 };
 
+/* MBO v0.0_r19, 4.2: MBO Attributes */
+/* Table 4-5: MBO Attributes */
+/* OCE v0.0.10, Table 4-3: OCE Attributes */
+enum mbo_attr_id {
+	MBO_ATTR_ID_AP_CAPA_IND = 1,
+	MBO_ATTR_ID_NON_PREF_CHAN_REPORT = 2,
+	MBO_ATTR_ID_CELL_DATA_CAPA = 3,
+	MBO_ATTR_ID_ASSOC_DISALLOW = 4,
+	MBO_ATTR_ID_CELL_DATA_PREF = 5,
+	MBO_ATTR_ID_TRANSITION_REASON = 6,
+	MBO_ATTR_ID_TRANSITION_REJECT_REASON = 7,
+	MBO_ATTR_ID_ASSOC_RETRY_DELAY = 8,
+	OCE_ATTR_ID_CAPA_IND = 101,
+	OCE_ATTR_ID_RSSI_BASED_ASSOC_REJECT = 102,
+	OCE_ATTR_ID_REDUCED_WAN_METRICS = 103,
+	OCE_ATTR_ID_RNR_COMPLETENESS = 104,
+};
+
+/* MBO v0.0_r19, 4.2.1: MBO AP Capability Indication Attribute */
+/* Table 4-7: MBO AP Capability Indication Field Values */
+#define MBO_AP_CAPA_CELL_AWARE BIT(6)
+
+/* MBO v0.0_r19, 4.2.2: Non-preferred Channel Report Attribute */
+/* Table 4-10: Reason Code Field Values */
+enum mbo_non_pref_chan_reason {
+	MBO_NON_PREF_CHAN_REASON_UNSPECIFIED = 0,
+	MBO_NON_PREF_CHAN_REASON_RSSI = 1,
+	MBO_NON_PREF_CHAN_REASON_EXT_INTERFERENCE = 2,
+	MBO_NON_PREF_CHAN_REASON_INT_INTERFERENCE = 3,
+};
+
+/* MBO v0.0_r19, 4.2.3: Cellular Data Capabilities Attribute */
+/* Table 4-13: Cellular Data Connectivity Field */
+enum mbo_cellular_capa {
+	MBO_CELL_CAPA_AVAILABLE = 1,
+	MBO_CELL_CAPA_NOT_AVAILABLE = 2,
+	MBO_CELL_CAPA_NOT_SUPPORTED = 3,
+};
+
 /* MBO v0.0_r19, 4.2.7: Transition Rejection Reason Code Attribute */
 /* Table 4-21: Transition Rejection Reason Code Field Values */
 enum mbo_transition_reject_reason {
@@ -696,6 +680,12 @@ enum mbo_transition_reject_reason {
 	MBO_TRANSITION_REJECT_REASON_INTERFERENCE = 5,
 	MBO_TRANSITION_REJECT_REASON_SERVICES = 6,
 };
+
+/* OCE v0.0.10, 4.2.1: OCE Capability Indication Attribute */
+#define OCE_RELEASE 1
+#define OCE_RELEASE_MASK (BIT(0) | BIT(1) | BIT(2))
+#define OCE_IS_STA_CFON BIT(3)
+#define OCE_IS_NON_OCE_AP_PRESENT BIT(4)
 
 /* IEEE 802.11v - WNM Action field values */
 enum wnm_action {

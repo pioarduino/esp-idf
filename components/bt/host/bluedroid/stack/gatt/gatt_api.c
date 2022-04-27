@@ -814,13 +814,13 @@ tGATT_STATUS GATTC_ConfigureMTU (UINT16 conn_id)
 
     GATT_TRACE_API ("GATTC_ConfigureMTU conn_id=%d mtu=%d", conn_id, mtu );
 
+    if ( (p_tcb == NULL) || (p_reg == NULL) || (mtu < GATT_DEF_BLE_MTU_SIZE) || (mtu > GATT_MAX_MTU_SIZE)) {
+        return GATT_ILLEGAL_PARAMETER;
+    }
+
     /* Validate that the link is BLE, not BR/EDR */
     if (p_tcb->transport != BT_TRANSPORT_LE) {
         return GATT_ERROR;
-    }
-
-    if ( (p_tcb == NULL) || (p_reg == NULL) || (mtu < GATT_DEF_BLE_MTU_SIZE) || (mtu > GATT_MAX_MTU_SIZE)) {
-        return GATT_ILLEGAL_PARAMETER;
     }
 
     if (gatt_is_clcb_allocated(conn_id)) {
@@ -1360,7 +1360,8 @@ void GATT_StartIf (tGATT_IF gatt_if)
 ** Returns          TRUE if connection started; FALSE if connection start failure.
 **
 *******************************************************************************/
-BOOLEAN GATT_Connect (tGATT_IF gatt_if, BD_ADDR bd_addr, tBLE_ADDR_TYPE bd_addr_type, BOOLEAN is_direct, tBT_TRANSPORT transport)
+BOOLEAN GATT_Connect (tGATT_IF gatt_if, BD_ADDR bd_addr, tBLE_ADDR_TYPE bd_addr_type,
+                              BOOLEAN is_direct, tBT_TRANSPORT transport, BOOLEAN is_aux)
 {
     tGATT_REG    *p_reg;
     BOOLEAN status = FALSE;
@@ -1374,7 +1375,7 @@ BOOLEAN GATT_Connect (tGATT_IF gatt_if, BD_ADDR bd_addr, tBLE_ADDR_TYPE bd_addr_
     }
 
     if (is_direct) {
-        status = gatt_act_connect (p_reg, bd_addr, bd_addr_type, transport);
+        status = gatt_act_connect (p_reg, bd_addr, bd_addr_type, transport, is_aux);
     } else {
         if (transport == BT_TRANSPORT_LE) {
             status = gatt_update_auto_connect_dev(gatt_if, TRUE, bd_addr, TRUE);

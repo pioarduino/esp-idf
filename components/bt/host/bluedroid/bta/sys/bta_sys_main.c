@@ -23,7 +23,7 @@
  ******************************************************************************/
 #define LOG_TAG "bt_bta_sys_main"
 
-// #include <assert.h>
+#include <assert.h>
 #include <string.h>
 
 #include "osi/alarm.h"
@@ -637,6 +637,27 @@ UINT32 bta_sys_get_remaining_ticks(TIMER_LIST_ENT *p_target_tle)
     return remaining_ms;
 }
 
+
+/*******************************************************************************
+**
+** Function         bta_sys_timer_is_active
+**
+** Description      Get info of timer is active or not.
+**
+** Returns          true if timer is exist and active, false otherwise.
+**
+*******************************************************************************/
+BOOLEAN bta_sys_timer_is_active(TIMER_LIST_ENT *p_tle)
+{
+    assert(p_tle != NULL);
+
+    osi_alarm_t *alarm = hash_map_get(bta_alarm_hash_map, p_tle);
+    if (alarm != NULL && osi_alarm_is_active(alarm)) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
 
 /*******************************************************************************
 **

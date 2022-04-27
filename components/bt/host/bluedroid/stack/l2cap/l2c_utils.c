@@ -52,14 +52,31 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tBT_TRANSPOR
 {
     tL2C_LCB    *p_lcb   = NULL;
     bool        list_ret = false;
-    if (list_length(l2cb.p_lcb_pool) < MAX_L2CAP_LINKS) {
+    extern tL2C_LCB  *l2cu_find_free_lcb (void);
+    // temp solution
+    p_lcb = l2cu_find_free_lcb();
+    if(p_lcb != NULL) {
+        list_ret = true;
+    }
+
+#if (CLASSIC_BT_INCLUDED == TRUE)
+    /* Check if peer device's and our BD_ADDR is same or not. It
+       should be different to avoid 'Impersonation in the Pin Pairing
+       Protocol' (CVE-2020-26555) vulnerability. */
+    if (memcmp((uint8_t *)p_bd_addr, (uint8_t *)&controller_get_interface()->get_address()->address, sizeof (BD_ADDR)) == 0) {
+        L2CAP_TRACE_ERROR ("%s connection rejected due to same BD ADDR", __func__);
+        return (NULL);
+    }
+#endif
+
+    if(p_lcb == NULL && list_length(l2cb.p_lcb_pool) < MAX_L2CAP_LINKS) {
         p_lcb = (tL2C_LCB *)osi_malloc(sizeof(tL2C_LCB));
-	if (p_lcb) {
-	    memset (p_lcb, 0, sizeof(tL2C_LCB));
+	    if (p_lcb) {
+	        memset (p_lcb, 0, sizeof(tL2C_LCB));
             list_ret = list_append(l2cb.p_lcb_pool, p_lcb);
-	}else {
-	    L2CAP_TRACE_ERROR("Error in allocating L2CAP Link Control Block");
-	}
+	    }else {
+	        L2CAP_TRACE_ERROR("Error in allocating L2CAP Link Control Block");
+	    }
     }
     if (list_ret) {
         if (p_lcb) {
@@ -95,9 +112,6 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tBT_TRANSPOR
                 l2c_link_adjust_allocation();
             }
             p_lcb->link_xmit_data_q = list_new(NULL);
-#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
-            p_lcb->completed_packets = 0;
-#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
             return (p_lcb);
         }
     }
@@ -141,6 +155,10 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
 
     p_lcb->in_use     = FALSE;
     p_lcb->is_bonding = FALSE;
+#if (BLE_INCLUDED == TRUE)
+    p_lcb->retry_create_con = 0;
+    p_lcb->start_time_s = 0;
+#endif // #if (BLE_INCLUDED == TRUE)
 
     /* Stop and release timers */
     btu_free_timer (&p_lcb->timer_entry);
@@ -268,18 +286,6 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
         p_lcb->le_sec_pending_q = NULL;
     }
 #endif  ///BLE_INCLUDED == TRUE
-
-#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
-    p_lcb->completed_packets = 0;
-#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
-    {
-	if (list_remove(l2cb.p_lcb_pool, p_lcb)) {
-	    p_lcb = NULL;
-	}
-        else {
-	    L2CAP_TRACE_ERROR("Error in removing L2CAP Link Control Block");
-	}
-    }
 }
 
 
@@ -310,6 +316,40 @@ tL2C_LCB  *l2cu_find_lcb_by_bd_addr (BD_ADDR p_bd_addr, tBT_TRANSPORT transport)
 
     /* If here, no match found */
     return (NULL);
+}
+
+tL2C_LCB  *l2cu_find_free_lcb (void)
+{
+    list_node_t *p_node = NULL;
+    tL2C_LCB    *p_lcb  = NULL;
+    for (p_node = list_begin(l2cb.p_lcb_pool); p_node; p_node = list_next(p_node)) {
+        p_lcb = list_node(p_node);
+        if (!p_lcb->in_use) {
+            return (p_lcb);
+        }
+    }
+    /* If here, no match found */
+    return (NULL);
+}
+
+uint8_t l2cu_plcb_active_count(void)
+{
+    list_node_t *p_node = NULL;
+    tL2C_LCB    *p_lcb  = NULL;
+    uint8_t active_count = 0;
+    for (p_node = list_begin(l2cb.p_lcb_pool); p_node; p_node = list_next(p_node)) {
+        p_lcb = list_node(p_node);
+        if (p_lcb && p_lcb->in_use) {
+            active_count ++;
+        }
+    }
+    if (active_count >= MAX_L2CAP_CHANNELS) {
+        L2CAP_TRACE_ERROR("error active count");
+        active_count = 0;
+    }
+    L2CAP_TRACE_DEBUG("plcb active count %d", active_count);
+    return active_count;
+
 }
 
 /*******************************************************************************
@@ -1433,19 +1473,24 @@ void l2cu_change_pri_ccb (tL2C_CCB *p_ccb, tL2CAP_CHNL_PRIORITY priority)
 ** Returns          pointer to CCB, or NULL if none
 **
 *******************************************************************************/
+bool l2cu_find_ccb_in_list(void *p_ccb_node, void *p_local_cid);
 tL2C_CCB *l2cu_allocate_ccb (tL2C_LCB *p_lcb, UINT16 cid)
 {
     tL2C_CCB    *p_ccb = NULL;
+    uint16_t tmp_cid = L2CAP_BASE_APPL_CID;
     L2CAP_TRACE_DEBUG ("l2cu_allocate_ccb: cid 0x%04x", cid);
 
+    p_ccb = l2cu_find_free_ccb ();
+    if(p_ccb == NULL) {
+        if (list_length(l2cb.p_ccb_pool) < MAX_L2CAP_CHANNELS) {
+            p_ccb = (tL2C_CCB *)osi_malloc(sizeof(tL2C_CCB));
 
-    if (list_length(l2cb.p_ccb_pool) < MAX_L2CAP_CHANNELS) {
-        p_ccb = (tL2C_CCB *)osi_malloc(sizeof(tL2C_CCB));
-        if (p_ccb) {
-            memset (p_ccb, 0, sizeof(tL2C_CCB));
-            list_append(l2cb.p_ccb_pool, p_ccb);
-	}
-    }
+            if (p_ccb) {
+                memset (p_ccb, 0, sizeof(tL2C_CCB));
+                list_append(l2cb.p_ccb_pool, p_ccb);
+            }
+        }
+     }
     if (p_ccb == NULL) {
         return (NULL);
     }
@@ -1455,7 +1500,13 @@ tL2C_CCB *l2cu_allocate_ccb (tL2C_LCB *p_lcb, UINT16 cid)
     p_ccb->in_use = TRUE;
 
     /* Get a CID for the connection */
-    p_ccb->local_cid = L2CAP_BASE_APPL_CID + (list_length(l2cb.p_ccb_pool) - 1);
+    for (tmp_cid = L2CAP_BASE_APPL_CID; tmp_cid < MAX_L2CAP_CHANNELS + L2CAP_BASE_APPL_CID; tmp_cid++) {
+        if (list_foreach(l2cb.p_ccb_pool, l2cu_find_ccb_in_list, &tmp_cid) == NULL) {
+            break;
+        }
+    }
+    assert(tmp_cid != MAX_L2CAP_CHANNELS + L2CAP_BASE_APPL_CID);
+    p_ccb->local_cid = tmp_cid;
     p_ccb->p_lcb = p_lcb;
     p_ccb->p_rcb = NULL;
     p_ccb->should_free_rcb = false;
@@ -1674,14 +1725,7 @@ void l2cu_release_ccb (tL2C_CCB *p_ccb)
 
     /* Flag as not in use */
     p_ccb->in_use = FALSE;
-    {
-	if (list_remove(l2cb.p_ccb_pool, p_ccb)) {
-    	    p_ccb = NULL;
-	}
-        else {
-	    L2CAP_TRACE_ERROR("Error in removing L2CAP Channel Control Block");
-	}
-    }
+
     /* If no channels on the connection, start idle timeout */
     if ((p_lcb) && p_lcb->in_use && (p_lcb->link_state == LST_CONNECTED)) {
         if (!p_lcb->ccb_queue.p_first_ccb) {
@@ -3153,36 +3197,6 @@ void l2cu_send_peer_ble_credit_based_disconn_req(tL2C_CCB *p_ccb)
 
 #endif /* BLE_INCLUDED == TRUE */
 
-#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
-/*******************************************************************************
-**
-** Function         l2cu_find_completed_packets
-**
-** Description      Find the completed packets,
-**                  Then set it to zero
-**
-** Returns          The num of handles
-**
-*******************************************************************************/
-UINT8 l2cu_find_completed_packets(UINT16 *handles, UINT16 *num_packets)
-{
-    UINT8       num = 0;
-    list_node_t *p_node = NULL;
-    tL2C_LCB    *p_lcb  = NULL;
-    for (p_node = list_begin(l2cb.p_lcb_pool); p_node; p_node = list_next(p_node)) {
-        p_lcb = list_node(p_node);
-        if ((p_lcb->in_use) && (p_lcb->completed_packets > 0)) {
-            *(handles++) = p_lcb->handle;
-            *(num_packets++) = p_lcb->completed_packets;
-            num++;
-            p_lcb->completed_packets = 0;
-        }
-    }
-
-    return num;
-}
-#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
-
 /*******************************************************************************
 ** Functions used by both Full and Light Stack
 ********************************************************************************/
@@ -3254,6 +3268,23 @@ tL2C_CCB *l2cu_find_ccb_by_cid (tL2C_LCB *p_lcb, UINT16 local_cid)
     }
 
     return (p_ccb);
+}
+
+tL2C_CCB *l2cu_find_free_ccb (void)
+{
+    tL2C_CCB    *p_ccb = NULL;
+
+    list_node_t *p_node = NULL;
+
+    for (p_node = list_begin(l2cb.p_ccb_pool); p_node; p_node = list_next(p_node))
+    {
+        p_ccb = list_node(p_node);
+        if(p_ccb && !p_ccb->in_use ) {
+            return p_ccb;
+        }
+    }
+
+    return (NULL);
 }
 
 #if (L2CAP_ROUND_ROBIN_CHANNEL_SERVICE == TRUE && CLASSIC_BT_INCLUDED == TRUE)

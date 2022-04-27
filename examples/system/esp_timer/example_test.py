@@ -1,4 +1,5 @@
 from __future__ import print_function
+
 import re
 
 import ttfw_idf
@@ -25,9 +26,9 @@ LIGHT_SLEEP_TIME = 500000
 ONE_SHOT_TIMER_PERIOD = 5000000
 
 
-@ttfw_idf.idf_example_test(env_tag='Example_GENERIC')
+@ttfw_idf.idf_example_test(env_tag='Example_GENERIC', target=['esp32','esp32s2','esp32c3','esp32s3'])
 def test_examples_system_esp_timer(env, extra_data):
-    dut = env.get_dut('esp_timer_example', 'examples/system/esp_timer', dut_class=ttfw_idf.ESP32DUT)
+    dut = env.get_dut('esp_timer_example', 'examples/system/esp_timer')
     # start test
     dut.start_app()
     groups = dut.expect(STARTING_TIMERS_REGEX, timeout=30)

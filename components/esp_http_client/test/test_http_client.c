@@ -1,16 +1,8 @@
-// Copyright 2018 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2018-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -138,5 +130,18 @@ TEST_CASE("Username and password will not reset if new absolute URL doesnot spec
     TEST_ASSERT_EQUAL(ESP_OK, r);
     //If password is set then value should not be NULL
     TEST_ASSERT_NOT_NULL(value);
+    esp_http_client_cleanup(client);
+}
+
+/**
+ * Test case to verify that, esp_http_client_init() should return NULL if configuration has url with empty hostname.
+ **/
+TEST_CASE("esp_http_client_init() should return NULL if configured with wrong url", "[ESP HTTP CLIENT]")
+{
+    esp_http_client_config_t config = {
+        .url = "//httpbin.org/post",
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    TEST_ASSERT_NULL(client);
     esp_http_client_cleanup(client);
 }

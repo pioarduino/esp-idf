@@ -1,26 +1,23 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #pragma once
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include "hal/misc.h"
+#include "soc/rmt_struct.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <stdint.h>
-#include <stdbool.h>
-#include "soc/rmt_struct.h"
-#include "soc/soc_caps.h"
+
+#define RMT_LL_MAX_LOOP_COUNT           (1023)/*!< Max loop count that hardware is supported */
 
 #define RMT_LL_HW_BASE  (&RMT)
 #define RMT_LL_MEM_BASE (&RMTMEM)
@@ -53,32 +50,35 @@ static inline void rmt_ll_enable_mem_access(rmt_dev_t *dev, bool enable)
     dev->sys_conf.fifo_mask = enable;
 }
 
-static inline void rmt_ll_set_counter_clock_src(rmt_dev_t *dev, uint32_t channel, uint8_t src, uint8_t div_num, uint8_t div_a, uint8_t div_b)
+static inline void rmt_ll_set_group_clock_src(rmt_dev_t *dev, uint32_t channel, uint8_t src, uint8_t div_num, uint8_t div_a, uint8_t div_b)
 {
     // Formula: rmt_sclk = module_clock_src / (1 + div_num + div_a / div_b)
     dev->sys_conf.sclk_active = 0;
     dev->sys_conf.sclk_sel = src;
-    dev->sys_conf.sclk_div_num = div_num;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->sys_conf, sclk_div_num, div_num);
     dev->sys_conf.sclk_div_a = div_a;
     dev->sys_conf.sclk_div_b = div_b;
     dev->sys_conf.sclk_active = 1;
 }
 
-static inline uint32_t rmt_ll_get_counter_clock_src(rmt_dev_t *dev, uint32_t channel)
+static inline uint32_t rmt_ll_get_group_clock_src(rmt_dev_t *dev, uint32_t channel)
 {
     return dev->sys_conf.sclk_sel;
 }
 
-static inline void rmt_ll_tx_reset_counter_clock_div(rmt_dev_t *dev, uint32_t channel)
+static inline void rmt_ll_tx_reset_channel_clock_div(rmt_dev_t *dev, uint32_t channel)
 {
     dev->ref_cnt_rst.val |= (1 << channel);
-    dev->ref_cnt_rst.val &= ~(1 << channel);
 }
 
-static inline void rmt_ll_rx_reset_counter_clock_div(rmt_dev_t *dev, uint32_t channel)
+static inline void rmt_ll_tx_reset_channels_clock_div(rmt_dev_t *dev, uint32_t channel_mask)
+{
+    dev->ref_cnt_rst.val |= channel_mask;
+}
+
+static inline void rmt_ll_rx_reset_channel_clock_div(rmt_dev_t *dev, uint32_t channel)
 {
     dev->ref_cnt_rst.val |= (1 << (channel + 2));
-    dev->ref_cnt_rst.val &= ~(1 << (channel + 2));
 }
 
 static inline void rmt_ll_tx_reset_pointer(rmt_dev_t *dev, uint32_t channel)
@@ -135,24 +135,24 @@ static inline uint32_t rmt_ll_rx_get_mem_blocks(rmt_dev_t *dev, uint32_t channel
     return dev->rx_conf[channel].conf0.mem_size;
 }
 
-static inline void rmt_ll_tx_set_counter_clock_div(rmt_dev_t *dev, uint32_t channel, uint32_t div)
+static inline void rmt_ll_tx_set_channel_clock_div(rmt_dev_t *dev, uint32_t channel, uint32_t div)
 {
-    dev->tx_conf[channel].div_cnt = div;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->tx_conf[channel], div_cnt, div);
 }
 
-static inline void rmt_ll_rx_set_counter_clock_div(rmt_dev_t *dev, uint32_t channel, uint32_t div)
+static inline void rmt_ll_rx_set_channel_clock_div(rmt_dev_t *dev, uint32_t channel, uint32_t div)
 {
-    dev->rx_conf[channel].conf0.div_cnt = div;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->rx_conf[channel].conf0, div_cnt, div);
 }
 
-static inline uint32_t rmt_ll_tx_get_counter_clock_div(rmt_dev_t *dev, uint32_t channel)
+static inline uint32_t rmt_ll_tx_get_channel_clock_div(rmt_dev_t *dev, uint32_t channel)
 {
-    return dev->tx_conf[channel].div_cnt;
+    return HAL_FORCE_READ_U32_REG_FIELD(dev->tx_conf[channel], div_cnt);
 }
 
-static inline uint32_t rmt_ll_rx_get_counter_clock_div(rmt_dev_t *dev, uint32_t channel)
+static inline uint32_t rmt_ll_rx_get_channel_clock_div(rmt_dev_t *dev, uint32_t channel)
 {
-    return dev->rx_conf[channel].conf0.div_cnt;
+    return HAL_FORCE_READ_U32_REG_FIELD(dev->rx_conf[channel].conf0, div_cnt);
 }
 
 static inline void rmt_ll_tx_enable_pingpong(rmt_dev_t *dev, uint32_t channel, bool enable)
@@ -211,15 +211,14 @@ static inline void rmt_ll_tx_enable_sync(rmt_dev_t *dev, bool enable)
     dev->tx_sim.en = enable;
 }
 
-static inline void rmt_ll_tx_add_channel_to_group(rmt_dev_t *dev, uint32_t channel)
+static inline void rmt_ll_tx_add_to_sync_group(rmt_dev_t *dev, uint32_t channel)
 {
     dev->tx_sim.val |= 1 << channel;
 }
 
-static inline uint32_t rmt_ll_tx_remove_channel_from_group(rmt_dev_t *dev, uint32_t channel)
+static inline void rmt_ll_tx_remove_from_sync_group(rmt_dev_t *dev, uint32_t channel)
 {
     dev->tx_sim.val &= ~(1 << channel);
-    return dev->tx_sim.val & 0x03;
 }
 
 static inline void rmt_ll_rx_enable_filter(rmt_dev_t *dev, uint32_t channel, bool enable)
@@ -229,7 +228,7 @@ static inline void rmt_ll_rx_enable_filter(rmt_dev_t *dev, uint32_t channel, boo
 
 static inline void rmt_ll_rx_set_filter_thres(rmt_dev_t *dev, uint32_t channel, uint32_t thres)
 {
-    dev->rx_conf[channel].conf1.rx_filter_thres = thres;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(dev->rx_conf[channel].conf1, rx_filter_thres, thres);
 }
 
 static inline void rmt_ll_tx_enable_idle(rmt_dev_t *dev, uint32_t channel, bool enable)
@@ -275,6 +274,15 @@ static inline void rmt_ll_rx_set_limit(rmt_dev_t *dev, uint32_t channel, uint32_
 static inline uint32_t rmt_ll_rx_get_limit(rmt_dev_t *dev, uint32_t channel)
 {
     return dev->rx_lim[channel].rx_lim;
+}
+
+static inline void rmt_ll_enable_interrupt(rmt_dev_t *dev, uint32_t mask, bool enable)
+{
+    if (enable) {
+        dev->int_ena.val |= mask;
+    } else {
+        dev->int_ena.val &= ~mask;
+    }
 }
 
 static inline void rmt_ll_enable_tx_end_interrupt(rmt_dev_t *dev, uint32_t channel, bool enable)
@@ -430,14 +438,14 @@ static inline void rmt_ll_rx_set_carrier_high_low_ticks(rmt_dev_t *dev, uint32_t
 
 static inline void rmt_ll_tx_get_carrier_high_low_ticks(rmt_dev_t *dev, uint32_t channel, uint32_t *high_ticks, uint32_t *low_ticks)
 {
-    *high_ticks = dev->tx_carrier[channel].high;
-    *low_ticks = dev->tx_carrier[channel].low;
+    *high_ticks = HAL_FORCE_READ_U32_REG_FIELD(dev->tx_carrier[channel], high);
+    *low_ticks = HAL_FORCE_READ_U32_REG_FIELD(dev->tx_carrier[channel], low);
 }
 
 static inline void rmt_ll_rx_get_carrier_high_low_ticks(rmt_dev_t *dev, uint32_t channel, uint32_t *high_ticks, uint32_t *low_ticks)
 {
-    *high_ticks = dev->rx_carrier[channel].high_thres;
-    *low_ticks = dev->rx_carrier[channel].low_thres;
+    *high_ticks = HAL_FORCE_READ_U32_REG_FIELD(dev->rx_carrier[channel], high_thres);
+    *low_ticks = HAL_FORCE_READ_U32_REG_FIELD(dev->rx_carrier[channel], low_thres);
 }
 
 static inline void rmt_ll_tx_enable_carrier_modulation(rmt_dev_t *dev, uint32_t channel, bool enable)
@@ -467,32 +475,20 @@ static inline void rmt_ll_tx_set_carrier_always_on(rmt_dev_t *dev, uint32_t chan
     dev->tx_conf[channel].carrier_eff_en = !enable;
 }
 
-//Writes items to the specified TX channel memory with the given offset and writen length.
-//the caller should ensure that (length + off) <= (memory block * SOC_RMT_CHANNEL_MEM_WORDS)
-static inline void rmt_ll_write_memory(rmt_mem_t *mem, uint32_t channel, const rmt_item32_t *data, uint32_t length, uint32_t off)
+//Writes items to the specified TX channel memory with the given offset and length.
+//the caller should ensure that (length + off) <= (memory block * SOC_RMT_MEM_WORDS_PER_CHANNEL)
+static inline void rmt_ll_write_memory(rmt_mem_t *mem, uint32_t channel, const void *data, size_t length_in_words, size_t off)
 {
-    for (uint32_t i = 0; i < length; i++) {
-        mem->chan[channel].data32[i + off].val = data[i].val;
+    volatile uint32_t *to = (volatile uint32_t *)&mem->chan[channel].data32[off];
+    uint32_t *from = (uint32_t *)data;
+    while (length_in_words--) {
+        *to++ = *from++;
     }
 }
 
 static inline void rmt_ll_rx_enable_pingpong(rmt_dev_t *dev, uint32_t channel, bool enable)
 {
     dev->rx_conf[channel].conf1.mem_rx_wrap_en = enable;
-}
-
-/************************************************************************************************
- * Following Low Level APIs only used for backward compatible, will be deprecated in the IDF v5.0
- ***********************************************************************************************/
-
-static inline void rmt_ll_set_intr_enable_mask(uint32_t mask)
-{
-    RMT.int_ena.val |= mask;
-}
-
-static inline void rmt_ll_clr_intr_enable_mask(uint32_t mask)
-{
-    RMT.int_ena.val &= (~mask);
 }
 
 #ifdef __cplusplus

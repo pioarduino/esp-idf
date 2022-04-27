@@ -35,6 +35,10 @@
 #include <string.h>
 #include "mbedtls/platform.h"
 
+#if SOC_AES_GDMA
+#include "esp_aes_dma_priv.h"
+#endif
+
 bool valid_key_length(const esp_aes_context *ctx)
 {
     bool valid_len = (ctx->key_bytes == AES_128_KEY_BYTES) || (ctx->key_bytes == AES_256_KEY_BYTES);

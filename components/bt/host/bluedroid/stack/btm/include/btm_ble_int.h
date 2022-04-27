@@ -132,6 +132,16 @@ typedef struct {
 
 #define BTM_BLE_ADV_DATA_LEN_MAX        31
 #define BTM_BLE_CACHE_ADV_DATA_MAX      62
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+#define BTM_BLE_EXT_ADV_DATA_LEN_MAX    251
+#define BTM_BLE_PERIODIC_ADV_DATA_LEN_MAX 252
+
+#define BTM_BLE_ADV_DATA_OP_INTERMEDIATE_FRAG    0
+#define BTM_BLE_ADV_DATA_OP_FIRST_FRAG           1
+#define BTM_BLE_ADV_DATA_OP_LAST_FRAG            2
+#define BTM_BLE_ADV_DATA_OP_COMPLETE             3
+#define BTM_BLE_ADV_DATA_OP_UNCHANGED_DATA       4
+#endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
 
 #define BTM_BLE_ISVALID_PARAM(x, min, max)  (((x) >= (min) && (x) <= (max)) || ((x) == BTM_BLE_CONN_PARAM_UNDEF))
 
@@ -384,9 +394,7 @@ tBTM_STATUS btm_ble_start_inquiry (UINT8 mode, UINT8   duration);
 void btm_ble_stop_scan(void);
 void btm_clear_all_pending_le_entry(void);
 
-BOOLEAN btm_ble_send_extended_scan_params(UINT8 scan_type, UINT32 scan_int,
-        UINT32 scan_win, UINT8 addr_type_own,
-        UINT8 scan_filter_policy);
+BOOLEAN btm_ble_send_extended_scan_params(UINT8 scan_type, UINT32 scan_int, UINT32 scan_win, UINT8 addr_type_own, UINT8 scan_filter_policy);
 void btm_ble_stop_inquiry(void);
 void btm_ble_init (void);
 void btm_ble_free (void);
@@ -397,12 +405,12 @@ void btm_ble_conn_complete(UINT8 *p, UINT16 evt_len, BOOLEAN enhanced);
 void btm_read_ble_local_supported_states_complete(UINT8 *p, UINT16 evt_len);
 tBTM_BLE_CONN_ST btm_ble_get_conn_st(void);
 void btm_ble_set_conn_st(tBTM_BLE_CONN_ST new_st);
-UINT8 *btm_ble_build_adv_data(tBTM_BLE_AD_MASK *p_data_mask, UINT8 **p_dst,
-                              tBTM_BLE_ADV_DATA *p_data);
+UINT8 *btm_ble_build_adv_data(tBTM_BLE_AD_MASK *p_data_mask, UINT8 **p_dst, tBTM_BLE_ADV_DATA *p_data);
 tBTM_STATUS btm_ble_start_adv(void);
 tBTM_STATUS btm_ble_stop_adv(void);
 tBTM_STATUS btm_ble_start_scan(void);
 void btm_ble_create_ll_conn_complete (UINT8 status);
+void btm_ble_create_conn_cancel_complete (UINT8 *p);
 
 /* LE security function from btm_sec.c */
 #if SMP_INCLUDED == TRUE
@@ -507,6 +515,18 @@ void btm_ble_set_keep_rfu_in_auth_req(BOOLEAN keep_rfu);
 #endif
 
 BOOLEAN btm_get_current_conn_params(BD_ADDR bda, UINT16 *interval, UINT16 *latency, UINT16 *timeout);
+
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+void btm_ble_update_phy_evt(tBTM_BLE_UPDATE_PHY *params);
+void btm_ble_scan_timeout_evt(void);
+void btm_ble_adv_set_terminated_evt(tBTM_BLE_ADV_TERMINAT *params);
+void btm_ble_ext_adv_report_evt(tBTM_BLE_EXT_ADV_REPORT *params);
+void btm_ble_scan_req_received_evt(tBTM_BLE_SCAN_REQ_RECEIVED *params);
+void btm_ble_channel_select_algorithm_evt(tBTM_BLE_CHANNEL_SEL_ALG *params);
+void btm_ble_periodic_adv_report_evt(tBTM_PERIOD_ADV_REPORT *params);
+void btm_ble_periodic_adv_sync_lost_evt(tBTM_BLE_PERIOD_ADV_SYNC_LOST *params);
+void btm_ble_periodic_adv_sync_establish_evt(tBTM_BLE_PERIOD_ADV_SYNC_ESTAB *params);
+#endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
 
 /*
 #ifdef __cplusplus

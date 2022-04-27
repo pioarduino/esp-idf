@@ -265,7 +265,7 @@ Wholesale Orders
 
 If you order in bulk, the boards come in large cardboard boxes.
 
-For wholesale orders, please check `Espressif Product Ordering Information <https://www.espressif.com/sites/default/files/documentation/espressif_products_ordering_information_en.pdf>`_ (PDF)
+For wholesale orders, please go to https://www.espressif.com/en/contact-us/sales-questions.
 
 
 Hardware Reference
@@ -319,7 +319,7 @@ If you want to use more than one extension board at the same time, please check 
      - Utilize time division multiple access, or use a different audio module that can be connected via other GPIOs or DAC.
    * - TouchA v1.1 + LCD32 v1.2
      - IO11, IO6
-     - Touch actions cannot be triggered because of the multiplexed pin IO11. ESP-LyraP-LCD32 will not be affected because its BLCT pin will be disconnected fron IO6.
+     - Touch actions cannot be triggered because of the multiplexed pin IO11. ESP-LyraP-LCD32 will not be affected because its BLCT pin will be disconnected from IO6.
      - Do not initialize IO11 (NETWORK) for your ESP-LyraP-TouchA, or configure the BLCT pin to `-1` (= do not use BLCT) for your ESP-LyraP-LCD32.
    * - 8311A v1.3 + LCD32 v1.2
      - IO6
@@ -342,6 +342,10 @@ If you want to use more than one extension board at the same time, please check 
      - If ESP-LyraT-8311A's pin BT_ADC is used to initialize the board's six buttons, IO6 and IO11 will not be available for the other boards.
      - Do not initialize IO11 (NETWORK) for your ESP-LyraP-TouchA. Also, if you need to use BT_ADC, do not initialize IO6 (PHOTO).
 
+Also, all extension boards and the :ref:`JTAG interface <jtag-debugging-tip-jtag-pins-reconfigured>` share the same pins IO39, IO40, IO41 and IO42. For this reason, the following may disturb the JTAG operation:
+
+* Plugging in any extension board
+* Debugging an application that is using an extension board
 
 
 Hardware Revision Details
@@ -379,7 +383,7 @@ Related Documents
     user-guide-esp-lyrat-8311a_v1.3
 
 - `ESP32-S2-WROVER Datasheet <https://www.espressif.com/sites/default/files/documentation/esp32-s2-wrover_esp32-s2-wrover-i_datasheet_en.pdf>`_ (PDF)
-- `Espressif Product Ordering Information <https://www.espressif.com/sites/default/files/documentation/espressif_products_ordering_information_en.pdf>`_ (PDF)
+- `ESP Product Selector <https://products.espressif.com/#/product-selector?names=>`_
 - :doc:`../../api-guides/jtag-debugging/index`
 
 - `ESP32-S2-Kaluga-1 Schematic <https://dl.espressif.com/dl/schematics/ESP32-S2-Kaluga-1_V1_3_SCH_20200526A.pdf>`_ (PDF)

@@ -40,7 +40,7 @@ Install Prerequisites
 Compile the Toolchain from Source
 =================================
 
-- Install dependencies:
+Install dependencies:
 
   - with MacPorts::
 
@@ -73,16 +73,11 @@ Download ``crosstool-NG`` and build it:
 
 Build the toolchain::
 
-    ./ct-ng xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf
+    ./ct-ng {IDF_TARGET_TOOLCHAIN_PREFIX}
     ./ct-ng build
-    chmod -R u+w builds/xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf
+    chmod -R u+w builds/{IDF_TARGET_TOOLCHAIN_PREFIX}
 
-Toolchain will be built in ``~/esp/ctng-volume/crosstool-NG/builds/xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf``. To use it, you need to add ``~/esp/ctng-volume/crosstool-NG/builds/xtensa-{IDF_TARGET_TOOLCHAIN_NAME}-elf/bin`` to ``PATH`` environment variable.
-
-Python 2 deprecation
-====================
-
-Python 2 reached its `end of life <https://www.python.org/doc/sunset-python-2/>`_ and support for it in ESP-IDF will be removed soon. Please install Python 3.6 or higher. Instructions for macOS are listed above.
+Toolchain will be built in ``~/esp/ctng-volume/crosstool-NG/builds/{IDF_TARGET_TOOLCHAIN_PREFIX}``. To use it, you need to add ``~/esp/ctng-volume/crosstool-NG/builds/{IDF_TARGET_TOOLCHAIN_PREFIX}/bin`` to ``PATH`` environment variable.
 
 Next Steps
 ==========

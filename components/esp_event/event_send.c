@@ -28,6 +28,7 @@ esp_err_t esp_event_send_noop(system_event_t *event)
     return ESP_OK;
 }
 
+#if CONFIG_ESP32_WIFI_ENABLED
 static system_event_id_t esp_event_legacy_wifi_event_id(int32_t event_id)
 {
     switch (event_id) {
@@ -85,11 +86,24 @@ static system_event_id_t esp_event_legacy_wifi_event_id(int32_t event_id)
     case WIFI_EVENT_AP_PROBEREQRECVED:
         return SYSTEM_EVENT_AP_PROBEREQRECVED;
 
+    case WIFI_EVENT_ACTION_TX_STATUS:
+        return SYSTEM_EVENT_ACTION_TX_STATUS;
+
+    case WIFI_EVENT_ROC_DONE:
+        return SYSTEM_EVENT_ROC_DONE;
+
+    case WIFI_EVENT_FTM_REPORT:
+        return SYSTEM_EVENT_FTM_REPORT;
+
+    case WIFI_EVENT_STA_BEACON_TIMEOUT:
+        return SYSTEM_EVENT_STA_BEACON_TIMEOUT;
+
     default:
         ESP_LOGE(TAG, "invalid wifi event id %d", event_id);
         return SYSTEM_EVENT_MAX;
     }
 }
+#endif // CONFIG_ESP32_WIFI_ENABLED
 
 static system_event_id_t esp_event_legacy_ip_event_id(int32_t event_id)
 {
@@ -109,6 +123,9 @@ static system_event_id_t esp_event_legacy_ip_event_id(int32_t event_id)
     case IP_EVENT_ETH_GOT_IP:
         return SYSTEM_EVENT_ETH_GOT_IP;
 
+    case IP_EVENT_ETH_LOST_IP:
+        return SYSTEM_EVENT_ETH_LOST_IP;
+
     default:
         ESP_LOGE(TAG, "invalid ip event id %d", event_id);
         return SYSTEM_EVENT_MAX;
@@ -118,9 +135,13 @@ static system_event_id_t esp_event_legacy_ip_event_id(int32_t event_id)
 
 static system_event_id_t esp_event_legacy_event_id(esp_event_base_t event_base, int32_t event_id)
 {
+#if CONFIG_ESP32_WIFI_ENABLED
     if (event_base == WIFI_EVENT) {
         return esp_event_legacy_wifi_event_id(event_id);
-    } else if (event_base == IP_EVENT) {
+    }
+#endif
+
+	if (event_base == IP_EVENT) {
         return esp_event_legacy_ip_event_id(event_id);
     } else {
         ESP_LOGE(TAG, "invalid event base %s", event_base);

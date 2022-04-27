@@ -1,16 +1,8 @@
-// Copyright 2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <string.h>
 #include <sys/param.h>
@@ -33,6 +25,8 @@
 #include "wifi_provisioning_priv.h"
 
 #define WIFI_PROV_MGR_VERSION      "v1.1"
+#define WIFI_PROV_STORAGE_BIT       BIT0
+#define WIFI_PROV_SETTING_BIT       BIT1
 #define MAX_SCAN_RESULTS           CONFIG_WIFI_PROV_SCAN_MAX_ENTRIES
 
 #define ACQUIRE_LOCK(mux)     assert(xSemaphoreTake(mux, portMAX_DELAY) == pdTRUE)
@@ -621,8 +615,10 @@ static bool wifi_prov_mgr_stop_service(bool blocking)
          * released - some duration after - returning from a call to
          * wifi_prov_mgr_stop_provisioning(), like when it is called
          * inside a protocomm handler */
-        assert(xTaskCreate(prov_stop_task, "prov_stop_task", 4096, (void *)1,
-                           tskIDLE_PRIORITY, NULL) == pdPASS);
+        if (xTaskCreate(prov_stop_task, "prov_stop_task", 4096, (void *)1, tskIDLE_PRIORITY, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create prov_stop_task!");
+            abort();
+        }
         ESP_LOGD(TAG, "Provisioning scheduled for stopping");
     }
     return true;
@@ -869,6 +865,7 @@ static void wifi_prov_mgr_event_handler_internal(
         case WIFI_REASON_AUTH_FAIL:
         case WIFI_REASON_ASSOC_EXPIRE:
         case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        case WIFI_REASON_MIC_FAILURE:
             ESP_LOGE(TAG, "STA Auth Error");
             prov_ctx->wifi_disconnect_reason = WIFI_PROV_STA_AUTH_ERROR;
             break;
@@ -924,11 +921,17 @@ esp_err_t wifi_prov_mgr_wifi_scan_start(bool blocking, bool passive,
 
     if (passive) {
         prov_ctx->scan_cfg.scan_type = WIFI_SCAN_TYPE_PASSIVE;
+/* We do not recommend scan configuration modification in Wi-Fi and BT coexistence mode */
+#if !CONFIG_BT_ENABLED
         prov_ctx->scan_cfg.scan_time.passive = period_ms;
+#endif
     } else {
         prov_ctx->scan_cfg.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+/* We do not recommend scan configuration modification in Wi-Fi and BT coexistence mode */
+#if !CONFIG_BT_ENABLED
         prov_ctx->scan_cfg.scan_time.active.min = period_ms;
         prov_ctx->scan_cfg.scan_time.active.max = period_ms;
+#endif
     }
     prov_ctx->channels_per_group = group_channels;
 
@@ -1105,7 +1108,7 @@ esp_err_t wifi_prov_mgr_is_provisioned(bool *provisioned)
 
     /* Get Wi-Fi Station configuration */
     wifi_config_t wifi_cfg;
-    if (esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_cfg) != ESP_OK) {
+    if (esp_wifi_get_config(WIFI_IF_STA, &wifi_cfg) != ESP_OK) {
         return ESP_FAIL;
     }
 
@@ -1164,7 +1167,7 @@ esp_err_t wifi_prov_mgr_configure_sta(wifi_config_t *wifi_cfg)
     }
     /* Configure Wi-Fi station with host credentials
      * provided during provisioning */
-    if (esp_wifi_set_config(ESP_IF_WIFI_STA, wifi_cfg) != ESP_OK) {
+    if (esp_wifi_set_config(WIFI_IF_STA, wifi_cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set Wi-Fi configuration");
         RELEASE_LOCK(prov_ctx_lock);
         return ESP_FAIL;
@@ -1389,6 +1392,8 @@ void wifi_prov_mgr_deinit(void)
 esp_err_t wifi_prov_mgr_start_provisioning(wifi_prov_security_t security, const char *pop,
                                            const char *service_name, const char *service_key)
 {
+    uint8_t restore_wifi_flag = 0;
+
     if (!prov_ctx_lock) {
         ESP_LOGE(TAG, "Provisioning manager not initialized");
         return ESP_ERR_INVALID_STATE;
@@ -1415,43 +1420,47 @@ esp_err_t wifi_prov_mgr_start_provisioning(wifi_prov_security_t security, const 
 
     /* Start Wi-Fi in Station Mode.
      * This is necessary for scanning to work */
-    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (err != ESP_OK) {
+    ret = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set Wi-Fi mode to STA");
-        RELEASE_LOCK(prov_ctx_lock);
-        return err;
+        goto err;
     }
-    err = esp_wifi_start();
-    if (err != ESP_OK) {
+    ret = esp_wifi_start();
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start Wi-Fi");
-        RELEASE_LOCK(prov_ctx_lock);
-        return err;
+        goto err;
     }
 
     /* Change Wi-Fi storage to RAM temporarily and erase any old
-     * credentials (i.e. without erasing the copy on NVS). Also
+     * credentials in RAM(i.e. without erasing the copy on NVS). Also
      * call disconnect to make sure device doesn't remain connected
      * to the AP whose credentials were present earlier */
     wifi_config_t wifi_cfg_empty, wifi_cfg_old;
     memset(&wifi_cfg_empty, 0, sizeof(wifi_config_t));
-    esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_cfg_old);
-    err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    if (err != ESP_OK) {
+    esp_wifi_get_config(WIFI_IF_STA, &wifi_cfg_old);
+    ret = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set Wi-Fi storage to RAM");
-        RELEASE_LOCK(prov_ctx_lock);
-        return err;
+        goto err;
     }
-    esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_cfg_empty);
-    if (err != ESP_OK) {
+
+    /* WiFi storage needs to be restored before exiting this API */
+    restore_wifi_flag |= WIFI_PROV_STORAGE_BIT;
+    /* Erase Wi-Fi credentials in RAM, when call disconnect and user code
+     * receive WIFI_EVENT_STA_DISCONNECTED and maybe call esp_wifi_connect, at
+     * this time Wi-Fi will have no configuration to connect */
+    ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg_empty);
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set empty Wi-Fi credentials");
-        RELEASE_LOCK(prov_ctx_lock);
-        return err;
+        goto err;
     }
-    err = esp_wifi_disconnect();
-    if (err != ESP_OK) {
+    /* WiFi settings needs to be restored if provisioning error before exiting this API */
+    restore_wifi_flag |= WIFI_PROV_SETTING_BIT;
+
+    ret = esp_wifi_disconnect();
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to disconnect");
-        RELEASE_LOCK(prov_ctx_lock);
-        return err;
+        goto err;
     }
 
     /* Initialize app data */
@@ -1526,10 +1535,15 @@ esp_err_t wifi_prov_mgr_start_provisioning(wifi_prov_security_t security, const 
 
 err:
     prov_ctx->prov_state = WIFI_PROV_STATE_IDLE;
-    esp_wifi_set_storage(WIFI_STORAGE_FLASH);
-    esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_cfg_old);
-
+    if (restore_wifi_flag & WIFI_PROV_SETTING_BIT) {
+        /* Restore current WiFi settings, since provisioning start has failed */
+        esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg_old);
+    }
 exit:
+    if (restore_wifi_flag & WIFI_PROV_STORAGE_BIT) {
+        /* Restore WiFi storage back to FLASH */
+        esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+    }
     RELEASE_LOCK(prov_ctx_lock);
     return ret;
 }
@@ -1552,4 +1566,47 @@ void wifi_prov_mgr_stop_provisioning(void)
     wifi_prov_mgr_stop_service(0);
 
     RELEASE_LOCK(prov_ctx_lock);
+}
+
+esp_err_t wifi_prov_mgr_reset_provisioning(void)
+{
+    esp_err_t ret = esp_wifi_restore();
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_restore fail, ret is %d", ret);
+        ret = ESP_FAIL;
+    }
+
+    return ret;
+}
+
+esp_err_t wifi_prov_mgr_reset_sm_state_on_failure(void)
+{
+    if (!prov_ctx_lock) {
+        ESP_LOGE(TAG, "Provisioning manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ACQUIRE_LOCK(prov_ctx_lock);
+
+    esp_err_t err = ESP_OK;
+    if (prov_ctx->prov_state != WIFI_PROV_STATE_FAIL) {
+        ESP_LOGE(TAG, "Trying reset when not in failure state. Current state: %d", prov_ctx->prov_state);
+        err = ESP_ERR_INVALID_STATE;
+        goto exit;
+    }
+
+    wifi_config_t wifi_cfg = {0};
+
+    err = esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set wifi config, 0x%x", err);
+        goto exit;
+    }
+
+    prov_ctx->prov_state = WIFI_PROV_STATE_STARTED;
+
+exit:
+    RELEASE_LOCK(prov_ctx_lock);
+    return err;
 }

@@ -19,7 +19,7 @@
 #if (CONFIG_GATTS_ENABLE || CONFIG_GATTC_ENABLE)
 #include "esp_gatt_defs.h"
 #endif
-const char *TAG = "hid_parser";
+static const char *TAG = "hid_parser";
 
 typedef struct {
     uint16_t appearance;
@@ -142,7 +142,7 @@ static int handle_report(hid_report_params_t *report, bool first)
             }
 
             item.protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
-            item.value_len = 4;
+            item.value_len = 3;
             if (add_report(map, &item) != 0) {
                 return -1;
             }

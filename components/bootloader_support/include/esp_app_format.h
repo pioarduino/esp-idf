@@ -1,16 +1,8 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #pragma once
 
 #include <inttypes.h>
@@ -22,8 +14,9 @@
 typedef enum {
     ESP_CHIP_ID_ESP32 = 0x0000,  /*!< chip ID: ESP32 */
     ESP_CHIP_ID_ESP32S2 = 0x0002,  /*!< chip ID: ESP32-S2 */
-    ESP_CHIP_ID_ESP32S3 = 0x0004, /*!< chip ID: ESP32-S3 */
     ESP_CHIP_ID_ESP32C3 = 0x0005, /*!< chip ID: ESP32-C3 */
+    ESP_CHIP_ID_ESP32S3 = 0x0009, /*!< chip ID: ESP32-S3 */
+    ESP_CHIP_ID_ESP32H2 = 0x000A, /*!< chip ID: ESP32-H2 */  // ESP32H2-TODO: IDF-3475
     ESP_CHIP_ID_INVALID = 0xFFFF /*!< Invalid chip ID (we defined it to make sure the esp_chip_id_t is 2 bytes size) */
 } __attribute__((packed)) esp_chip_id_t;
 
@@ -62,6 +55,9 @@ typedef enum {
     ESP_IMAGE_FLASH_SIZE_4MB,       /*!< SPI flash size 4 MB */
     ESP_IMAGE_FLASH_SIZE_8MB,       /*!< SPI flash size 8 MB */
     ESP_IMAGE_FLASH_SIZE_16MB,      /*!< SPI flash size 16 MB */
+    ESP_IMAGE_FLASH_SIZE_32MB,      /*!< SPI flash size 32 MB */
+    ESP_IMAGE_FLASH_SIZE_64MB,      /*!< SPI flash size 64 MB */
+    ESP_IMAGE_FLASH_SIZE_128MB,     /*!< SPI flash size 128 MB */
     ESP_IMAGE_FLASH_SIZE_MAX        /*!< SPI flash size MAX */
 } esp_image_flash_size_t;
 

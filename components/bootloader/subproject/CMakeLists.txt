@@ -15,10 +15,13 @@ if(NOT IDF_TARGET)
         "in by the parent build process.")
 endif()
 
+# A number of these components are implemented as config-only when built in the bootloader
 set(COMPONENTS
     bootloader
     esptool_py
     esp_hw_support
+    esp_system
+    freertos
     hal
     partition_table
     soc
@@ -27,10 +30,27 @@ set(COMPONENTS
     spi_flash
     micro-ecc
     main
-    efuse)
+    efuse
+    esp_system
+    newlib)
+
+# Make EXTRA_COMPONENT_DIRS variable to point to the bootloader_components directory
+# of the project being compiled
+set(PROJECT_EXTRA_COMPONENTS "${PROJECT_SOURCE_DIR}/bootloader_components")
+list(APPEND EXTRA_COMPONENT_DIRS "${PROJECT_EXTRA_COMPONENTS}")
+
+# Consider each directory in project's bootloader_components as a component to be compiled
+file(GLOB proj_components RELATIVE ${PROJECT_EXTRA_COMPONENTS} ${PROJECT_EXTRA_COMPONENTS}/*)
+foreach(component ${proj_components})
+  # Only directories are considered as components
+  if(IS_DIRECTORY ${curdir}/${child})
+    list(APPEND COMPONENTS ${component})
+  endif()
+endforeach()
+
 set(BOOTLOADER_BUILD 1)
 include("${IDF_PATH}/tools/cmake/project.cmake")
-set(common_req log esp_rom esp_common esp_hw_support hal)
+set(common_req log esp_rom esp_common esp_hw_support hal newlib)
 if(LEGACY_INCLUDE_COMMON_HEADERS)
     list(APPEND common_req soc hal)
 endif()
@@ -51,6 +71,9 @@ string(REPLACE ";" " " esptoolpy_write_flash
 
 string(REPLACE ";" " " espsecurepy "${ESPSECUREPY}")
 string(REPLACE ";" " " espefusepy "${ESPEFUSEPY}")
+
+# Suppress warning: "Manually-specified variables were not used by the project: SECURE_BOOT_SIGNING_KEY"
+set(ignore_signing_key "${SECURE_BOOT_SIGNING_KEY}")
 
 if(CONFIG_SECURE_BOOTLOADER_REFLASHABLE)
     if(CONFIG_SECURE_BOOTLOADER_KEY_ENCODING_192BIT)
@@ -180,7 +203,7 @@ elseif(CONFIG_SECURE_BOOTLOADER_REFLASHABLE)
             "* Not recommended to re-use the same secure boot keyfile on multiple production devices."
         DEPENDS gen_secure_bootloader_key gen_bootloader_digest_bin
         VERBATIM)
-elseif(CONFIG_SECURE_BOOT_V2_ENABLED AND CONFIG_IDF_TARGET_ESP32S2)
+elseif(CONFIG_SECURE_BOOT_V2_ENABLED AND (CONFIG_IDF_TARGET_ESP32S2 OR CONFIG_IDF_TARGET_ESP32C3))
     add_custom_command(TARGET bootloader.elf POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo
         "=============================================================================="

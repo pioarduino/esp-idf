@@ -1,16 +1,8 @@
-// Copyright 2015-2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdint.h>
 #include <sys/cdefs.h>
@@ -23,7 +15,6 @@
 #include "esp_clk_internal.h"
 #include "esp32c3/rom/ets_sys.h"
 #include "esp32c3/rom/uart.h"
-#include "esp32c3/rom/rtc.h"
 #include "soc/system_reg.h"
 #include "soc/dport_access.h"
 #include "soc/soc.h"
@@ -36,6 +27,7 @@
 #include "bootloader_clock.h"
 #include "soc/syscon_reg.h"
 #include "esp_rom_uart.h"
+#include "esp_rom_sys.h"
 
 /* Number of cycles to wait from the 32k XTAL oscillator to consider it running.
  * Larger values increase startup delay. Smaller values may cause false positive
@@ -60,7 +52,7 @@
  * For convenience, lower 2 bits should correspond to rtc_slow_freq_t values.
  */
 typedef enum {
-    SLOW_CLK_RTC = RTC_SLOW_FREQ_RTC,           //!< Internal 90 kHz RC oscillator
+    SLOW_CLK_RTC = RTC_SLOW_FREQ_RTC,           //!< Internal 150 kHz RC oscillator
     SLOW_CLK_32K_XTAL = RTC_SLOW_FREQ_32K_XTAL, //!< External 32 kHz XTAL
     SLOW_CLK_8MD256 = RTC_SLOW_FREQ_8MD256,     //!< Internal 8 MHz RC oscillator, divided by 256
     SLOW_CLK_32K_EXT_OSC = RTC_SLOW_FREQ_32K_XTAL | EXT_OSC_FLAG //!< External 32k oscillator connected to 32K_XP pin
@@ -75,6 +67,11 @@ static const char *TAG = "clk";
 {
 #if !CONFIG_IDF_ENV_FPGA
     rtc_config_t cfg = RTC_CONFIG_DEFAULT();
+    soc_reset_reason_t rst_reas;
+    rst_reas = esp_rom_get_reset_reason(0);
+    if (rst_reas == RESET_REASON_CHIP_POWER_ON) {
+        cfg.cali_ocode = 1;
+    }
     rtc_init(cfg);
 
     assert(rtc_clk_xtal_freq_get() == RTC_XTAL_FREQ_40M);
@@ -84,10 +81,10 @@ static const char *TAG = "clk";
 
 #ifdef CONFIG_BOOTLOADER_WDT_ENABLE
     // WDT uses a SLOW_CLK clock source. After a function select_rtc_slow_clk a frequency of this source can changed.
-    // If the frequency changes from 90kHz to 32kHz, then the timeout set for the WDT will increase 2.8 times.
+    // If the frequency changes from 150kHz to 32kHz, then the timeout set for the WDT will increase 4.6 times.
     // Therefore, for the time of frequency change, set a new lower timeout value (1.6 sec).
     // This prevents excessive delay before resetting in case the supply voltage is drawdown.
-    // (If frequency is changed from 90kHz to 32kHz then WDT timeout will increased to 1.6sec * 90/32 = 4.5 sec).
+    // (If frequency is changed from 150kHz to 32kHz then WDT timeout will increased to 1.6sec * 150/32 = 7.5 sec).
     wdt_hal_context_t rtc_wdt_ctx = {.inst = WDT_RWDT, .rwdt_dev = &RTCCNTL};
     uint32_t stage_timeout_ticks = (uint32_t)(1600ULL * rtc_clk_slow_freq_get_hz() / 1000ULL);
     wdt_hal_write_protect_disable(&rtc_wdt_ctx);
@@ -128,7 +125,9 @@ static const char *TAG = "clk";
     // when switching APB frequency
     esp_rom_uart_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
 
-    rtc_clk_cpu_freq_set_config(&new_config);
+    if (res)  {
+        rtc_clk_cpu_freq_set_config(&new_config);
+    }
 
     // Re calculate the ccount to make time calculation correct.
     cpu_hal_set_cycle_count( (uint64_t)cpu_hal_get_cycle_count() * new_freq_mhz / old_freq_mhz );
@@ -165,7 +164,7 @@ static void select_rtc_slow_clk(slow_clk_sel_t slow_clk)
                     if (retry_32k_xtal-- > 0) {
                         continue;
                     }
-                    ESP_EARLY_LOGW(TAG, "32 kHz XTAL not found, switching to internal 90 kHz oscillator");
+                    ESP_EARLY_LOGW(TAG, "32 kHz XTAL not found, switching to internal 150 kHz oscillator");
                     rtc_slow_freq = RTC_SLOW_FREQ_RTC;
                 }
             }
@@ -204,28 +203,13 @@ __attribute__((weak)) void esp_perip_clk_init(void)
     uint32_t common_perip_clk, hwcrypto_perip_clk, wifi_bt_sdio_clk = 0;
     uint32_t common_perip_clk1 = 0;
 
-#if CONFIG_FREERTOS_UNICORE
-    RESET_REASON rst_reas[1];
-#else
-    RESET_REASON rst_reas[2];
-#endif
-
-    rst_reas[0] = rtc_get_reset_reason(0);
-#if !CONFIG_FREERTOS_UNICORE
-    rst_reas[1] = rtc_get_reset_reason(1);
-#endif
+    soc_reset_reason_t rst_reason = esp_rom_get_reset_reason(0);
 
     /* For reason that only reset CPU, do not disable the clocks
      * that have been enabled before reset.
      */
-    /* For reason that only reset CPU, do not disable the clocks
-     * that have been enabled before reset.
-     */
-    if ((rst_reas[0] >= TG0WDT_CPU_RESET && rst_reas[0] <= TG0WDT_CPU_RESET && rst_reas[0] != RTCWDT_BROWN_OUT_RESET)
-#if !CONFIG_FREERTOS_UNICORE
-            || (rst_reas[1] >= TG0WDT_CPU_RESET && rst_reas[1] <= RTCWDT_CPU_RESET)
-#endif
-       ) {
+    if (rst_reason == RESET_REASON_CPU0_MWDT0 || rst_reason == RESET_REASON_CPU0_SW ||
+            rst_reason == RESET_REASON_CPU0_RTC_WDT || rst_reason == RESET_REASON_CPU0_MWDT1) {
         common_perip_clk = ~READ_PERI_REG(SYSTEM_PERIP_CLK_EN0_REG);
         hwcrypto_perip_clk = ~READ_PERI_REG(SYSTEM_PERIP_CLK_EN1_REG);
         wifi_bt_sdio_clk = ~READ_PERI_REG(SYSTEM_WIFI_CLK_EN_REG);
@@ -237,9 +221,6 @@ __attribute__((weak)) void esp_perip_clk_init(void)
 #endif
 #if CONFIG_CONSOLE_UART_NUM != 1
                            SYSTEM_UART1_CLK_EN |
-#endif
-#if CONFIG_CONSOLE_UART_NUM != 2
-                           SYSTEM_UART2_CLK_EN |
 #endif
                            SYSTEM_SPI2_CLK_EN |
                            SYSTEM_I2C_EXT0_CLK_EN |
@@ -271,9 +252,6 @@ __attribute__((weak)) void esp_perip_clk_init(void)
 #endif
 #if CONFIG_CONSOLE_UART_NUM != 1
                         SYSTEM_UART1_CLK_EN |
-#endif
-#if CONFIG_CONSOLE_UART_NUM != 2
-                        SYSTEM_UART2_CLK_EN |
 #endif
                         SYSTEM_SPI2_CLK_EN |
                         SYSTEM_I2C_EXT0_CLK_EN |

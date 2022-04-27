@@ -13,18 +13,16 @@
 # limitations under the License.
 
 """ Interface for test cases. """
-import os
-import time
 import functools
+import os
 import socket
+import time
 from datetime import datetime
 
 import junit_xml
 
-from . import Env
-from . import DUT
-from . import App
-from . import Utility
+from . import DUT, App, Env, Utility
+from .Utility import format_case_id
 
 
 class TestCaseFailed(AssertionError):
@@ -37,7 +35,7 @@ class TestCaseFailed(AssertionError):
 
         'cases' argument is the names of one or more test cases
         """
-        message = "Test case{} failed: {}".format("s" if len(cases) > 1 else "", ", ".join(str(c) for c in cases))
+        message = 'Test case{} failed: {}'.format('s' if len(cases) > 1 else '', ', '.join(str(c) for c in cases))
         super(TestCaseFailed, self).__init__(self, message)
 
 
@@ -50,11 +48,11 @@ class DefaultEnvConfig(object):
     3. default env config get from this class
     """
     DEFAULT_CONFIG = {
-        "app": App.BaseApp,
-        "dut": DUT.BaseDUT,
-        "env_tag": "default",
-        "env_config_file": None,
-        "test_suite_name": None,
+        'app': App.BaseApp,
+        'dut': DUT.BaseDUT,
+        'env_tag': 'default',
+        'env_config_file': None,
+        'test_suite_name': None,
     }
 
     @classmethod
@@ -78,10 +76,10 @@ get_default_config = DefaultEnvConfig.get_default_config
 
 
 MANDATORY_INFO = {
-    "execution_time": 1,
-    "env_tag": "default",
-    "category": "function",
-    "ignore": False,
+    'execution_time': 1,
+    'env_tag': 'default',
+    'category': 'function',
+    'ignore': False,
 }
 
 
@@ -89,8 +87,8 @@ class JunitReport(object):
     # wrapper for junit test report
     # TODO: JunitReport methods are not thread safe (although not likely to be used this way).
 
-    JUNIT_FILE_NAME = "XUNIT_RESULT.xml"
-    JUNIT_DEFAULT_TEST_SUITE = "test-suite"
+    JUNIT_FILE_NAME = 'XUNIT_RESULT.xml'
+    JUNIT_DEFAULT_TEST_SUITE = 'test-suite'
     JUNIT_TEST_SUITE = junit_xml.TestSuite(JUNIT_DEFAULT_TEST_SUITE,
                                            hostname=socket.gethostname(),
                                            timestamp=datetime.utcnow().isoformat())
@@ -100,8 +98,8 @@ class JunitReport(object):
     @classmethod
     def output_report(cls, junit_file_path):
         """ Output current test result to file. """
-        with open(os.path.join(junit_file_path, cls.JUNIT_FILE_NAME), "w") as f:
-            cls.JUNIT_TEST_SUITE.to_file(f, [cls.JUNIT_TEST_SUITE], prettyprint=False)
+        with open(os.path.join(junit_file_path, cls.JUNIT_FILE_NAME), 'w') as f:
+            junit_xml.to_xml_report_file(f, [cls.JUNIT_TEST_SUITE], prettyprint=False)
 
     @classmethod
     def get_current_test_case(cls):
@@ -136,7 +134,7 @@ class JunitReport(object):
         """
         # set stdout to empty string, so we can always append string to stdout.
         # It won't affect output logic. If stdout is empty, it won't be put to report.
-        test_case = junit_xml.TestCase(name, stdout="")
+        test_case = junit_xml.TestCase(name, stdout='')
         cls.JUNIT_CURRENT_TEST_CASE = test_case
         cls._TEST_CASE_CREATED_TS = time.time()
         return test_case
@@ -151,7 +149,7 @@ class JunitReport(object):
         assert cls.JUNIT_CURRENT_TEST_CASE
 
         for item in performance_items:
-            cls.JUNIT_CURRENT_TEST_CASE.stdout += "[{}]: {}\n".format(item[0], item[1])
+            cls.JUNIT_CURRENT_TEST_CASE.stdout += '[Performance][{}]: {}\n'.format(item[0], item[1])
 
 
 def test_method(**kwargs):
@@ -174,8 +172,8 @@ def test_method(**kwargs):
     def test(test_func):
 
         case_info = MANDATORY_INFO.copy()
-        case_info["name"] = case_info["ID"] = test_func.__name__
-        case_info["junit_report_by_case"] = False
+        case_info['name'] = case_info['ID'] = test_func.__name__
+        case_info['junit_report_by_case'] = False
         case_info.update(kwargs)
 
         @functools.wraps(test_func)
@@ -197,12 +195,13 @@ def test_method(**kwargs):
             env_inst = Env.Env(**env_config)
 
             # prepare for xunit test results
-            junit_file_path = env_inst.app_cls.get_log_folder(env_config["test_suite_name"])
-            junit_test_case = JunitReport.create_test_case(case_info["ID"])
+            junit_file_path = env_inst.app_cls.get_log_folder(env_config['test_suite_name'])
+            junit_test_case = JunitReport.create_test_case(format_case_id(case_info['ID'],
+                                                                          target=env_inst.default_dut_cls.TARGET))
             result = False
-
+            unexpected_error = False
             try:
-                Utility.console_log("starting running test: " + test_func.__name__, color="green")
+                Utility.console_log('starting running test: ' + test_func.__name__, color='green')
                 # execute test function
                 test_func(env_inst, extra_data)
                 # if finish without exception, test result is True
@@ -211,6 +210,7 @@ def test_method(**kwargs):
                 junit_test_case.add_failure_info(str(e))
             except Exception as e:
                 Utility.handle_unexpected_exception(junit_test_case, e)
+                unexpected_error = True
             finally:
                 # do close all DUTs, if result is False then print DUT debug info
                 close_errors = env_inst.close(dut_debug=(not result))
@@ -222,18 +222,18 @@ def test_method(**kwargs):
                 # and raise exception in DUT close to fail test case if reset detected.
                 if close_errors:
                     for error in close_errors:
-                        junit_test_case.add_failure_info(str(error))
+                        junit_test_case.add_failure_info('env close error: {}'.format(error))
                     result = False
-                if not case_info["junit_report_by_case"]:
+                if not case_info['junit_report_by_case'] or unexpected_error:
                     JunitReport.test_case_finish(junit_test_case)
 
             # end case and output result
             JunitReport.output_report(junit_file_path)
 
             if result:
-                Utility.console_log("Test Succeed: " + test_func.__name__, color="green")
+                Utility.console_log('Test Succeed: ' + test_func.__name__, color='green')
             else:
-                Utility.console_log(("Test Fail: " + test_func.__name__), color="red")
+                Utility.console_log(('Test Fail: ' + test_func.__name__), color='red')
             return result
 
         handle_test.case_info = case_info

@@ -102,12 +102,40 @@ endfunction()
 function(__kconfig_component_init component_target)
     __component_get_property(component_dir ${component_target} COMPONENT_DIR)
     file(GLOB kconfig "${component_dir}/Kconfig")
+    list(SORT kconfig)
     __component_set_property(${component_target} KCONFIG "${kconfig}")
     file(GLOB kconfig "${component_dir}/Kconfig.projbuild")
+    list(SORT kconfig)
     __component_set_property(${component_target} KCONFIG_PROJBUILD "${kconfig}")
     file(GLOB sdkconfig_rename "${component_dir}/sdkconfig.rename")
+    list(SORT sdkconfig_rename)
     __component_set_property(${component_target} SDKCONFIG_RENAME "${sdkconfig_rename}")
 endfunction()
+
+#
+# Add bootloader components Kconfig and Kconfig.projbuild files to BOOTLOADER_KCONFIG
+# and BOOTLOADER_KCONFIGS_PROJ properties respectively.
+#
+function(__kconfig_bootloader_component_add component_dir)
+    idf_build_get_property(bootloader_kconfigs BOOTLOADER_KCONFIGS)
+    idf_build_get_property(bootloader_kconfigs_proj BOOTLOADER_KCONFIGS_PROJ)
+
+    file(GLOB kconfig "${component_dir}/Kconfig")
+    list(SORT kconfig)
+    if(EXISTS "${kconfig}" AND NOT IS_DIRECTORY "${kconfig}")
+        list(APPEND bootloader_kconfigs "${kconfig}")
+    endif()
+
+    file(GLOB kconfig "${component_dir}/Kconfig.projbuild")
+    list(SORT kconfig)
+    if(EXISTS "${kconfig}" AND NOT IS_DIRECTORY "${kconfig}")
+        list(APPEND bootloader_kconfigs_proj "${kconfig}")
+    endif()
+
+    idf_build_set_property(BOOTLOADER_KCONFIGS "${bootloader_kconfigs}")
+    idf_build_set_property(BOOTLOADER_KCONFIGS_PROJ "${bootloader_kconfigs_proj}")
+endfunction()
+
 
 #
 # Generate the config files and create config related targets and configure
@@ -133,6 +161,16 @@ function(__kconfig_generate_config sdkconfig sdkconfig_defaults)
             endif()
         endif()
     endforeach()
+
+    # Take into account bootloader components configuration files
+    idf_build_get_property(bootloader_kconfigs BOOTLOADER_KCONFIGS)
+    idf_build_get_property(bootloader_kconfigs_proj BOOTLOADER_KCONFIGS_PROJ)
+    if(bootloader_kconfigs)
+        list(APPEND kconfigs "${bootloader_kconfigs}")
+    endif()
+    if(bootloader_kconfigs_proj)
+        list(APPEND kconfig_projbuilds "${bootloader_kconfigs_proj}")
+    endif()
 
     # Store the list version of kconfigs and kconfig_projbuilds
     idf_build_set_property(KCONFIGS "${kconfigs}")

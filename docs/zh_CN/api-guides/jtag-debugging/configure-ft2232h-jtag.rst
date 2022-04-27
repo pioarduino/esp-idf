@@ -1,4 +1,4 @@
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
    :start-after: devkit-defs
    :end-before: ---
 
@@ -12,13 +12,13 @@
 配置硬件
 ^^^^^^^^
 
-.. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+.. include:: {IDF_TARGET_PATH_NAME}.inc
     :start-after: devkit-hw-config
     :end-before: ---
 
 * 检查 {IDF_TARGET_NAME} 上用于 JTAG 通信的引脚是否被接到了其它硬件上，这可能会影响 JTAG 的工作。
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: jtag-pins
         :end-before: ---
 
@@ -112,13 +112,23 @@ MacOS
 
     sudo kextunload -b com.FTDI.driver.FTDIUSBSerialDriver
 
-   有时，您可能还需要卸载苹果的 FTDI 驱动::
+   有时，您可能还需要卸载苹果的 FTDI 驱动:
 
-    sudo kextunload -b com.apple.driver.AppleUSBFTDI
+   * macOS < 10.15::
+
+        sudo kextunload -b com.apple.driver.AppleUSBFTDI
+
+   * macOS 10.15::
+
+        sudo kextunload -b com.apple.DriverKit-AppleUSBFTDI
+
+   .. warning::
+
+      对于 FTDI 驱动，如果使用串口的通道不正确，则可能会导致内核崩溃。ESP-WROVER-KIT 将通道 A 用于 JTAG，通道 B 用于串口。
 
 4. 运行 OpenOCD::
 
-    .. include:: {IDF_TARGET_TOOLCHAIN_NAME}.inc
+    .. include:: {IDF_TARGET_PATH_NAME}.inc
         :start-after: run-openocd
         :end-before: ---
 

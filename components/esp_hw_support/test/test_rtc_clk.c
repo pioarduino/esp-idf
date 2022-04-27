@@ -1,9 +1,18 @@
+/*
+ * SPDX-FileCopyrightText: 2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include <stdio.h>
 #include "unity.h"
 
+#include "esp_attr.h"
+#include "soc/soc_caps.h"
 #include "soc/rtc.h"
 #include "soc/rtc_periph.h"
+#if SOC_ADC_RTC_CTRL_SUPPORTED
 #include "soc/sens_periph.h"
+#endif
 #include "soc/gpio_periph.h"
 #include "hal/gpio_ll.h"
 #include "driver/rtc_io.h"
@@ -15,11 +24,34 @@
 #include "esp_rom_sys.h"
 #include "esp_rom_uart.h"
 
+#include "esp_sleep.h"
+#include "esp_system.h"
+
+#if CONFIG_IDF_TARGET_ESP32
+#include "esp32/rtc.h"
+#include "esp32/clk.h"
+#include "esp32/rom/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32S2
+#include "esp32s2/rtc.h"
+#include "esp32s2/clk.h"
+#include "esp32s2/rom/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rtc.h"
+#include "esp32s3/clk.h"
+#include "esp32s3/rom/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rtc.h"
+#include "esp32c3/clk.h"
+#include "esp32c3/rom/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rtc.h"
+#include "esp32h2/clk.h"
+#include "esp32h2/rom/rtc.h"
+#endif
+
 extern void rtc_clk_select_rtc_slow_clk(void);
 
 #if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
-
-#include "esp32/clk.h"
 
 #define CALIBRATE_ONE(cali_clk) calibrate_one(cali_clk, #cali_clk)
 
@@ -130,7 +162,7 @@ TEST_CASE("Calculate 8M clock frequency", "[rtc_clk]")
     uint32_t rtc_8md256_period = rtc_clk_cal(RTC_CAL_8MD256, 100);
     uint32_t rtc_fast_freq_hz = 1000000ULL * (1 << RTC_CLK_CAL_FRACT) * 256 / rtc_8md256_period;
     printf("RTC_FAST_CLK=%d Hz\n", rtc_fast_freq_hz);
-    TEST_ASSERT_INT32_WITHIN(500000, RTC_FAST_CLK_FREQ_APPROX, rtc_fast_freq_hz);
+    TEST_ASSERT_INT32_WITHIN(650000, RTC_FAST_CLK_FREQ_APPROX, rtc_fast_freq_hz);
 }
 
 TEST_CASE("Test switching between PLL and XTAL", "[rtc_clk]")
@@ -142,6 +174,10 @@ TEST_CASE("Test fast switching between PLL and XTAL", "[rtc_clk]")
 {
     test_clock_switching(rtc_clk_cpu_freq_set_config_fast);
 }
+
+/* In CI environments, the 32kXTAL runners don't have 8MB psram for bank switching.
+   So can only test one config or the other. */
+#if !IDF_CI_BUILD || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
 
 #define COUNT_TEST      3
 #define TIMEOUT_TEST_MS (5 + CONFIG_ESP32_RTC_CLK_CAL_CYCLES / 16)
@@ -180,7 +216,7 @@ static void start_freq(rtc_slow_freq_t required_src_freq, uint32_t start_delay_m
     printf("Test is started. Kconfig settings:\n Internal RC is selected,\n Oscillation cycles = %d,\n Calibration cycles = %d.\n",
             bootstrap_cycles,
             CONFIG_ESP32_RTC_CLK_CAL_CYCLES);
-#endif
+#endif // CONFIG_ESP32_RTC_CLK_SRC_EXT_CRYS
     if (start_delay_ms == 0 && CONFIG_ESP32_RTC_CLK_CAL_CYCLES < 1500){
         start_delay_ms = 50;
         printf("Recommended increase Number of cycles for RTC_SLOW_CLK calibration to 3000!\n");
@@ -241,7 +277,7 @@ TEST_CASE("Test starting external RTC quartz", "[rtc_clk][test_env=UT_T1_32kXTAL
     printf("Test is started. Kconfig settings:\n Internal RC is selected,\n Oscillation cycles = %d,\n Calibration cycles = %d.\n",
             bootstrap_cycles,
             CONFIG_ESP32_RTC_CLK_CAL_CYCLES);
-#endif
+#endif // CONFIG_ESP32_RTC_CLK_SRC_EXT_CRYS
     if (CONFIG_ESP32_RTC_CLK_CAL_CYCLES < 1500){
         printf("Recommended increase Number of cycles for RTC_SLOW_CLK calibration to 3000!\n");
     }
@@ -286,4 +322,89 @@ TEST_CASE("Test starting 'External 32kHz XTAL' on the board without it.", "[rtc_
     start_freq(RTC_SLOW_FREQ_RTC, 0);
 }
 
-#endif
+#endif // !IDF_CI_BUILD || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
+
+#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
+
+TEST_CASE("Test rtc clk calibration compensation", "[rtc_clk]")
+{
+    int64_t t1 = esp_rtc_get_time_us();
+
+    // Modify calibration value
+    esp_clk_slowclk_cal_set(esp_clk_slowclk_cal_get() / 2);
+
+    // Delay for error accumulation.
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // Internally, the origin point of rtc clk has been adjusted
+    // so that t2 > t1 remains true
+    int64_t t2 = esp_rtc_get_time_us();
+
+    TEST_ASSERT_GREATER_THAN(t1, t2);
+
+    // Restore calibration value
+    esp_clk_slowclk_cal_set(esp_clk_slowclk_cal_get() * 2);
+
+    // Delay for error accumulation.
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    t2 = esp_rtc_get_time_us();
+
+    TEST_ASSERT_GREATER_THAN(t1, t2);
+}
+
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
+/* Disabled until deep sleep is brought up TODO ESP32-S3 IDF-2691 */
+
+static RTC_NOINIT_ATTR int64_t start = 0;
+
+static void trigger_deepsleep(void)
+{
+    printf("Trigger deep sleep. Waiting for 10 sec ...\n");
+
+    // Simulate the dispersion of the calibration coefficients at start-up.
+    // Corrupt the calibration factor.
+    esp_clk_slowclk_cal_set(esp_clk_slowclk_cal_get() / 2);
+
+    // Delay for error accumulation.
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // Save start time. Deep sleep.
+    start = esp_rtc_get_time_us();
+    esp_sleep_enable_timer_wakeup(1000);
+    // In function esp_deep_sleep_start() uses function esp_sync_counters_rtc_and_frc()
+    // to prevent a negative time after wake up.
+    esp_deep_sleep_start();
+}
+
+static void check_time_deepsleep_1(void)
+{
+    soc_reset_reason_t reason = esp_rom_get_reset_reason(0);
+    TEST_ASSERT(reason == RESET_REASON_CORE_DEEP_SLEEP);
+    int64_t end = esp_rtc_get_time_us();
+    TEST_ASSERT_GREATER_THAN(start, end);
+
+    esp_clk_slowclk_cal_set(esp_clk_slowclk_cal_get() * 2);
+
+    // Delay for error accumulation.
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    start = esp_rtc_get_time_us();
+
+    esp_sleep_enable_timer_wakeup(1000);
+    // In function esp_deep_sleep_start() uses function esp_sync_counters_rtc_and_frc()
+    // to prevent a negative time after wake up.
+    esp_deep_sleep_start();
+}
+
+static void check_time_deepsleep_2(void)
+{
+    soc_reset_reason_t reason = esp_rom_get_reset_reason(0);
+    TEST_ASSERT(reason == RESET_REASON_CORE_DEEP_SLEEP);
+    int64_t end = esp_rtc_get_time_us();
+    TEST_ASSERT_GREATER_THAN(start, end);
+}
+
+TEST_CASE_MULTIPLE_STAGES("Test rtc clk calibration compensation across deep sleep", "[rtc_clk][reset=DEEPSLEEP_RESET, DEEPSLEEP_RESET]", trigger_deepsleep, check_time_deepsleep_1, check_time_deepsleep_2);
+
+#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)

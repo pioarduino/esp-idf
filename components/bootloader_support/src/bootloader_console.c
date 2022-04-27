@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "sdkconfig.h"
 #include "bootloader_console.h"
@@ -21,11 +13,18 @@
 #include "soc/gpio_sig_map.h"
 #include "soc/rtc.h"
 #include "hal/clk_gate_ll.h"
+#include "hal/gpio_hal.h"
 #if CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/usb/cdc_acm.h"
 #include "esp32s2/rom/usb/usb_common.h"
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32c3/rom/ets_sys.h"
+#include "esp32c3/rom/uart.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/uart.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/ets_sys.h"
+#include "esp32h2/rom/uart.h"
 #endif
 #include "esp_rom_gpio.h"
 #include "esp_rom_uart.h"
@@ -69,15 +68,17 @@ void bootloader_console_init(void)
             uart_tx_gpio != UART_NUM_0_TXD_DIRECT_GPIO_NUM ||
             uart_rx_gpio != UART_NUM_0_RXD_DIRECT_GPIO_NUM) {
         // Change default UART pins back to GPIOs
-        PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0RXD_U, PIN_FUNC_GPIO);
-        PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0TXD_U, PIN_FUNC_GPIO);
+        gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_U0RXD_U, PIN_FUNC_GPIO);
+        gpio_hal_iomux_func_sel(PERIPHS_IO_MUX_U0TXD_U, PIN_FUNC_GPIO);
         // Route GPIO signals to/from pins
-        const uint32_t tx_idx = uart_periph_signal[uart_num].tx_sig;
-        const uint32_t rx_idx = uart_periph_signal[uart_num].rx_sig;
+        const uint32_t tx_idx = UART_PERIPH_SIGNAL(uart_num, SOC_UART_TX_PIN_IDX);
+        const uint32_t rx_idx = UART_PERIPH_SIGNAL(uart_num, SOC_UART_RX_PIN_IDX);
+        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[uart_rx_gpio], PIN_FUNC_GPIO);
         PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[uart_rx_gpio]);
         esp_rom_gpio_pad_pullup_only(uart_rx_gpio);
         esp_rom_gpio_connect_out_signal(uart_tx_gpio, tx_idx, 0, 0);
         esp_rom_gpio_connect_in_signal(uart_rx_gpio, rx_idx, 0);
+        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[uart_tx_gpio], PIN_FUNC_GPIO);
         // Enable the peripheral
         periph_ll_enable_clk_clear_rst(PERIPH_UART0_MODULE + uart_num);
     }
@@ -110,3 +111,11 @@ void bootloader_console_init(void)
     esp_rom_install_channel_putc(1, bootloader_console_write_char_usb);
 }
 #endif //CONFIG_ESP_CONSOLE_USB_CDC
+
+#ifdef CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+void bootloader_console_init(void)
+{
+    UartDevice *uart = GetUartDevice();
+    uart->buff_uart_no = ESP_ROM_USB_SERIAL_DEVICE_NUM;
+}
+#endif //CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG

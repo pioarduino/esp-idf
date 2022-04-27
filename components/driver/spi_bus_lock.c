@@ -1,16 +1,8 @@
-// Copyright 2015-2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -172,7 +164,7 @@ typedef struct spi_bus_lock_t spi_bus_lock_t;
 #define REQUEST_BIT(mask)   ((mask) << REQ_SHIFT)
 #define PENDING_BIT(mask)   ((mask) << PENDING_SHIFT)
 #define DEV_MASK(id)        (LOCK_BIT(1<<id) | PENDING_BIT(1<<id) | REQUEST_BIT(1<<id))
-#define ID_DEV_MASK(mask)   (ffs(mask) - 1)
+#define ID_DEV_MASK(mask)   (__builtin_ffs(mask) - 1)
 
 #define REQ_MASK            BIT1_MASK(REQ_SHIFT+MAX_DEV_NUM, REQ_SHIFT)
 #define PEND_MASK           BIT1_MASK(PENDING_SHIFT+MAX_DEV_NUM, PENDING_SHIFT)

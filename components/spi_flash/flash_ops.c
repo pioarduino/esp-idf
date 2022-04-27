@@ -1,16 +1,8 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2019-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdlib.h>
 #include <assert.h>
@@ -28,6 +20,7 @@
 #include "esp_spi_flash.h"
 #include "esp_log.h"
 #include "esp_private/system_internal.h"
+#include "esp_private/spi_flash_os.h"
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/rom/cache.h"
 #include "esp32/rom/spi_flash.h"
@@ -37,18 +30,28 @@
 #include "esp32s2/rom/spi_flash.h"
 #include "esp32s2/clk.h"
 #elif CONFIG_IDF_TARGET_ESP32S3
+#include "soc/spi_mem_reg.h"
 #include "esp32s3/rom/spi_flash.h"
+#include "esp32s3/rom/opi_flash.h"
 #include "esp32s3/rom/cache.h"
 #include "esp32s3/clk.h"
+#include "esp32s3/clk.h"
+#include "esp32s3/opi_flash_private.h"
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32c3/rom/cache.h"
 #include "esp32c3/rom/spi_flash.h"
 #include "esp32c3/clk.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/cache.h"
+#include "esp32h2/rom/spi_flash.h"
+#include "esp32h2/clk.h"
 #endif
 #include "esp_flash_partitions.h"
 #include "cache_utils.h"
 #include "esp_flash.h"
 #include "esp_attr.h"
+#include "bootloader_flash.h"
+#include "esp_compiler.h"
 
 esp_rom_spiflash_result_t IRAM_ATTR spi_flash_write_encrypted_chip(size_t dest_addr, const void *src, size_t size);
 
@@ -90,7 +93,9 @@ static spi_flash_counters_t s_flash_stats;
 
 #endif //CONFIG_SPI_FLASH_ENABLE_COUNTERS
 
+#if CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 static esp_err_t spi_flash_translate_rc(esp_rom_spiflash_result_t rc);
+#endif //CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 static bool is_safe_write_address(size_t addr, size_t size);
 static void spi_flash_os_yield(void);
 
@@ -153,6 +158,27 @@ void IRAM_ATTR *spi_flash_malloc_internal(size_t size)
     return heap_caps_malloc(size, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
 }
 #endif
+
+void IRAM_ATTR esp_mspi_pin_init(void)
+{
+#if CONFIG_ESPTOOLPY_OCT_FLASH || CONFIG_SPIRAM_MODE_OCT
+    esp_rom_opiflash_pin_config();
+    extern void spi_timing_set_pin_drive_strength(void);
+    spi_timing_set_pin_drive_strength();
+#else
+    //Set F4R4 board pin drive strength. TODO: IDF-3663
+#endif
+}
+
+esp_err_t IRAM_ATTR spi_flash_init_chip_state(void)
+{
+#if CONFIG_ESPTOOLPY_OCT_FLASH
+    return esp_opiflash_init(rom_spiflash_legacy_data->chip.device_id);
+#else
+    //currently we don't need other setup for initialising Quad Flash
+    return ESP_OK;
+#endif
+}
 
 void spi_flash_init(void)
 {
@@ -229,7 +255,9 @@ static inline void IRAM_ATTR spi_flash_guard_op_unlock(void)
 static void IRAM_ATTR spi_flash_os_yield(void)
 {
 #ifdef CONFIG_SPI_FLASH_YIELD_DURING_ERASE
-    vTaskDelay(CONFIG_SPI_FLASH_ERASE_YIELD_TICKS);
+    if (likely(xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)) {
+        vTaskDelay(CONFIG_SPI_FLASH_ERASE_YIELD_TICKS);
+    }
 #endif
 }
 
@@ -239,21 +267,9 @@ static esp_rom_spiflash_result_t IRAM_ATTR spi_flash_unlock(void)
     static bool unlocked = false;
     if (!unlocked) {
         spi_flash_guard_start();
-        esp_rom_spiflash_result_t rc = esp_rom_spiflash_unlock();
+        bootloader_flash_unlock();
         spi_flash_guard_end();
-        if (rc != ESP_ROM_SPIFLASH_RESULT_OK) {
-            return rc;
-        }
         unlocked = true;
-    }
-    return ESP_ROM_SPIFLASH_RESULT_OK;
-}
-#else
-static esp_rom_spiflash_result_t IRAM_ATTR spi_flash_unlock(void)
-{
-    esp_err_t err = esp_flash_set_chip_write_protect(NULL, false);
-    if (err != ESP_OK) {
-        return ESP_ROM_SPIFLASH_RESULT_ERR;
     }
     return ESP_ROM_SPIFLASH_RESULT_OK;
 }
@@ -507,6 +523,67 @@ out:
 }
 #endif // CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 
+#if !CONFIG_SPI_FLASH_USE_LEGACY_IMPL
+#if !CONFIG_ESPTOOLPY_OCT_FLASH // Test for encryption on opi flash, IDF-3852.
+extern void spi_common_set_dummy_output(esp_rom_spiflash_read_mode_t mode);
+extern void spi_dummy_len_fix(uint8_t spi, uint8_t freqdiv);
+void IRAM_ATTR flash_rom_init(void)
+{
+    uint32_t freqdiv = 0;
+
+#if CONFIG_IDF_TARGET_ESP32
+    uint32_t dummy_bit = 0;
+#if CONFIG_ESPTOOLPY_FLASHFREQ_80M
+    dummy_bit = ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_80M;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_40M
+    dummy_bit = ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_40M;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_26M
+    dummy_bit = ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_26M;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_20M
+    dummy_bit = ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_20M;
+#endif
+#endif//CONFIG_IDF_TARGET_ESP32
+
+#if CONFIG_ESPTOOLPY_FLASHFREQ_80M
+    freqdiv = 1;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_40M
+    freqdiv = 2;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_26M
+    freqdiv = 3;
+#elif CONFIG_ESPTOOLPY_FLASHFREQ_20M
+    freqdiv = 4;
+#endif
+
+#if !CONFIG_IDF_TARGET_ESP32S2 && !CONFIG_IDF_TARGET_ESP32
+    esp_rom_spiflash_read_mode_t read_mode;
+#if CONFIG_ESPTOOLPY_FLASHMODE_QIO
+    read_mode = ESP_ROM_SPIFLASH_QIO_MODE;
+#elif CONFIG_ESPTOOLPY_FLASHMODE_QOUT
+    read_mode = ESP_ROM_SPIFLASH_QOUT_MODE;
+#elif CONFIG_ESPTOOLPY_FLASHMODE_DIO
+    read_mode = ESP_ROM_SPIFLASH_DIO_MODE;
+#elif CONFIG_ESPTOOLPY_FLASHMODE_DOUT
+    read_mode = ESP_ROM_SPIFLASH_DOUT_MODE;
+#endif
+#endif //!CONFIG_IDF_TARGET_ESP32S2 && !CONFIG_IDF_TARGET_ESP32
+
+#if CONFIG_IDF_TARGET_ESP32
+    g_rom_spiflash_dummy_len_plus[1] = dummy_bit;
+#else
+    spi_dummy_len_fix(1, freqdiv);
+#endif //CONFIG_IDF_TARGET_ESP32
+
+#if !CONFIG_IDF_TARGET_ESP32S2 && !CONFIG_IDF_TARGET_ESP32
+    spi_common_set_dummy_output(read_mode);
+#endif //!CONFIG_IDF_TARGET_ESP32S2
+    esp_rom_spiflash_config_clk(freqdiv, 1);
+}
+#endif //CONFIG_ESPTOOLPY_OCT_FLASH
+#else
+void IRAM_ATTR flash_rom_init(void)
+{
+    return;
+}
 
 esp_err_t IRAM_ATTR spi_flash_write_encrypted(size_t dest_addr, const void *src, size_t size)
 {
@@ -600,8 +677,6 @@ fail:
     return err;
 }
 
-
-#ifdef CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 esp_err_t IRAM_ATTR spi_flash_read(size_t src, void *dstv, size_t size)
 {
     // Out of bound reads are checked in ROM code, but we can give better
@@ -753,7 +828,7 @@ out:
     COUNTER_STOP(read);
     return spi_flash_translate_rc(rc);
 }
-#endif
+#endif // !CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 
 esp_err_t IRAM_ATTR spi_flash_read_encrypted(size_t src, void *dstv, size_t size)
 {
@@ -779,7 +854,7 @@ esp_err_t IRAM_ATTR spi_flash_read_encrypted(size_t src, void *dstv, size_t size
     return err;
 }
 
-
+#if CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 static esp_err_t IRAM_ATTR spi_flash_translate_rc(esp_rom_spiflash_result_t rc)
 {
     switch (rc) {
@@ -792,6 +867,7 @@ static esp_err_t IRAM_ATTR spi_flash_translate_rc(esp_rom_spiflash_result_t rc)
         return ESP_ERR_FLASH_OP_FAIL;
     }
 }
+#endif //CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 
 #if CONFIG_SPI_FLASH_ENABLE_COUNTERS
 
@@ -824,3 +900,26 @@ void spi_flash_dump_counters(void)
 // TODO esp32s2: Remove once ESP32-S2 & later chips has new SPI Flash API support
 esp_flash_t *esp_flash_default_chip = NULL;
 #endif
+
+void IRAM_ATTR spi_flash_set_rom_required_regs(void)
+{
+#if CONFIG_ESPTOOLPY_OCT_FLASH
+    //Disable the variable dummy mode when doing timing tuning
+    CLEAR_PERI_REG_MASK(SPI_MEM_DDR_REG(1), SPI_MEM_SPI_FMEM_VAR_DUMMY);
+    /**
+     * STR /DTR mode setting is done every time when `esp_rom_opiflash_exec_cmd` is called
+     *
+     * Add any registers that are not set in ROM SPI flash functions here in the future
+     */
+#endif
+}
+
+void IRAM_ATTR spi_flash_set_vendor_required_regs(void)
+{
+#if CONFIG_ESPTOOLPY_OCT_FLASH
+    //Flash chip requires MSPI specifically, call this function to set them
+    esp_opiflash_set_required_regs();
+#else
+    //currently we don't need to set other MSPI registers for Quad Flash
+#endif
+}

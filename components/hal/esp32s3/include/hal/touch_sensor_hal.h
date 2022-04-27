@@ -1,16 +1,8 @@
-// Copyright 2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /*******************************************************************************
  * NOTICE
@@ -18,7 +10,7 @@
  * See readme.md in hal/include/hal/readme.md
  ******************************************************************************/
 
-// The HAL layer for touch sensor (esp32s2 specific part)
+// The HAL layer for touch sensor (ESP32-S3 specific part)
 
 #pragma once
 
@@ -607,6 +599,33 @@ void touch_hal_sleep_channel_enable(touch_pad_t pad_num, bool enable);
  * @param pad_num pointer to touch pad which caused wakeup.
  */
 #define touch_hal_get_wakeup_status(pad_num) touch_ll_get_wakeup_status(pad_num)
+
+/**
+ * Change the operating frequency of touch pad in deep sleep state. Reducing the operating frequency can effectively reduce power consumption.
+ * If this function is not called, the working frequency of touch in the deep sleep state is the same as that in the wake-up state.
+ *
+ * @param sleep_cycle The touch sensor will sleep after each measurement.
+ *                    sleep_cycle decide the interval between each measurement.
+ *                    t_sleep = sleep_cycle / (RTC_SLOW_CLK frequency).
+ *                    The approximate frequency value of RTC_SLOW_CLK can be obtained using rtc_clk_slow_freq_get_hz function.
+ * @param meas_times The times of charge and discharge in each measure process of touch channels.
+ *                  The timer frequency is 8Mhz. Range: 0 ~ 0xffff.
+ *                  Recommended typical value: Modify this value to make the measurement time around 1ms.
+ */
+void touch_hal_sleep_channel_set_work_time(uint16_t sleep_cycle, uint16_t meas_times);
+
+/**
+ * Get the operating frequency of touch pad in deep sleep state. Reducing the operating frequency can effectively reduce power consumption.
+ *
+ * @param sleep_cycle The touch sensor will sleep after each measurement.
+ *                    sleep_cycle decide the interval between each measurement.
+ *                    t_sleep = sleep_cycle / (RTC_SLOW_CLK frequency).
+ *                    The approximate frequency value of RTC_SLOW_CLK can be obtained using rtc_clk_slow_freq_get_hz function.
+ * @param meas_times The times of charge and discharge in each measure process of touch channels.
+ *                  The timer frequency is 8Mhz. Range: 0 ~ 0xffff.
+ *                  Recommended typical value: Modify this value to make the measurement time around 1ms.
+ */
+void touch_hal_sleep_channel_get_work_time(uint16_t *sleep_cycle, uint16_t *meas_times);
 
 #ifdef __cplusplus
 }

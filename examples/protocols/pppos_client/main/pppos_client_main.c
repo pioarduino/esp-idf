@@ -19,7 +19,7 @@
 #include "bg96.h"
 #include "sim7600.h"
 
-#define BROKER_URL "mqtt://mqtt.eclipse.org"
+#define BROKER_URL "mqtt://mqtt.eclipseprojects.io"
 
 static const char *TAG = "pppos_example";
 static EventGroupHandle_t event_group = NULL;
@@ -59,7 +59,7 @@ static esp_err_t example_handle_cmgs(modem_dce_t *dce, const char *line)
 
 #define MODEM_SMS_MAX_LENGTH (128)
 #define MODEM_COMMAND_TIMEOUT_SMS_MS (120000)
-#define MODEM_PROMPT_TIMEOUT_MS (10)
+#define MODEM_PROMPT_TIMEOUT_MS (100)
 
 static esp_err_t example_send_message_text(modem_dce_t *dce, const char *phone_num, const char *text)
 {
@@ -120,7 +120,7 @@ static void modem_event_handler(void *event_handler_arg, esp_event_base_t event_
         xEventGroupSetBits(event_group, STOP_BIT);
         break;
     case ESP_MODEM_EVENT_UNKNOWN:
-        ESP_LOGW(TAG, "Unknow line received: %s", (char *)event_data);
+        ESP_LOGW(TAG, "Unknown line received: %s", (char *)event_data);
         break;
     default:
         break;
@@ -237,11 +237,10 @@ void app_main(void)
     config.cts_io_num = CONFIG_EXAMPLE_MODEM_UART_CTS_PIN;
     config.rx_buffer_size = CONFIG_EXAMPLE_MODEM_UART_RX_BUFFER_SIZE;
     config.tx_buffer_size = CONFIG_EXAMPLE_MODEM_UART_TX_BUFFER_SIZE;
-    config.pattern_queue_size = CONFIG_EXAMPLE_MODEM_UART_PATTERN_QUEUE_SIZE;
     config.event_queue_size = CONFIG_EXAMPLE_MODEM_UART_EVENT_QUEUE_SIZE;
     config.event_task_stack_size = CONFIG_EXAMPLE_MODEM_UART_EVENT_TASK_STACK_SIZE;
     config.event_task_priority = CONFIG_EXAMPLE_MODEM_UART_EVENT_TASK_PRIORITY;
-    config.line_buffer_size = CONFIG_EXAMPLE_MODEM_UART_RX_BUFFER_SIZE / 2;
+    config.dte_buffer_size = CONFIG_EXAMPLE_MODEM_UART_RX_BUFFER_SIZE / 2;
 
     modem_dte_t *dte = esp_modem_dte_init(&config);
     /* Register event handler */

@@ -1,3 +1,6 @@
+| Supported Targets | ESP32 | ESP32-S2 | ESP32-C3 |
+| ----------------- | ----- | -------- | -------- |
+
 # Ethernet iperf Example
 
 (See the README.md file in the upper level 'examples' directory for more information about examples.)
@@ -23,7 +26,7 @@ See common pin assignments for Ethernet examples from [upper level](../README.md
 ### Software Tools Preparation
 
 1. Install iperf tool on PC
-   * Debian/Ubuntu: `sudo apt-get install iperf` 
+   * Debian/Ubuntu: `sudo apt-get install iperf`
    * macOS: `brew install iperf`(if using Homebrew) or `sudo port install iperf`(if using MacPorts)
    * Windows(MSYS2): Downloads binaries from [here]( https://iperf.fr/iperf-download.php#windows)
 
@@ -146,7 +149,7 @@ I (2534456) iperf: want recv=16384
 ## Suggestions of getting higher bandwidth
 
 1. Higher MCU working frequency will get higher bandwidth.
-2. Put frequency invoked function into IRAM via macro `IRAM_ATTR` in code.
+2. Put frequently invoked functions into IRAM via macro `IRAM_ATTR` in code. Note that the lwIP IRAM optimization is already enabled by default.
 3. Priority of iperf task may also have effect.
 
 ## Troubleshooting

@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2017 Nordic Semiconductor ASA
- * Copyright (c) 2015-2017 Intel Corporation
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2017 Nordic Semiconductor ASA
+ * SPDX-FileCopyrightText: 2015-2017 Intel Corporation
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,7 +22,7 @@ extern "C" {
 
 /* BLE Mesh Max Connection Count */
 #ifdef CONFIG_BT_BLUEDROID_ENABLED
-#define BLE_MESH_MAX_CONN   MIN(CONFIG_BT_ACL_CONNECTIONS, CONFIG_BTDM_CTRL_BLE_MAX_CONN)
+#define BLE_MESH_MAX_CONN   CONFIG_BT_ACL_CONNECTIONS
 #endif
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
@@ -324,12 +324,6 @@ struct bt_mesh_gatt_service {
     uint16_t                  attr_count;
     sys_snode_t               node;
 };
-
-struct bt_mesh_ecb_param {
-    uint8_t key[16];
-    uint8_t clear_text[16];
-    uint8_t cipher_text[16];
-} __packed;
 
 typedef struct {
     uint8_t type;

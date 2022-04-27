@@ -14,6 +14,7 @@ static const char* get_test_name(void);
 
 /* functions which cause an exception/panic in different ways */
 static void test_abort(void);
+static void test_abort_cache_disabled(void);
 static void test_int_wdt(void);
 static void test_task_wdt(void);
 static void test_storeprohibited(void);
@@ -22,6 +23,9 @@ static void test_int_wdt_cache_disabled(void);
 static void test_stack_overflow(void);
 static void test_illegal_instruction(void);
 static void test_instr_fetch_prohibited(void);
+static void test_ub(void);
+static void test_assert(void);
+static void test_assert_cache_disabled(void);
 
 
 void app_main(void)
@@ -44,6 +48,7 @@ void app_main(void)
         }
 
     HANDLE_TEST(test_abort);
+    HANDLE_TEST(test_abort_cache_disabled);
     HANDLE_TEST(test_int_wdt);
     HANDLE_TEST(test_task_wdt);
     HANDLE_TEST(test_storeprohibited);
@@ -52,6 +57,9 @@ void app_main(void)
     HANDLE_TEST(test_stack_overflow);
     HANDLE_TEST(test_illegal_instruction);
     HANDLE_TEST(test_instr_fetch_prohibited);
+    HANDLE_TEST(test_ub);
+    HANDLE_TEST(test_assert);
+    HANDLE_TEST(test_assert_cache_disabled);
 
     #undef HANDLE_TEST
 
@@ -62,6 +70,12 @@ void app_main(void)
 
 static void test_abort(void)
 {
+    abort();
+}
+
+static void IRAM_ATTR test_abort_cache_disabled(void)
+{
+    esp_flash_default_chip->os_func->start(esp_flash_default_chip->os_func_data);
     abort();
 }
 
@@ -80,7 +94,7 @@ static void test_task_wdt(void)
     }
 }
 
-static void test_storeprohibited(void)
+static void __attribute__((no_sanitize_undefined)) test_storeprohibited(void)
 {
     *(int*) 0x1 = 0;
 }
@@ -98,6 +112,17 @@ static void IRAM_ATTR test_int_wdt_cache_disabled(void)
     while (true) {
         ;
     }
+}
+
+static void test_assert(void)
+{
+    assert(0);
+}
+
+static void IRAM_ATTR test_assert_cache_disabled(void)
+{
+    esp_flash_default_chip->os_func->start(esp_flash_default_chip->os_func_data);
+    assert(0);
 }
 
 /**
@@ -142,6 +167,12 @@ static void test_instr_fetch_prohibited(void)
     fptr();
 }
 
+static void test_ub(void)
+{
+    uint8_t stuff[1] = {rand()};
+    printf("%d\n", stuff[rand()]);
+}
+
 /* implementations of the utility functions */
 
 #define BOOT_CMD_MAX_LEN (128)
@@ -183,7 +214,7 @@ static void die(const char* msg)
 {
     printf("Test error: %s\n\n", msg);
     fflush(stdout);
-    fsync(fileno(stdout));
+    usleep(1000);
     /* Don't use abort here as it would enter the panic handler */
     esp_restart_noos();
 }

@@ -1,25 +1,26 @@
 set(srcs
     "adc_periph.c"
-    "dac_periph.c"
     "dedic_gpio_periph.c"
     "gdma_periph.c"
     "gpio_periph.c"
     "i2c_periph.c"
     "i2s_periph.c"
     "interrupts.c"
+    "lcd_periph.c"
     "ledc_periph.c"
+    "mcpwm_periph.c"
     "pcnt_periph.c"
     "rmt_periph.c"
     "rtc_io_periph.c"
-    "rtc_periph.c"
     "sdio_slave_periph.c"
     "sdmmc_periph.c"
     "sigmadelta_periph.c"
-    "soc_memory_layout.c"
     "spi_periph.c"
     "timer_periph.c"
     "touch_sensor_periph.c"
-    "uart_periph.c")
+    "uart_periph.c"
+    "usb_periph.c"
+    "usb_phy_periph.c")
 
 add_prefix(srcs "${CMAKE_CURRENT_LIST_DIR}/" "${srcs}")
 

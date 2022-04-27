@@ -17,6 +17,7 @@
 #include <sys/param.h> // For MIN/MAX
 #include "spi_flash_chip_generic.h"
 #include "spi_flash_defs.h"
+#include "hal/spi_flash_encrypt_hal.h"
 #include "esp_log.h"
 #include "esp_attr.h"
 
@@ -39,6 +40,16 @@ DRAM_ATTR const static flash_chip_dummy_t default_flash_chip_dummy = {
     .slowrd_dummy_bitlen = SPI_FLASH_SLOWRD_DUMMY_BITLEN,
 };
 
+// These are the pointer to HW flash encryption. Default using hardware encryption.
+DRAM_ATTR static spi_flash_encryption_t esp_flash_encryption_default __attribute__((__unused__)) = {
+    .flash_encryption_enable = spi_flash_encryption_hal_enable,
+    .flash_encryption_disable = spi_flash_encryption_hal_disable,
+    .flash_encryption_data_prepare = spi_flash_encryption_hal_prepare,
+    .flash_encryption_done = spi_flash_encryption_hal_done,
+    .flash_encryption_destroy = spi_flash_encryption_hal_destroy,
+    .flash_encryption_check = spi_flash_encryption_hal_check,
+};
+
 DRAM_ATTR flash_chip_dummy_t *rom_flash_chip_dummy = (flash_chip_dummy_t *)&default_flash_chip_dummy;
 
 #define SPI_FLASH_DEFAULT_IDLE_TIMEOUT_MS           200
@@ -58,9 +69,9 @@ const DRAM_ATTR flash_chip_op_timeout_t spi_flash_chip_generic_timeout = {
     .page_program_timeout = SPI_FLASH_GENERIC_PAGE_PROGRAM_TIMEOUT_MS * 1000,
 };
 
-#ifndef CONFIG_SPI_FLASH_ROM_IMPL
-
 static const char TAG[] = "chip_generic";
+
+#ifndef CONFIG_SPI_FLASH_ROM_IMPL
 
 esp_err_t spi_flash_chip_generic_probe(esp_flash_t *chip, uint32_t flash_id)
 {
@@ -189,9 +200,10 @@ esp_err_t spi_flash_chip_generic_read(esp_flash_t *chip, void *buffer, uint32_t 
     const uint32_t page_size = chip->chip_drv->page_size;
     uint32_t align_address;
     uint8_t temp_buffer[64]; //spiflash hal max length of read no longer than 64byte
+    uint32_t config_io_flags = 0;
 
     // Configure the host, and return
-    err = spi_flash_chip_generic_config_host_io_mode(chip, false);
+    err = chip->chip_drv->config_host_io_mode(chip, config_io_flags);
 
     if (err == ESP_ERR_NOT_SUPPORTED) {
         ESP_LOGE(TAG, "configure host io mode failed - unsupported");
@@ -265,7 +277,65 @@ esp_err_t spi_flash_chip_generic_write(esp_flash_t *chip, const void *buffer, ui
 
 esp_err_t spi_flash_chip_generic_write_encrypted(esp_flash_t *chip, const void *buffer, uint32_t address, uint32_t length)
 {
-    return ESP_ERR_FLASH_UNSUPPORTED_HOST; // TODO
+    spi_flash_encryption_t *esp_flash_encryption = &esp_flash_encryption_default;
+    esp_err_t err = ESP_OK;
+    // Encryption must happen on main flash.
+    if (chip != esp_flash_default_chip) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    /* Check if the buffer and length can qualify the requirments */
+    if (esp_flash_encryption->flash_encryption_check(address, length) != true) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    const uint8_t *data_bytes = (const uint8_t *)buffer;
+    esp_flash_encryption->flash_encryption_enable();
+    while (length > 0) {
+        int block_size;
+        /* Write the largest block if possible */
+        if (address % 64 == 0 && length >= 64) {
+            block_size = 64;
+        } else if (address % 32 == 0 && length >= 32) {
+            block_size = 32;
+        } else {
+            block_size = 16;
+        }
+        // Prepare the flash chip (same time as AES operation, for performance)
+        esp_flash_encryption->flash_encryption_data_prepare(address, (uint32_t *)data_bytes, block_size);
+        err = chip->chip_drv->set_chip_write_protect(chip, false);
+        if (err != ESP_OK) {
+            return err;
+        }
+        // Waiting for encrypting buffer to finish and making result visible for SPI1
+        esp_flash_encryption->flash_encryption_done();
+
+        // Note: For encryption function, after write flash command is sent. The hardware will write the encrypted buffer
+        // prepared in XTS_FLASH_ENCRYPTION register in function `flash_encryption_data_prepare`, instead of the origin
+        // buffer named `data_bytes`.
+
+        err = chip->chip_drv->write(chip, (uint32_t *)data_bytes, address, length);
+        if (err != ESP_OK) {
+            return err;
+        }
+        err = chip->chip_drv->wait_idle(chip, chip->chip_drv->timeout->page_program_timeout);
+        if (err != ESP_OK) {
+            return err;
+        }
+
+        // Note: we don't wait for idle status here, because this way
+        // the AES peripheral can start encrypting the next
+        // block while the SPI flash chip is busy completing the write
+
+        esp_flash_encryption->flash_encryption_destroy();
+
+        length -= block_size;
+        data_bytes += block_size;
+        address += block_size;
+    }
+
+    esp_flash_encryption->flash_encryption_disable();
+    return err;
 }
 
 esp_err_t spi_flash_chip_generic_set_write_protect(esp_flash_t *chip, bool write_protect)
@@ -299,22 +369,6 @@ esp_err_t spi_flash_chip_generic_get_write_protect(esp_flash_t *chip, bool *out_
 
     *out_write_protect = ((status & SR_WREN) == 0);
     return err;
-}
-
-esp_err_t spi_flash_generic_wait_host_idle(esp_flash_t *chip, uint32_t *timeout_us)
-{
-    while (!chip->host->driver->host_idle(chip->host) && *timeout_us > 0) {
-#if HOST_DELAY_INTERVAL_US > 0
-        if (*timeout_us > 1) {
-            int delay = MIN(HOST_DELAY_INTERVAL_US, *timeout_us);
-            chip->os_func->delay_us(chip->os_func_data, delay);
-            *timeout_us -= delay;
-        } else {
-            return ESP_ERR_TIMEOUT;
-        }
-#endif
-    }
-    return ESP_OK;
 }
 
 esp_err_t spi_flash_chip_generic_read_reg(esp_flash_t* chip, spi_flash_register_t reg_id, uint32_t* out_reg)
@@ -357,14 +411,19 @@ esp_err_t spi_flash_chip_generic_wait_idle(esp_flash_t *chip, uint32_t timeout_u
     uint8_t status = 0;
     const int interval = CHIP_WAIT_IDLE_INTERVAL_US;
     while (timeout_us > 0) {
+        while (!chip->host->driver->host_status(chip->host) && timeout_us > 0) {
 
-        esp_err_t err = spi_flash_generic_wait_host_idle(chip, & timeout_us);
-        if (err != ESP_OK) {
-            return err;
+#if HOST_DELAY_INTERVAL_US > 0
+            if (timeout_us > 1) {
+                int delay = MIN(HOST_DELAY_INTERVAL_US, timeout_us);
+                chip->os_func->delay_us(chip->os_func_data, delay);
+                timeout_us -= delay;
+            }
+#endif
         }
 
         uint32_t read;
-        err = chip->chip_drv->read_reg(chip, SPI_FLASH_REG_STATUS, &read);
+        esp_err_t err = chip->chip_drv->read_reg(chip, SPI_FLASH_REG_STATUS, &read);
         if (err != ESP_OK) {
             return err;
         }
@@ -390,13 +449,14 @@ esp_err_t spi_flash_chip_generic_wait_idle(esp_flash_t *chip, uint32_t timeout_u
     return (timeout_us > 0) ?  ESP_OK : ESP_ERR_TIMEOUT;
 }
 
-esp_err_t spi_flash_chip_generic_config_host_io_mode(esp_flash_t *chip, bool addr_32bit)
+esp_err_t spi_flash_chip_generic_config_host_io_mode(esp_flash_t *chip, uint32_t flags)
 {
     uint32_t dummy_cyclelen_base;
     uint32_t addr_bitlen;
     uint32_t read_command;
     bool conf_required = false;
     esp_flash_io_mode_t read_mode = chip->read_mode;
+    bool addr_32bit = (flags & SPI_FLASH_CONFIG_IO_MODE_32B_ADDR);
 
     switch (read_mode & 0xFFFF) {
     case SPI_FLASH_QIO:
@@ -474,6 +534,49 @@ esp_err_t spi_flash_chip_generic_set_io_mode(esp_flash_t *chip)
 }
 #endif // CONFIG_SPI_FLASH_ROM_IMPL
 
+esp_err_t spi_flash_chip_generic_read_unique_id(esp_flash_t *chip, uint64_t* flash_unique_id)
+{
+    uint64_t unique_id_buf = 0;
+    spi_flash_trans_t transfer = {
+        .command = CMD_RDUID,
+        .miso_len = 8,
+        .miso_data = ((uint8_t *)&unique_id_buf),
+        .dummy_bitlen = 32, //RDUID command followed by 4 bytes (32 bits) of dummy clocks.
+    };
+    esp_err_t err = chip->host->driver->common_command(chip->host, &transfer);
+
+    if (unique_id_buf == 0 || unique_id_buf == UINT64_MAX) {
+        ESP_EARLY_LOGE(TAG, "No response from device when trying to retrieve Unique ID\n");
+        *flash_unique_id = unique_id_buf;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    *flash_unique_id = __builtin_bswap64(unique_id_buf);
+    return err;
+}
+
+esp_err_t spi_flash_chip_generic_read_unique_id_none(esp_flash_t *chip, uint64_t* flash_unique_id)
+{
+    // For flash doesn't support read unique id.
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+spi_flash_caps_t spi_flash_chip_generic_get_caps(esp_flash_t *chip)
+{
+    // For generic part flash capability, take the XMC chip as reference.
+    spi_flash_caps_t caps_flags = 0;
+    // 32M-bits address support
+
+    // flash suspend support
+    // Only `XMC` support suspend for now.
+    if (chip->chip_id >> 16 == 0x20) {
+        caps_flags |= SPI_FLASH_CHIP_CAP_SUSPEND;
+    }
+    // flash read unique id.
+    caps_flags |= SPI_FLASH_CHIP_CAP_UNIQUE_ID;
+    return caps_flags;
+}
+
 static const char chip_name[] = "generic";
 
 const spi_flash_chip_t esp_flash_chip_generic = {
@@ -511,6 +614,10 @@ const spi_flash_chip_t esp_flash_chip_generic = {
 
     .read_reg = spi_flash_chip_generic_read_reg,
     .yield = spi_flash_chip_generic_yield,
+    .sus_setup = spi_flash_chip_generic_suspend_cmd_conf,
+    .read_unique_id = spi_flash_chip_generic_read_unique_id,
+    .get_chip_caps = spi_flash_chip_generic_get_caps,
+    .config_host_io_mode = spi_flash_chip_generic_config_host_io_mode,
 };
 
 #ifndef CONFIG_SPI_FLASH_ROM_IMPL
@@ -652,3 +759,20 @@ esp_err_t spi_flash_common_set_io_mode(esp_flash_t *chip, esp_flash_wrsr_func_t 
 }
 
 #endif // !CONFIG_SPI_FLASH_ROM_IMPL
+
+esp_err_t spi_flash_chip_generic_suspend_cmd_conf(esp_flash_t *chip)
+{
+    // Only XMC support auto-suspend
+    if (chip->chip_id >> 16 != 0x20) {
+        ESP_EARLY_LOGE(TAG, "The flash you use doesn't support auto suspend, only \'XMC\' is supported");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    spi_flash_sus_cmd_conf sus_conf = {
+        .sus_mask = 0x80,
+        .cmd_rdsr = CMD_RDSR2,
+        .sus_cmd = CMD_SUSPEND,
+        .res_cmd = CMD_RESUME,
+    };
+
+    return chip->host->driver->sus_setup(chip->host, &sus_conf);
+}

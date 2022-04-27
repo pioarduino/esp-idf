@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2017 Nordic Semiconductor ASA
- * Copyright (c) 2015-2016 Intel Corporation
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2017 Nordic Semiconductor ASA
+ * SPDX-FileCopyrightText: 2015-2016 Intel Corporation
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -88,7 +88,7 @@ int bt_mesh_host_init(void)
     int rc;
 
     if (init == true) {
-        return 0;
+        return -EALREADY;
     }
 
     rc = btc_init();
@@ -391,7 +391,7 @@ static int disc_cb(struct ble_gap_event *event, void *arg)
         struct net_buf_simple buf = {0};
 
         desc = &event->disc;
-        net_buf_simple_init_with_data(&buf, desc->data, desc->length_data);
+        net_buf_simple_init_with_data(&buf, (void *)desc->data, desc->length_data);
 
         if (bt_mesh_scan_dev_found_cb) {
             bt_mesh_scan_dev_found_cb((bt_mesh_addr_t *)&desc->addr, desc->rssi, desc->event_type, &buf);
@@ -539,7 +539,8 @@ static int disc_cb(struct ble_gap_event *event, void *arg)
                 }
             }
         } else if (bt_mesh_gattc_info[i].service_uuid == BLE_MESH_UUID_MESH_PROXY_VAL) {
-            if (bt_mesh_gattc_conn_cb != NULL && bt_mesh_gattc_conn_cb->proxy_notify != NULL) {
+            if (bt_mesh_gattc_conn_cb != NULL && bt_mesh_gattc_conn_cb->proxy_notify != NULL &&
+                bt_mesh_gattc_info[i].wr_desc_done) {
                 len = bt_mesh_gattc_conn_cb->proxy_notify(&bt_mesh_gattc_info[i].conn,
                         notif_data, notif_len);
                 if (len < 0) {
@@ -1185,6 +1186,8 @@ static int gatts_register(struct bt_mesh_gatt_service *svc)
     last = SYS_SLIST_PEEK_TAIL_CONTAINER(&bt_mesh_gatts_db, last, node);
     handle = last->attrs[last->attr_count - 1].handle;
     BT_DBG("gatts register, handle %d", handle);
+
+    ARG_UNUSED(handle);
 
 populate:
     sys_slist_append(&bt_mesh_gatts_db, &svc->node);
@@ -1849,59 +1852,36 @@ int bt_mesh_dh_key_gen(const uint8_t remote_pk[64], bt_mesh_dh_key_cb_t cb, cons
     return 0;
 }
 
-#if CONFIG_MBEDTLS_HARDWARE_AES
-static void ecb_encrypt(uint8_t const *const key_le, uint8_t const *const clear_text_le,
-                        uint8_t *const cipher_text_le, uint8_t *const cipher_text_be)
-{
-    struct bt_mesh_ecb_param ecb;
-    mbedtls_aes_context aes_ctx = {0};
-
-    aes_ctx.key_bytes = 16;
-    mem_rcopy(&aes_ctx.key[0], key_le, 16);
-    mem_rcopy(&ecb.clear_text[0], clear_text_le, sizeof(ecb.clear_text));
-    mbedtls_aes_crypt_ecb(&aes_ctx, MBEDTLS_AES_ENCRYPT, &ecb.clear_text[0], &ecb.cipher_text[0]);
-
-    if (cipher_text_le) {
-        mem_rcopy(cipher_text_le, &ecb.cipher_text[0],
-                  sizeof(ecb.cipher_text));
-    }
-
-    if (cipher_text_be) {
-        memcpy(cipher_text_be, &ecb.cipher_text[0],
-               sizeof(ecb.cipher_text));
-    }
-}
-
-static void ecb_encrypt_be(uint8_t const *const key_be, uint8_t const *const clear_text_be,
-                           uint8_t *const cipher_text_be)
-{
-    struct bt_mesh_ecb_param ecb;
-    mbedtls_aes_context aes_ctx = {0};
-
-    aes_ctx.key_bytes = 16;
-    memcpy(&aes_ctx.key[0], key_be, 16);
-    memcpy(&ecb.clear_text[0], clear_text_be, sizeof(ecb.clear_text));
-    mbedtls_aes_crypt_ecb(&aes_ctx, MBEDTLS_AES_ENCRYPT, &ecb.clear_text[0], &ecb.cipher_text[0]);
-
-    memcpy(cipher_text_be, &ecb.cipher_text[0], sizeof(ecb.cipher_text));
-}
-#endif /* CONFIG_MBEDTLS_HARDWARE_AES */
-
 int bt_mesh_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
                        uint8_t enc_data[16])
 {
+    uint8_t tmp[16] = {0};
+
+    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+
 #if CONFIG_MBEDTLS_HARDWARE_AES
-    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+    mbedtls_aes_context ctx = {0};
 
-    ecb_encrypt(key, plaintext, enc_data, NULL);
+    mbedtls_aes_init(&ctx);
 
-    BT_DBG("enc_data %s", bt_hex(enc_data, 16));
-    return 0;
+    sys_memcpy_swap(tmp, key, 16);
+
+    if (mbedtls_aes_setkey_enc(&ctx, tmp, 128) != 0) {
+        mbedtls_aes_free(&ctx);
+        return -EINVAL;
+    }
+
+    sys_memcpy_swap(tmp, plaintext, 16);
+
+    if (mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT,
+                              tmp, enc_data) != 0) {
+        mbedtls_aes_free(&ctx);
+        return -EINVAL;
+    }
+
+    mbedtls_aes_free(&ctx);
 #else /* CONFIG_MBEDTLS_HARDWARE_AES */
-    struct tc_aes_key_sched_struct s;
-    uint8_t tmp[16];
-
-    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+    struct tc_aes_key_sched_struct s = {0};
 
     sys_memcpy_swap(tmp, key, 16);
 
@@ -1914,30 +1894,39 @@ int bt_mesh_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
     if (tc_aes_encrypt(enc_data, tmp, &s) == TC_CRYPTO_FAIL) {
         return -EINVAL;
     }
+#endif /* CONFIG_MBEDTLS_HARDWARE_AES */
 
     sys_mem_swap(enc_data, 16);
 
     BT_DBG("enc_data %s", bt_hex(enc_data, 16));
 
     return 0;
-#endif /* CONFIG_MBEDTLS_HARDWARE_AES */
 }
 
 int bt_mesh_encrypt_be(const uint8_t key[16], const uint8_t plaintext[16],
                        uint8_t enc_data[16])
 {
+    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+
 #if CONFIG_MBEDTLS_HARDWARE_AES
-    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+    mbedtls_aes_context ctx = {0};
 
-    ecb_encrypt_be(key, plaintext, enc_data);
+    mbedtls_aes_init(&ctx);
 
-    BT_DBG("enc_data %s", bt_hex(enc_data, 16));
+    if (mbedtls_aes_setkey_enc(&ctx, key, 128) != 0) {
+        mbedtls_aes_free(&ctx);
+        return -EINVAL;
+    }
 
-    return 0;
+    if (mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT,
+                              plaintext, enc_data) != 0) {
+        mbedtls_aes_free(&ctx);
+        return -EINVAL;
+    }
+
+    mbedtls_aes_free(&ctx);
 #else /* CONFIG_MBEDTLS_HARDWARE_AES */
-    struct tc_aes_key_sched_struct s;
-
-    BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+    struct tc_aes_key_sched_struct s = {0};
 
     if (tc_aes128_set_encrypt_key(&s, key) == TC_CRYPTO_FAIL) {
         return -EINVAL;
@@ -1946,11 +1935,11 @@ int bt_mesh_encrypt_be(const uint8_t key[16], const uint8_t plaintext[16],
     if (tc_aes_encrypt(enc_data, plaintext, &s) == TC_CRYPTO_FAIL) {
         return -EINVAL;
     }
+#endif /* CONFIG_MBEDTLS_HARDWARE_AES */
 
     BT_DBG("enc_data %s", bt_hex(enc_data, 16));
 
     return 0;
-#endif /* CONFIG_MBEDTLS_HARDWARE_AES */
 }
 
 #if defined(CONFIG_BLE_MESH_USE_DUPLICATE_SCAN)

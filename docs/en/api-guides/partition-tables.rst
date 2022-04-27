@@ -16,7 +16,7 @@ The simplest way to use the partition table is to open the project configuration
 * "Single factory app, no OTA"
 * "Factory app, two OTA definitions"
 
-In both cases the factory app is flashed at offset 0x10000. If you execute `idf.py partition_table` then it will print a summary of the partition table.
+In both cases the factory app is flashed at offset 0x10000. If you execute `idf.py partition-table` then it will print a summary of the partition table.
 
 Built-in Partition Tables
 -------------------------
@@ -29,7 +29,7 @@ Here is the summary printed for the "Single factory app, no OTA" configuration::
   phy_init, data, phy,     0xf000,  0x1000,
   factory,  app,  factory, 0x10000, 1M,
 
-* At a 0x10000 (64KB) offset in the flash is the app labelled "factory". The bootloader will run this app by default.
+* At a 0x10000 (64 KB) offset in the flash is the app labelled "factory". The bootloader will run this app by default.
 * There are also two data regions defined in the partition table for storing NVS library partition and PHY init data.
 
 Here is the summary printed for the "Factory app, two OTA definitions" configuration::
@@ -39,15 +39,15 @@ Here is the summary printed for the "Factory app, two OTA definitions" configura
   nvs,      data, nvs,     0x9000,  0x4000,
   otadata,  data, ota,     0xd000,  0x2000,
   phy_init, data, phy,     0xf000,  0x1000,
-  factory,  0,    0,       0x10000, 1M,
-  ota_0,    0,    ota_0,  0x110000, 1M,
-  ota_1,    0,    ota_1,  0x210000, 1M,
+  factory,  app,  factory, 0x10000,  1M,
+  ota_0,    app,  ota_0,   0x110000, 1M,
+  ota_1,    app,  ota_1,   0x210000, 1M,
 
 * There are now three app partition definitions. The type of the factory app (at 0x10000) and the next two "OTA" apps are all set to "app", but their subtypes are different.
 * There is also a new "otadata" slot, which holds the data for OTA updates. The bootloader consults this data in order to know which app to execute. If "ota data" is empty, it will execute the factory app.
 
 Creating Custom Tables
-----------------------
+-------------------------
 
 If you choose "Custom partition table CSV" in menuconfig then you can also enter the name of a CSV file (in the project directory) to use for your partition table. The CSV file can describe any number of definitions for the table you need.
 
@@ -80,7 +80,7 @@ If your app needs to store data in a format not already supported by ESP-IDF, th
 
 See :cpp:type:`esp_partition_type_t` for the enum definitions for ``app`` and ``data`` partitions.
 
-If writing in C++ then specifying a application-defined partition type requires casting an integer to :cpp:type:`esp_partition_type_t` in order to use it with the :ref:`partition API <api-reference-partition-table>`. For example::
+If writing in C++ then specifying a application-defined partition type requires casting an integer to :cpp:type:`esp_partition_type_t` in order to use it with the :ref:`partition API<api-reference-partition-table>`. For example::
 
     static const esp_partition_type_t APP_PARTITION_TYPE_A = (esp_partition_type_t)0x40;
 
@@ -99,6 +99,7 @@ See enum :cpp:type:`esp_partition_subtype_t` for the full list of subtypes defin
 
     - OTA never updates the factory partition.
     - If you want to conserve flash usage in an OTA project, you can remove the factory partition and use ``ota_0`` instead.
+
   - ``ota_0`` (0x10) ... ``ota_15`` (0x1F) are the OTA app slots. When :doc:`OTA <../api-reference/system/ota>` is in use, the OTA data partition configures which app slot the bootloader should boot. When using OTA, an application should have at least two OTA application slots (``ota_0`` & ``ota_1``). Refer to the :doc:`OTA documentation <../api-reference/system/ota>` for more details.
   - ``test`` (0x20) is a reserved subtype for factory test procedures. It will be used as the fallback boot partition if no other valid app partition is found. It is also possible to configure the bootloader to read a GPIO input during each boot, and boot this partition if the GPIO is held low, see :ref:`bootloader_boot_from_test_firmware`.
 
@@ -108,7 +109,7 @@ See enum :cpp:type:`esp_partition_subtype_t` for the full list of subtypes defin
   - ``phy`` (1) is for storing PHY initialisation data. This allows PHY to be configured per-device, instead of in firmware.
 
     - In the default configuration, the phy partition is not used and PHY initialisation data is compiled into the app itself. As such, this partition can be removed from the partition table to save space.
-    - To load PHY data from this partition, open the project configuration menu (``idf.py menuconfig``) and enable :ref:`CONFIG_ESP32_PHY_INIT_DATA_IN_PARTITION` option. You will also need to flash your devices with phy init data as the esp-idf build system does not do this automatically.
+    - To load PHY data from this partition, open the project configuration menu (``idf.py menuconfig``) and enable :ref:`CONFIG_ESP_PHY_INIT_DATA_IN_PARTITION` option. You will also need to flash your devices with phy init data as the esp-idf build system does not do this automatically.
   - ``nvs`` (2) is for the :doc:`Non-Volatile Storage (NVS) API <../api-reference/storage/nvs_flash>`.
 
     - NVS is used to store per-device PHY calibration data (different to initialisation data).
@@ -127,7 +128,7 @@ See enum :cpp:type:`esp_partition_subtype_t` for the full list of subtypes defin
 
 * If the partition type is any application-defined value (range 0x40-0xFE), then ``subtype`` field can be any value chosen by the application (range 0x00-0xFE).
 
-  Note that when writing in C++, an application-defined subtype value requires casting to type :cpp:type:`esp_partition_subtype_t` in order to use it with the :ref:`partition API <api-reference-partition-table>`.
+  Note that when writing in C++, an application-defined subtype value requires casting to type :cpp:type:`esp_partition_subtype_t` in order to use it with the :ref:`partition API<api-reference-partition-table>`.
 
 Offset & Size
 ~~~~~~~~~~~~~
@@ -145,14 +146,16 @@ Flags
 
 Only one flag is currently supported, ``encrypted``. If this field is set to ``encrypted``, this partition will be encrypted if :doc:`/security/flash-encryption` is enabled.
 
-(Note that ``app`` type partitions will always be encrypted, regardless of whether this flag is set or not.)
+.. note::
+
+    ``app`` type partitions will always be encrypted, regardless of whether this flag is set or not.
 
 Generating Binary Partition Table
 ---------------------------------
 
 The partition table which is flashed to the {IDF_TARGET_NAME} is in a binary format, not CSV. The tool :component_file:`partition_table/gen_esp32part.py` is used to convert between CSV and binary formats.
 
-If you configure the partition table CSV name in the project configuration (``idf.py menuconfig``) and then build the project or run ``idf.py partition_table``, this conversion is done as part of the build process.
+If you configure the partition table CSV name in the project configuration (``idf.py menuconfig``) and then build the project or run ``idf.py partition-table``, this conversion is done as part of the build process.
 
 To convert CSV to Binary manually::
 
@@ -162,26 +165,54 @@ To convert binary format back to CSV manually::
 
   python gen_esp32part.py binary_partitions.bin input_partitions.csv
 
-To display the contents of a binary partition table on stdout (this is how the summaries displayed when running ``idf.py partition_table`` are generated::
+To display the contents of a binary partition table on stdout (this is how the summaries displayed when running ``idf.py partition-table`` are generated::
 
   python gen_esp32part.py binary_partitions.bin
+
+Partition Size Checks
+---------------------
+
+The ESP-IDF build system will automatically check if generated binaries fit in the available partition space, and will fail with an error if a binary is too large.
+
+Currently these checks are performed for the following binaries:
+
+* Bootloader binary must fit in space before partition table (see :ref:`bootloader-size`).
+* App binary should fit in at least one partition of type "app". If the app binary doesn't fit in any app partition, the build will fail. If it only fits in some of the app partitions, a warning is printed about this.
+
+.. note::
+
+   Although the build process will fail if the size check returns an error, the binary files are still generated and can be flashed (although they may not work if they are too large for the available space.)
+
+.. note::
+
+   Build system binary size checks are only performed when using the CMake build system. When using the legacy GNU Make build system, file sizes can be checked manually or an error will be logged during boot.
 
 MD5 checksum
 ~~~~~~~~~~~~
 
 The binary format of the partition table contains an MD5 checksum computed based on the partition table. This checksum is used for checking the integrity of the partition table during the boot.
 
-The MD5 checksum generation can be disabled by the ``--disable-md5sum`` option of ``gen_esp32part.py`` or by the :ref:`CONFIG_PARTITION_TABLE_MD5` option. This is useful for example when one uses a legacy bootloader which cannot process MD5 checksums and the boot fails with the error message ``invalid magic number 0xebeb``.
+.. only:: esp32
+
+    The MD5 checksum generation can be disabled by the ``--disable-md5sum`` option of ``gen_esp32part.py`` or by the :ref:`CONFIG_PARTITION_TABLE_MD5` option. This is useful for example when one :ref:`uses a bootloader from ESP-IDF before v3.1 <CONFIG_ESP32_COMPATIBLE_PRE_V3_1_BOOTLOADERS>` which cannot process MD5 checksums and the boot fails with the error message ``invalid magic number 0xebeb``.
+
+.. only:: not esp32
+
+    The MD5 checksum generation can be disabled by the ``--disable-md5sum`` option of ``gen_esp32part.py`` or by the :ref:`CONFIG_PARTITION_TABLE_MD5` option.
+
 
 Flashing the partition table
 ----------------------------
 
-* ``idf.py partition_table-flash``: will flash the partition table with esptool.py.
+* ``idf.py partition-table-flash``: will flash the partition table with esptool.py.
 * ``idf.py flash``: Will flash everything including the partition table.
 
-A manual flashing command is also printed as part of ``idf.py partition_table`` output.
+A manual flashing command is also printed as part of ``idf.py partition-table`` output.
 
-Note that updating the partition table doesn't erase data that may have been stored according to the old partition table. You can use ``idf.py erase_flash`` (or ``esptool.py erase_flash``) to erase the entire flash contents.
+.. note::
+
+  Note that updating the partition table doesn't erase data that may have been stored according to the old partition table. You can use ``idf.py erase-flash`` (or ``esptool.py erase_flash``) to erase the entire flash contents.
+
 
 Partition Tool (parttool.py)
 ----------------------------
@@ -193,8 +224,7 @@ The component `partition_table` provides a tool :component_file:`parttool.py<par
   - erasing a partition (erase_partition)
   - retrieving info such as name, offset, size and flag ("encrypted") of a given partition (get_partition_info)
 
-The tool can either be imported and used from another Python script or invoked from shell script for users wanting to perform operation programmatically. This is facilitated by the tool's Python API
-and command-line interface, respectively.
+The tool can either be imported and used from another Python script or invoked from shell script for users wanting to perform operation programmatically. This is facilitated by the tool's Python API and command-line interface, respectively.
 
 Python API
 ~~~~~~~~~~~
@@ -236,8 +266,7 @@ The created object can now be used to perform operations on the target device:
   storage = target.get_partition_info(PARTITION_BOOT_DEFAULT)
   print(storage.size)
 
-The partition to operate on is specified using `PartitionName` or `PartitionType` or PARTITION_BOOT_DEFAULT. As the name implies, these can be used to refer
-to partitions of a particular name, type-subtype combination, or the default boot partition.
+The partition to operate on is specified using `PartitionName` or `PartitionType` or PARTITION_BOOT_DEFAULT. As the name implies, these can be used to refer to partitions of a particular name, type-subtype combination, or the default boot partition.
 
 More information on the Python API is available in the docstrings for the tool.
 
@@ -260,7 +289,7 @@ The command-line interface of `parttool.py` has the following structure:
   parttool.py --port "/dev/ttyUSB1" erase_partition --partition-name=storage
 
   # Read partition with type 'data' and subtype 'spiffs' and save to file 'spiffs.bin'
-  parttool.py --port "/dev/ttyUSB1" read_partition --partition-type=data --partition-subtype=spiffs "spiffs.bin"
+  parttool.py --port "/dev/ttyUSB1" read_partition --partition-type=data --partition-subtype=spiffs --output "spiffs.bin"
 
   # Write to partition 'factory' the contents of a file named 'factory.bin'
   parttool.py --port "/dev/ttyUSB1" write_partition --partition-name=factory "factory.bin"
@@ -277,6 +306,5 @@ More information can be obtained by specifying `--help` as argument:
 
   # Show descriptions for specific subcommand arguments
   parttool.py [subcommand] --help
-
 
 .. _secure boot: security/secure-boot-v1.rst

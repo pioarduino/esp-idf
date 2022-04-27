@@ -1,16 +1,8 @@
-// Copyright 2018 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2018-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <string.h>
 #include "esp_https_server.h"
@@ -23,6 +15,7 @@ const static char *TAG = "esp_https_server";
 typedef struct httpd_ssl_ctx {
     esp_tls_cfg_server_t *tls_cfg;
     httpd_open_func_t open_fn;
+    esp_https_server_user_cb *user_cb;
 } httpd_ssl_ctx_t;
 
 /**
@@ -127,6 +120,13 @@ static esp_err_t httpd_ssl_open(httpd_handle_t server, int sockfd)
     if (global_ctx->open_fn) {
         (global_ctx->open_fn)(server, sockfd);
     }
+
+    if (global_ctx->user_cb) {
+        esp_https_server_user_cb_arg_t user_cb_data = {0};
+        user_cb_data.tls = tls;
+        (global_ctx->user_cb)((void *)&user_cb_data);
+    }
+
     return ESP_OK;
 fail:
     esp_tls_server_session_delete(tls);
@@ -153,6 +153,7 @@ static void free_secure_context(void *ctx)
     if (cfg->serverkey_buf) {
         free((void *)cfg->serverkey_buf);
     }
+    esp_tls_cfg_server_session_tickets_free(cfg);
     free(cfg);
     free(ssl_ctx);
 }
@@ -168,7 +169,18 @@ static httpd_ssl_ctx_t *create_secure_context(const struct httpd_ssl_config *con
         free(ssl_ctx);
         return NULL;
     }
+
+    if (config->session_tickets) {
+        if ( esp_tls_cfg_server_session_tickets_init(cfg) != ESP_OK ) {
+            ESP_LOGE(TAG, "Failed to init session ticket support");
+            free(ssl_ctx);
+            free(cfg);
+            return NULL;
+        }
+    }
+
     ssl_ctx->tls_cfg = cfg;
+    ssl_ctx->user_cb = config->user_cb;
 /* cacert = CA which signs client cert, or client cert itself , which is mapped to client_verify_cert_pem */
     if(config->client_verify_cert_pem != NULL) {
         cfg->cacert_buf = (unsigned char *)malloc(config->client_verify_cert_len);

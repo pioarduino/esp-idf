@@ -55,7 +55,11 @@ The first way is simpler for very short and simple code, or for source files whe
 Loading Data Into RTC Memory
 ----------------------------
 
-Data used by stub code must be resident in RTC memory. The data can be placed in RTC Fast memory or in RTC Slow memory which is also used by the ULP.
+Data used by stub code must be resident in RTC memory.
+
+.. only:: SOC_RTC_SLOW_MEM_SUPPORTED
+
+    The data can be placed in RTC Fast memory or in RTC Slow memory which is also used by the ULP.
 
 Specifying this data can be done in one of two ways:
 
@@ -69,11 +73,16 @@ The first way is to use the ``RTC_DATA_ATTR`` and ``RTC_RODATA_ATTR`` to specify
         esp_rom_printf(fmt_str, wake_count++);
     }
 
-.. only:: esp32
+.. only:: SOC_RTC_SLOW_MEM_SUPPORTED
 
-    The RTC memory area where this data will be placed can be configured via menuconfig option named ``CONFIG_ESP32_RTCDATA_IN_FAST_MEM``. This option allows to keep slow memory area for ULP programs and once it is enabled the data marked with ``RTC_DATA_ATTR`` and ``RTC_RODATA_ATTR`` are placed in the RTC fast memory segment otherwise it goes to RTC slow memory (default option). This option depends on the ``CONFIG_FREERTOS_UNICORE`` because RTC fast memory can be accessed only by PRO_CPU.
+    The RTC memory area where this data will be placed can be configured via menuconfig option named ``CONFIG_{IDF_TARGET_CFG_PREFIX}_RTCDATA_IN_FAST_MEM``. This option allows to keep slow memory area for ULP programs and once it is enabled the data marked with ``RTC_DATA_ATTR`` and ``RTC_RODATA_ATTR`` are placed in the RTC fast memory segment otherwise it goes to RTC slow memory (default option). This option depends on the ``CONFIG_FREERTOS_UNICORE`` because RTC fast memory can be accessed only by PRO_CPU.
 
-The attributes ``RTC_FAST_ATTR`` and ``RTC_SLOW_ATTR`` can be used to specify data that will be force placed into RTC_FAST and RTC_SLOW memory respectively. Any access to data marked with ``RTC_FAST_ATTR`` is allowed by PRO_CPU only and it is responsibility of user to make sure about it.
+    The attributes ``RTC_FAST_ATTR`` and ``RTC_SLOW_ATTR`` can be used to specify data that will be force placed into RTC_FAST and RTC_SLOW memory respectively. Any access to data marked with ``RTC_FAST_ATTR`` is allowed by PRO_CPU only and it is responsibility of user to make sure about it.
+
+.. only:: not SOC_RTC_SLOW_MEM_SUPPORTED
+
+    The attributes ``RTC_FAST_ATTR`` and ``RTC_SLOW_ATTR`` can be used to specify data that will be force placed into RTC_FAST and RTC_SLOW memory respectively, but for {IDF_TARGET_NAME} there is only RTC fast memory, so both attributes will map to this region.
+
 
 Unfortunately, any string constants used in this way must be declared as arrays and marked with RTC_RODATA_ATTR, as shown in the example above.
 
@@ -91,3 +100,18 @@ For example, the equivalent example in ``rtc_wake_stub_counter.c``::
 The second way is a better option if you need to use strings, or write other more complex code.
 
 To reduce wake-up time use the `CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP` Kconfig option, see more information in :doc:`Fast boot from Deep Sleep <bootloader>`.
+
+CRC Check For Wake Stubs
+------------------------
+
+.. only:: SOC_PM_SUPPORT_DEEPSLEEP_VERIFY_STUB_ONLY
+
+    During deep sleep, only the wake stubs area of RTC Fast memory is validated with CRC. When {IDF_TARGET_NAME} wakes up from deep sleep, the wake stubs area is validated again. If the validation passes, the wake stubs code will be executed. Otherwise, the normal initialization, bootloader, and esp-idf codes will be executed.
+
+.. only:: not SOC_PM_SUPPORT_DEEPSLEEP_VERIFY_STUB_ONLY
+
+    During deep sleep, all RTC Fast memory areas will be validated with CRC. When {IDF_TARGET_NAME} wakes up from deep sleep, the RTC fast memory will be validated with CRC again. If the validation passes, the wake stubs code will be executed. Otherwise, the normal initialization, bootloader and esp-idf codes will be executed.
+
+.. note::
+
+    When the `CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP` option is enabled, all the RTC fast memory except the wake stubs area is added to the heap.

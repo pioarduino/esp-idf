@@ -1,16 +1,8 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #include <stddef.h>
 #include <stdint.h>
 #include "bootloader_flash_config.h"
@@ -29,6 +21,8 @@
 #include "esp32s3/rom/spi_flash.h"
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32c3/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/spi_flash.h"
 #endif
 #include "soc/efuse_periph.h"
 #include "soc/io_mux_reg.h"
@@ -88,12 +82,14 @@ const static qio_info_t chip_data[] = {
     { "WinBond",     0xEF,   0x4000, 0xFF00,    read_status_16b_rdsr_rdsr2, write_status_16b_wrsr,      9 },
     { "GD",          0xC8,   0x6000, 0xFF00,    read_status_16b_rdsr_rdsr2, write_status_16b_wrsr,      9 },
     { "XM25QU64A",   0x20,   0x3817, 0xFFFF,    read_status_8b_xmc25qu64a,  write_status_8b_xmc25qu64a, 6 },
+    { "TH",          0xcd,   0x6000, 0xFF00,    read_status_16b_rdsr_rdsr2, write_status_16b_wrsr,      9 },
 
     /* Final entry is default entry, if no other IDs have matched.
 
        This approach works for chips including:
        GigaDevice (mfg ID 0xC8, flash IDs including 4016),
        FM25Q32 (QOUT mode only, mfg ID 0xA1, flash IDs including 4016)
+       BY25Q32 (mfg ID 0x68, flash IDs including 4016)
     */
     { NULL,          0xFF,    0xFFFF, 0xFFFF,   read_status_8b_rdsr2,       write_status_8b_wrsr2,      1 },
 };
@@ -109,14 +105,6 @@ static esp_err_t enable_qio_mode(read_status_fn_t read_status_fn,
 
    The command passed here is always the on-the-wire command given to the SPI flash unit.
 */
-
-/* dummy_len_plus values defined in ROM for SPI flash configuration */
-uint32_t bootloader_read_flash_id(void)
-{
-    uint32_t id = bootloader_execute_flash_command(CMD_RDID, 0, 0, 24);
-    id = ((id & 0xff) << 16) | ((id >> 16) & 0xff) | (id & 0xff00);
-    return id;
-}
 
 void bootloader_enable_qio_mode(void)
 {

@@ -1,16 +1,9 @@
-// Copyright 2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2019-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#include "sdkconfig.h"
 
 #include <string.h>
 #include <esp_log.h>
@@ -63,7 +56,7 @@ static esp_err_t start_wifi_ap(const char *ssid, const char *pass)
         ESP_LOGE(TAG, "Failed to set Wi-Fi mode : %d", err);
         return err;
     }
-    err = esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config);
+    err = esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set Wi-Fi config : %d", err);
         return err;
@@ -182,10 +175,15 @@ static esp_err_t set_config_service(void *config, const char *service_name, cons
     }
 
     wifi_prov_softap_config_t *softap_config = (wifi_prov_softap_config_t *) config;
-    strlcpy(softap_config->ssid, service_name, sizeof(softap_config->ssid));
     if (service_key) {
+        const int service_key_len = strlen(service_key);
+        if (service_key_len < 8 || service_key_len >= sizeof(softap_config->password)) {
+            ESP_LOGE(TAG, "Incorrect passphrase length for softAP: %d (Expected: Min - 8, Max - 64)", service_key_len);
+            return ESP_ERR_INVALID_ARG;
+        }
         strlcpy(softap_config->password, service_key,  sizeof(softap_config->password));
     }
+    strlcpy(softap_config->ssid, service_name, sizeof(softap_config->ssid));
     return ESP_OK;
 }
 

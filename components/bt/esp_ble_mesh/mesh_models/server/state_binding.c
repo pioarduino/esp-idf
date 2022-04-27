@@ -1,7 +1,7 @@
 /* Bluetooth: Mesh Generic OnOff, Generic Level, Lighting & Vendor Models
  *
- * Copyright (c) 2018 Vikrant More
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2018 Vikrant More
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -250,6 +250,25 @@ int bt_mesh_update_binding_state(struct bt_mesh_model *model,
         srv->state->temperature = value->light_ctl_temp_delta_uv.temperature;
         srv->state->delta_uv = value->light_ctl_temp_delta_uv.delta_uv;
         light_ctl_publish(model, BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_STATUS);
+        break;
+    }
+    case LIGHT_HSL_STATE: {
+        if (model->id != BLE_MESH_MODEL_ID_LIGHT_HSL_SRV) {
+            BT_ERR("Invalid Light HSL Server, model id 0x%04x", model->id);
+            return -EINVAL;
+        }
+
+        struct bt_mesh_light_hsl_srv *srv = model->user_data;
+        if (srv->state == NULL) {
+            BT_ERR("Invalid Light HSL Server state");
+            return -EINVAL;
+        }
+
+        bt_mesh_server_stop_transition(&srv->transition);
+        srv->state->lightness = value->light_hsl.lightness;
+        srv->state->hue = value->light_hsl.hue;
+        srv->state->saturation = value->light_hsl.saturation;
+        light_hsl_publish(model, BLE_MESH_MODEL_OP_LIGHT_HSL_STATUS);
         break;
     }
     case LIGHT_HSL_LIGHTNESS_STATE: {

@@ -1,14 +1,15 @@
 from __future__ import print_function
-import os
+
 import hashlib
+import os
 
 import ttfw_idf
 
 
-@ttfw_idf.idf_example_test(env_tag='Example_GENERIC')
+@ttfw_idf.idf_example_test(env_tag='Example_GENERIC', target=['esp32', 'esp32c3'])
 def test_examples_spiffsgen(env, extra_data):
     # Test with default build configurations
-    dut = env.get_dut('spiffsgen', 'examples/storage/spiffsgen', dut_class=ttfw_idf.ESP32DUT)
+    dut = env.get_dut('spiffsgen', 'examples/storage/spiffsgen')
     dut.start_app()
 
     base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spiffs_image')

@@ -5586,8 +5586,10 @@ FRESULT f_mkfs (
 		sz_buf = len / ss;		/* Size of working buffer (sector) */
 		szb_buf = sz_buf * ss;	/* Size of working buffer (byte) */
 	}
-	if (!buf || sz_buf == 0) return FR_NOT_ENOUGH_CORE;
-
+	if (!buf || sz_buf == 0) {
+            ff_memfree(buf);
+            return FR_NOT_ENOUGH_CORE;
+        }
 	/* Determine where the volume to be located (b_vol, sz_vol) */
 	if (FF_MULTI_PARTITION && part != 0) {
 		/* Get partition information from partition table in the MBR */
@@ -6238,7 +6240,7 @@ static void putc_bfd (		/* Buffered write with code conversion */
 	WCHAR hs, wc;
 #if FF_LFN_UNICODE == 2
 	DWORD dc;
-	TCHAR *tp;
+	const TCHAR *tp;
 #endif
 #endif
 
@@ -6280,7 +6282,7 @@ static void putc_bfd (		/* Buffered write with code conversion */
 			return;
 		}
 	}
-	tp = (TCHAR*)pb->bs;
+	tp = (const TCHAR*)pb->bs;
 	dc = tchar2uni(&tp);	/* UTF-8 ==> UTF-16 */
 	if (dc == 0xFFFFFFFF) return;
 	wc = (WCHAR)dc;
@@ -6442,7 +6444,7 @@ int f_printf (
 
 	for (;;) {
 		c = *fmt++;
-		if (c == 0) break;			/* End of string */
+		if (c == 0) break;                      /* End of string */
 		if (c != '%') {				/* Non escape character */
 			putc_bfd(&pb, c);
 			continue;

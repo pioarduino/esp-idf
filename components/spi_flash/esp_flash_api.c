@@ -22,6 +22,22 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "esp_flash_internal.h"
+#include "spi_flash_defs.h"
+#include "esp_rom_caps.h"
+#if CONFIG_IDF_TARGET_ESP32S2
+#include "esp_crypto_lock.h" // for locking flash encryption peripheral
+#endif //CONFIG_IDF_TARGET_ESP32S2
+#if CONFIG_IDF_TARGET_ESP32
+#include "esp32/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32S2
+#include "esp32s2/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32S3
+#include "esp32s3/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32C3
+#include "esp32c3/rom/spi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/spi_flash.h"
+#endif
 
 static const char TAG[] = "spi_flash";
 
@@ -53,7 +69,7 @@ static const char TAG[] = "spi_flash";
     } while(0)
 #endif // CONFIG_SPI_FLASH_DANGEROUS_WRITE_ALLOWED
 
-#define IO_STR_LEN  7
+#define IO_STR_LEN  10
 
 static const char io_mode_str[][IO_STR_LEN] = {
     "slowrd",
@@ -62,9 +78,12 @@ static const char io_mode_str[][IO_STR_LEN] = {
     "dio",
     "qout",
     "qio",
+    [6 ... 15] = "not used", // reserved io mode for future, not used currently.
+    "opi_str",
+    "opi_dtr",
 };
 
-_Static_assert(sizeof(io_mode_str)/IO_STR_LEN == SPI_FLASH_READ_MODE_MAX, "the io_mode_str should be consistent with the esp_flash_io_mode_t defined in spi_flash_ll.h");
+_Static_assert(sizeof(io_mode_str)/IO_STR_LEN == SPI_FLASH_READ_MODE_MAX, "the io_mode_str should be consistent with the esp_flash_io_mode_t defined in spi_flash_types.h");
 
 esp_err_t esp_flash_read_chip_id(esp_flash_t* chip, uint32_t* flash_id);
 
@@ -214,6 +233,16 @@ esp_err_t IRAM_ATTR esp_flash_init(esp_flash_t *chip)
         return err;
     }
 
+    if (chip->chip_drv->get_chip_caps == NULL) {
+        // chip caps get failed, pass the flash capability check.
+        ESP_EARLY_LOGW(TAG, "get_chip_caps function pointer hasn't been initialized");
+    } else {
+        if (((chip->chip_drv->get_chip_caps(chip) & SPI_FLASH_CHIP_CAP_32MB_SUPPORT) == 0) && (size > (16 *1024 * 1024))) {
+            ESP_EARLY_LOGW(TAG, "Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.");
+            size = (16 * 1024 * 1024);
+        }
+    }
+
     ESP_LOGI(TAG, "flash io: %s", io_mode_str[chip->read_mode]);
     err = rom_spiflash_api_funcs->start(chip);
     if (err != ESP_OK) {
@@ -221,6 +250,84 @@ esp_err_t IRAM_ATTR esp_flash_init(esp_flash_t *chip)
     }
 
     if (err == ESP_OK) {
+        // Try to set the flash mode to whatever default mode was chosen
+        err = chip->chip_drv->set_io_mode(chip);
+        if (err == ESP_ERR_FLASH_NO_RESPONSE && !esp_flash_is_quad_mode(chip)) {
+            //some chips (e.g. Winbond) don't support to clear QE, treat as success
+            err = ESP_OK;
+        }
+    }
+    // Done: all fields on 'chip' are initialised
+    return rom_spiflash_api_funcs->end(chip, err);
+}
+
+// Note: This function is only used for internal. Only call this function to initialize the main flash.
+// (flash chip on SPI1 CS0)
+esp_err_t IRAM_ATTR esp_flash_init_main(esp_flash_t *chip)
+{
+    // Chip init flow
+    // 1. Read chip id
+    // 2. (optional) Detect chip vendor
+    // 3. Get basic parameters of the chip (size, dummy count, etc.)
+    // 4. Init chip into desired mode (without breaking the cache!)
+    esp_err_t err = ESP_OK;
+    bool octal_mode = (chip->read_mode >= SPI_FLASH_OPI_FLAG);
+    if (chip == NULL || chip->host == NULL || chip->host->driver == NULL ||
+        ((memspi_host_inst_t*)chip->host)->spi == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    //read chip id
+    // This can indicate the MSPI support OPI, if the flash works on MSPI in OPI mode, we directly bypass read id.
+    uint32_t flash_id = 0;
+    if (octal_mode) {
+        // bypass the reading but get the flash_id from the ROM variable, to avoid resetting the chip to QSPI mode and read the ID again
+        flash_id = g_rom_flashchip.device_id;
+    } else {
+        int retries = 10;
+        do {
+            err = esp_flash_read_chip_id(chip, &flash_id);
+        } while (err == ESP_ERR_FLASH_NOT_INITIALISED && retries-- > 0);
+    }
+
+    if (err != ESP_OK) {
+        return err;
+    }
+    chip->chip_id = flash_id;
+
+    if (!esp_flash_chip_driver_initialized(chip)) {
+        // Detect chip_drv
+        err = detect_spi_flash_chip(chip);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
+    // Detect flash size
+    uint32_t size;
+    err = esp_flash_get_size(chip, &size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "failed to get chip size");
+        return err;
+    }
+
+    if (chip->chip_drv->get_chip_caps == NULL) {
+        // chip caps get failed, pass the flash capability check.
+        ESP_LOGW(TAG, "get_chip_caps function pointer hasn't been initialized");
+    } else {
+        if (((chip->chip_drv->get_chip_caps(chip) & SPI_FLASH_CHIP_CAP_32MB_SUPPORT) == 0) && (size > (16 *1024 * 1024))) {
+            ESP_LOGW(TAG, "Detected flash size > 16 MB, but access beyond 16 MB is not supported for this flash model yet.");
+            size = (16 * 1024 * 1024);
+        }
+    }
+
+    ESP_LOGI(TAG, "flash io: %s", io_mode_str[chip->read_mode]);
+    err = rom_spiflash_api_funcs->start(chip);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (err == ESP_OK && !octal_mode) {
         // Try to set the flash mode to whatever default mode was chosen
         err = chip->chip_drv->set_io_mode(chip);
         if (err == ESP_ERR_FLASH_NO_RESPONSE && !esp_flash_is_quad_mode(chip)) {
@@ -284,6 +391,41 @@ esp_err_t esp_flash_read_id(esp_flash_t* chip, uint32_t* out_id)
     return read_id_core(chip, out_id, false);
 }
 #endif //CONFIG_SPI_FLASH_ROM_IMPL
+
+static esp_err_t IRAM_ATTR NOINLINE_ATTR read_unique_id(esp_flash_t* chip, uint64_t* out_uid)
+{
+    esp_err_t err = rom_spiflash_api_funcs->start(chip);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = chip->chip_drv->read_unique_id(chip, out_uid);
+
+    return rom_spiflash_api_funcs->end(chip, err);
+}
+
+esp_err_t esp_flash_read_unique_chip_id(esp_flash_t *chip, uint64_t* out_uid)
+{
+    esp_err_t err = rom_spiflash_api_funcs->chip_check(&chip);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (chip->chip_drv->get_chip_caps == NULL) {
+        // chip caps get failed, pass the flash capability check.
+        ESP_EARLY_LOGW(TAG, "get_chip_caps function pointer hasn't been initialized");
+    } else {
+        if ((chip->chip_drv->get_chip_caps(chip) & SPI_FLASH_CHIP_CAP_UNIQUE_ID) == 0) {
+            ESP_EARLY_LOGE(TAG, "chip %s doesn't support reading unique id", chip->chip_drv->name);
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+    }
+
+    if (out_uid == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    };
+
+    return read_unique_id(chip, out_uid);
+}
 
 static esp_err_t IRAM_ATTR detect_spi_flash_chip(esp_flash_t *chip)
 {
@@ -357,6 +499,7 @@ esp_err_t IRAM_ATTR esp_flash_get_size(esp_flash_t *chip, uint32_t *out_size)
     err = chip->chip_drv->detect_size(chip, &detect_size);
     if (err == ESP_OK) {
         chip->size = detect_size;
+        *out_size = chip->size;
     }
     return rom_spiflash_api_funcs->end(chip, err);
 }
@@ -409,6 +552,9 @@ esp_err_t IRAM_ATTR esp_flash_erase_region(esp_flash_t *chip, uint32_t start, ui
     if ((start % chip->chip_drv->sector_size) != 0 || (len % chip->chip_drv->sector_size) != 0) {
         // Can only erase multiples of the sector size, starting at sector boundary
         return ESP_ERR_INVALID_ARG;
+    }
+    if (len == 0) {
+        return ESP_OK;
     }
 
     err = ESP_OK;
@@ -472,6 +618,8 @@ esp_err_t IRAM_ATTR esp_flash_erase_region(esp_flash_t *chip, uint32_t start, ui
             len_remain -= sector_size;
         }
 
+        assert(len_remain < len);
+
         if (err != ESP_OK || len_remain == 0) {
             // On ESP32, the cache re-enable is in the end() function, while flush_cache should
             // happen when the cache is still disabled on ESP32. Break before the end() function and
@@ -489,6 +637,28 @@ esp_err_t IRAM_ATTR esp_flash_erase_region(esp_flash_t *chip, uint32_t start, ui
 
     return rom_spiflash_api_funcs->flash_end_flush_cache(chip, err, bus_acquired, start, len);
 }
+
+#endif // !CONFIG_SPI_FLASH_ROM_IMPL
+
+#if defined(CONFIG_SPI_FLASH_ROM_IMPL) && ESP_ROM_HAS_ERASE_0_REGION_BUG
+
+/* ROM esp_flash_erase_region implementation doesn't handle 0 erase size correctly.
+ * Check the size and call ROM function instead of overriding it completely.
+ * The behavior is slightly different from esp_flash_erase_region above, thought:
+ * here the check for 0 size is done first, but in esp_flash_erase_region the check is
+ * done after the other arguments are checked.
+ */
+extern esp_err_t rom_esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len);
+esp_err_t IRAM_ATTR esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len)
+{
+    if (len == 0) {
+        return ESP_OK;
+    }
+    return rom_esp_flash_erase_region(chip, start, len);
+}
+#endif // defined(CONFIG_SPI_FLASH_ROM_IMPL) && ESP_ROM_HAS_ERASE_0_REGION_BUG
+
+#ifndef CONFIG_SPI_FLASH_ROM_IMPL
 
 esp_err_t IRAM_ATTR esp_flash_get_chip_write_protect(esp_flash_t *chip, bool *out_write_protected)
 {
@@ -618,13 +788,13 @@ esp_err_t IRAM_ATTR esp_flash_set_protected_region(esp_flash_t *chip, const esp_
 
 esp_err_t IRAM_ATTR esp_flash_read(esp_flash_t *chip, void *buffer, uint32_t address, uint32_t length)
 {
-    if (length == 0) {
-        return ESP_OK;
-    }
     esp_err_t err = rom_spiflash_api_funcs->chip_check(&chip);
     VERIFY_CHIP_OP(read);
     if (buffer == NULL || address > chip->size || address+length > chip->size) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (length == 0) {
+        return ESP_OK;
     }
 
     //when the cache is disabled, only the DRAM can be read, check whether we need to receive in another buffer in DRAM.
@@ -685,14 +855,14 @@ esp_err_t IRAM_ATTR esp_flash_read(esp_flash_t *chip, void *buffer, uint32_t add
 
 esp_err_t IRAM_ATTR esp_flash_write(esp_flash_t *chip, const void *buffer, uint32_t address, uint32_t length)
 {
-    if (length == 0) {
-        return ESP_OK;
-    }
     esp_err_t err = rom_spiflash_api_funcs->chip_check(&chip);
     VERIFY_CHIP_OP(write);
     CHECK_WRITE_ADDRESS(chip, address, length);
     if (buffer == NULL || address > chip->size || address+length > chip->size) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (length == 0) {
+        return ESP_OK;
     }
 
     //when the cache is disabled, only the DRAM can be read, check whether we need to copy the data first
@@ -736,6 +906,7 @@ esp_err_t IRAM_ATTR esp_flash_write(esp_flash_t *chip, const void *buffer, uint3
 
         err = chip->chip_drv->write(chip, write_buf, write_addr, write_len);
         len_remain -= write_len;
+        assert(len_remain < length);
 
         if (err != ESP_OK || len_remain == 0) {
             // On ESP32, the cache re-enable is in the end() function, while flush_cache should
@@ -758,22 +929,126 @@ esp_err_t IRAM_ATTR esp_flash_write(esp_flash_t *chip, const void *buffer, uint3
     return rom_spiflash_api_funcs->flash_end_flush_cache(chip, err, bus_acquired, address, length);
 }
 
-//currently the legacy implementation is used, from flash_ops.c
-esp_err_t spi_flash_write_encrypted(size_t dest_addr, const void *src, size_t size);
-
 esp_err_t IRAM_ATTR esp_flash_write_encrypted(esp_flash_t *chip, uint32_t address, const void *buffer, uint32_t length)
 {
-    /*
-     * Since currently this feature is supported only by the hardware, there
-     * is no way to support non-standard chips. We use the legacy
-     * implementation and skip the chip and driver layers.
-     */
     esp_err_t err = rom_spiflash_api_funcs->chip_check(&chip);
+    // Flash encryption only support on main flash.
+    if (chip != esp_flash_default_chip) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if (err != ESP_OK) return err;
-    if (buffer == NULL || address > chip->size || address+length > chip->size) {
+    if (buffer == NULL || address + length > chip->size) {
         return ESP_ERR_INVALID_ARG;
     }
-    return spi_flash_write_encrypted(address, buffer, length);
+
+    if ((address % 16) != 0) {
+        ESP_EARLY_LOGE(TAG, "flash encrypted write address must be 16 bytes aligned");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (length == 0) {
+        return ESP_OK;
+    }
+
+    if ((length % 16) != 0) {
+        ESP_EARLY_LOGE(TAG, "flash encrypted write length must be multiple of 16");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    bool bus_acquired = false;
+
+    const uint8_t *ssrc = (const uint8_t *)buffer;
+
+    /* On ESP32, write_encrypted encrypts data in RAM as it writes,
+       so copy to a temporary buffer - 32 bytes at a time.
+
+       Each call to write_encrypted takes a 32 byte "row" of
+       data to encrypt, and each row is two 16 byte AES blocks
+       that share a key (as derived from flash address).
+
+       On ESP32-S2 and later, the temporary buffer need to be
+       seperated into 16-bytes, 32-bytes, 64-bytes(if supported).
+
+       So, on ESP32-S2 and later, here has a totally different
+       data prepare implementation.
+    */
+    uint8_t encrypt_buf[64] __attribute__((aligned(4)));
+    uint32_t row_size_length;
+    for (size_t i = 0; i < length; i += row_size_length) {
+        uint32_t row_addr = address + i;
+        uint8_t row_size;
+        uint8_t encrypt_byte;
+#if CONFIG_IDF_TARGET_ESP32
+        if (i == 0 && (row_addr % 32) != 0) {
+            /* writing to second block of a 32 byte row */
+            row_size = 16;
+            row_addr -= 16;
+            /* copy to second block in buffer */
+            memcpy(encrypt_buf + 16, ssrc + i, row_size);
+            /* decrypt the first block from flash, will reencrypt to same bytes */
+            esp_flash_read_encrypted(chip, row_addr, encrypt_buf, 16);
+        } else if (length - i == 16) {
+            /* 16 bytes left, is first block of a 32 byte row */
+            row_size = 16;
+            /* copy to first block in buffer */
+            memcpy(encrypt_buf, ssrc + i, row_size);
+            /* decrypt the second block from flash, will reencrypt to same bytes */
+            esp_flash_read_encrypted(chip, row_addr + 16, encrypt_buf + 16, 16);
+        } else {
+            /* Writing a full 32 byte row (2 blocks) */
+            row_size = 32;
+            memcpy(encrypt_buf, ssrc + i, row_size);
+        }
+        encrypt_byte = 32;
+        row_size_length = row_size;
+#else // FOR ESP32-S2, ESP32-S3, ESP32-C3
+        if ((row_addr % 64) == 0 && (length - i) >= 64 && SOC_FLASH_ENCRYPTED_XTS_AES_BLOCK_MAX == 64) {
+            row_size = 64;
+            memcpy(encrypt_buf, ssrc + i, row_size);
+        } else if ((row_addr % 32) == 0 && (length - i) >= 32) {
+            row_size = 32;
+            memcpy(encrypt_buf, ssrc + i, row_size);
+        } else {
+            row_size = 16;
+            memcpy(encrypt_buf, ssrc + i, row_size);
+        }
+        encrypt_byte = row_size;
+        row_size_length = row_size;
+#endif //CONFIG_IDF_TARGET_ESP32
+
+#if CONFIG_IDF_TARGET_ESP32S2
+        esp_crypto_dma_lock_acquire();
+#endif //CONFIG_IDF_TARGET_ESP32S2
+        err = rom_spiflash_api_funcs->start(chip);
+
+        if (err != ESP_OK) {
+#if CONFIG_IDF_TARGET_ESP32S2
+            esp_crypto_dma_lock_release();
+#endif //CONFIG_IDF_TARGET_ESP32S2
+            break;
+        }
+        bus_acquired = true;
+
+        err = chip->chip_drv->write_encrypted(chip, (uint32_t *)encrypt_buf, row_addr, encrypt_byte);
+        if (err!= ESP_OK) {
+#if CONFIG_IDF_TARGET_ESP32S2
+            esp_crypto_dma_lock_release();
+#endif //CONFIG_IDF_TARGET_ESP32S2
+            bus_acquired = false;
+            assert(bus_acquired);
+            break;
+        }
+        err = rom_spiflash_api_funcs->end(chip, ESP_OK);
+#if CONFIG_IDF_TARGET_ESP32S2
+        esp_crypto_dma_lock_release();
+#endif //CONFIG_IDF_TARGET_ESP32S2
+        if (err != ESP_OK) {
+            bus_acquired = false;
+            break;
+        }
+        bus_acquired = false;
+    }
+    return rom_spiflash_api_funcs->flash_end_flush_cache(chip, err, bus_acquired, address, length);
 }
 
 inline static IRAM_ATTR bool regions_overlap(uint32_t a_start, uint32_t a_len,uint32_t b_start, uint32_t b_len)
@@ -832,6 +1107,21 @@ IRAM_ATTR esp_err_t esp_flash_set_io_mode(esp_flash_t* chip, bool qe)
 }
 #endif //CONFIG_SPI_FLASH_ROM_IMPL
 
+//init suspend mode cmd, uses internal.
+esp_err_t esp_flash_suspend_cmd_init(esp_flash_t* chip)
+{
+    ESP_EARLY_LOGW(TAG, "Flash suspend feature is enabled");
+    if (chip->chip_drv->get_chip_caps == NULL) {
+        // chip caps get failed, pass the flash capability check.
+        ESP_EARLY_LOGW(TAG, "get_chip_caps function pointer hasn't been initialized");
+    } else {
+        if ((chip->chip_drv->get_chip_caps(chip) & SPI_FLASH_CHIP_CAP_SUSPEND) == 0) {
+            ESP_EARLY_LOGW(TAG, "Suspend and resume may not supported for this flash model yet.");
+        }
+    }
+    return chip->chip_drv->sus_setup(chip);
+}
+
 #ifndef CONFIG_SPI_FLASH_USE_LEGACY_IMPL
 esp_err_t esp_flash_app_disable_protect(bool disable)
 {
@@ -856,6 +1146,7 @@ static IRAM_ATTR esp_err_t spi_flash_translate_rc(esp_err_t err)
     switch (err) {
         case ESP_OK:
         case ESP_ERR_INVALID_ARG:
+        case ESP_ERR_INVALID_SIZE:
         case ESP_ERR_NO_MEM:
             return err;
 
@@ -892,6 +1183,12 @@ esp_err_t IRAM_ATTR spi_flash_write(size_t dst, const void *srcv, size_t size)
 esp_err_t IRAM_ATTR spi_flash_read(size_t src, void *dstv, size_t size)
 {
     esp_err_t err = esp_flash_read(NULL, dstv, src, size);
+    return spi_flash_translate_rc(err);
+}
+
+esp_err_t IRAM_ATTR spi_flash_write_encrypted(size_t dest_addr, const void *src, size_t size)
+{
+    esp_err_t err = esp_flash_write_encrypted(NULL, dest_addr, src, size);
     return spi_flash_translate_rc(err);
 }
 

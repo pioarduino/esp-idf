@@ -1,8 +1,8 @@
 /*  Bluetooth Mesh */
 
 /*
- * Copyright (c) 2017 Intel Corporation
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2017 Intel Corporation
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -824,6 +824,12 @@ int bt_mesh_net_resend(struct bt_mesh_subnet *sub, struct net_buf *buf,
     if (IS_ENABLED(CONFIG_BLE_MESH_GATT_PROXY_SERVER) &&
         bt_mesh_proxy_server_relay(&buf->b, dst) &&
         BLE_MESH_ADDR_IS_UNICAST(dst)) {
+        send_cb_finalize(cb, cb_data);
+        return 0;
+    }
+
+    if (IS_ENABLED(CONFIG_BLE_MESH_GATT_PROXY_CLIENT) &&
+        bt_mesh_proxy_client_relay(&buf->b, dst)) {
         send_cb_finalize(cb, cb_data);
         return 0;
     }

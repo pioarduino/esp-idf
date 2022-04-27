@@ -1,16 +1,8 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #pragma once
 
 #include <stdbool.h>
@@ -105,6 +97,20 @@ _Static_assert(sizeof(rtc_retain_mem_t) <= ESP_BOOTLOADER_RESERVE_RTC, "Reserved
  * - ESP_ERR_INVALID_ARG if the partition or data pointers are invalid.
  */
 esp_err_t esp_image_verify(esp_image_load_mode_t mode, const esp_partition_pos_t *part, esp_image_metadata_t *data);
+
+/**
+ * @brief Get metadata of app
+ *
+ * If encryption is enabled, data will be transparently decrypted.
+ *
+ * @param part Partition to load the app from.
+ * @param[out] metadata Pointer to the image metadata structure which is be filled in by this function.
+ *                      Fields will all be initialised by this function.
+ *
+ * @return
+ * - ESP_OK if filling of metadata was successful
+ */
+esp_err_t esp_image_get_metadata(const esp_partition_pos_t *part, esp_image_metadata_t *metadata);
 
 /**
  * @brief Verify and load an app image (available only in space of bootloader).

@@ -1,20 +1,13 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 #include <stdlib.h>
 
 #include "esp_spi_flash.h"
-
+#include "esp_ipc_isr.h"
 #include "esp_private/system_internal.h"
 
 #include "soc/soc_memory_layout.h"
@@ -25,18 +18,21 @@
 #include "hal/soc_hal.h"
 #include "hal/cpu_hal.h"
 
+#include "cache_err_int.h"
+
 #include "sdkconfig.h"
 #include "esp_rom_sys.h"
 
 #if CONFIG_IDF_TARGET_ESP32
 #include "esp32/dport_access.h"
-#include "esp32/cache_err_int.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
+#endif
+
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+#if CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/memprot.h"
-#include "esp32s2/cache_err_int.h"
-#elif CONFIG_IDF_TARGET_ESP32S3
-#include "esp32s3/memprot.h"
-#include "esp32s3/cache_err_int.h"
+#else
+#include "esp_memprot.h"
+#endif
 #endif
 
 #include "esp_private/panic_internal.h"
@@ -47,7 +43,9 @@
 
 extern int _invalid_pc_placeholder;
 
-extern void esp_panic_handler(panic_info_t*);
+extern void esp_panic_handler_reconfigure_wdts(void);
+
+extern void esp_panic_handler(panic_info_t *);
 
 static wdt_hal_context_t wdt0_context = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
 
@@ -153,21 +151,14 @@ static void panic_handler(void *frame, bool pseudo_excause)
         }
     }
 
+    // Need to reconfigure WDTs before we stall any other CPU
+    esp_panic_handler_reconfigure_wdts();
+
     esp_rom_delay_us(1);
     SOC_HAL_STALL_OTHER_CORES();
 #endif
 
-#if CONFIG_IDF_TARGET_ESP32
-    esp_dport_access_int_abort();
-#endif
-
-#if !CONFIG_ESP_PANIC_HANDLER_IRAM
-    // Re-enable CPU cache for current CPU if it was disabled
-    if (!spi_flash_cache_enabled()) {
-        spi_flash_enable_cache(core_id);
-        panic_print_str("Re-enable cpu cache.\r\n");
-    }
-#endif
+    esp_ipc_isr_stall_abort();
 
     if (esp_cpu_in_ocd_debug_mode()) {
 #if __XTENSA__
@@ -181,10 +172,9 @@ static void panic_handler(void *frame, bool pseudo_excause)
 #endif
         if (panic_get_cause(frame) == PANIC_RSN_INTWDT_CPU0
 #if !CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
-            || panic_get_cause(frame) == PANIC_RSN_INTWDT_CPU1
+                || panic_get_cause(frame) == PANIC_RSN_INTWDT_CPU1
 #endif
-           )
-        {
+           ) {
             wdt_hal_write_protect_disable(&wdt0_context);
             wdt_hal_handle_intr(&wdt0_context);
             wdt_hal_write_protect_enable(&wdt0_context);
@@ -198,8 +188,24 @@ static void panic_handler(void *frame, bool pseudo_excause)
     esp_panic_handler(&info);
 }
 
-void panicHandler(void *frame)
+/**
+ * This function must always be in IRAM as it is required to
+ * re-enable the flash cache.
+ */
+static void IRAM_ATTR panic_enable_cache(void)
 {
+    int core_id = cpu_hal_get_core_id();
+
+    if (!spi_flash_cache_enabled()) {
+        esp_ipc_isr_stall_abort();
+        spi_flash_enable_cache(core_id);
+    }
+}
+
+void IRAM_ATTR panicHandler(void *frame)
+{
+
+    panic_enable_cache();
     // This panic handler gets called for when the double exception vector,
     // kernel exception vector gets used; as well as handling interrupt-based
     // faults cache error, wdt expiry. EXCAUSE register gets written with
@@ -207,8 +213,9 @@ void panicHandler(void *frame)
     panic_handler(frame, true);
 }
 
-void xt_unhandled_exception(void *frame)
+void IRAM_ATTR xt_unhandled_exception(void *frame)
 {
+    panic_enable_cache();
     panic_handler(frame, false);
 }
 
@@ -221,10 +228,19 @@ void __attribute__((noreturn)) panic_restart(void)
         digital_reset_needed = true;
     }
 #endif
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
 #if CONFIG_IDF_TARGET_ESP32S2
     if (esp_memprot_is_intr_ena_any() || esp_memprot_is_locked_any()) {
         digital_reset_needed = true;
     }
+#else
+    bool is_on = false;
+    if (esp_mprot_is_intr_ena_any(&is_on) != ESP_OK || is_on) {
+        digital_reset_needed = true;
+    } else if (esp_mprot_is_conf_locked_any(&is_on) != ESP_OK || is_on) {
+        digital_reset_needed = true;
+    }
+#endif
 #endif
     if (digital_reset_needed) {
         esp_restart_noos_dig();

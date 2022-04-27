@@ -1,26 +1,26 @@
+/*
+ * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 #include <stdio.h>
+
+#include "esp_spi_flash.h"
 
 #include "soc/extmem_reg.h"
 #include "esp_private/panic_internal.h"
 #include "esp_private/panic_reason.h"
 #include "riscv/rvruntime-frames.h"
+#include "cache_err_int.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
-#include "esp32c3/cache_err_int.h"
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+#include "esp_private/esp_memprot_internal.h"
+#include "esp_memprot.h"
+#endif
+
+#if CONFIG_ESP_SYSTEM_USE_EH_FRAME
+#include "eh_frame_parser.h"
 #endif
 
 
@@ -33,7 +33,7 @@
  */
 typedef struct {
     const uint32_t bit;
-    const char* msg;
+    const char *msg;
 } register_bit_t;
 
 /**
@@ -45,8 +45,8 @@ typedef struct {
  * be set in the register will have its associated message printed.
  */
 static inline bool test_and_print_register_bits(const uint32_t status,
-                                                const register_bit_t* reg_bits,
-                                                const uint32_t size)
+        const register_bit_t *reg_bits,
+        const uint32_t size)
 {
     /* Browse the flag/bit array and test each one with the given status
      * register. */
@@ -69,7 +69,7 @@ static inline bool test_and_print_register_bits(const uint32_t status,
  * Function called when a cache error occurs. It prints details such as the
  * explanation of why the panic occured.
  */
-static inline void print_cache_err_details(const void* frame)
+static inline void print_cache_err_details(const void *frame)
 {
     /* Define the array that contains the status (bits) to test on the register
      * EXTMEM_CORE0_ACS_CACHE_INT_ST_REG. each bit is accompanied by a small
@@ -145,6 +145,74 @@ static inline void print_cache_err_details(const void* frame)
     }
 }
 
+
+/**
+ * Function called when a memory protection error occurs (PMS). It prints details such as the
+ * explanation of why the panic occured.
+ */
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+
+static esp_memp_intr_source_t s_memp_intr = {MEMPROT_TYPE_INVALID, -1};
+
+#define PRINT_MEMPROT_ERROR(err) \
+        panic_print_str("N/A (error "); \
+        panic_print_str(esp_err_to_name(err)); \
+        panic_print_str(")");
+
+static inline void print_memprot_err_details(const void *frame __attribute__((unused)))
+{
+    if (s_memp_intr.mem_type == MEMPROT_TYPE_INVALID && s_memp_intr.core == -1) {
+        panic_print_str("  - no details available -\r\n");
+        return;
+    }
+
+    //common memprot fault info
+    panic_print_str("  memory type: ");
+    panic_print_str(esp_mprot_mem_type_to_str(s_memp_intr.mem_type));
+
+    panic_print_str("\r\n  faulting address: ");
+    void *faulting_addr;
+    esp_err_t res = esp_mprot_get_violate_addr(s_memp_intr.mem_type, &faulting_addr, &s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str("0x");
+        panic_print_hex((int)faulting_addr);
+    } else {
+        PRINT_MEMPROT_ERROR(res)
+    }
+
+    panic_print_str( "\r\n  world: ");
+    esp_mprot_pms_world_t world;
+    res = esp_mprot_get_violate_world(s_memp_intr.mem_type, &world, &s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str(esp_mprot_pms_world_to_str(world));
+    } else {
+        PRINT_MEMPROT_ERROR(res)
+    }
+
+    panic_print_str( "\r\n  operation type: ");
+    uint32_t operation;
+    res = esp_mprot_get_violate_operation(s_memp_intr.mem_type, &operation, &s_memp_intr.core);
+    if (res == ESP_OK) {
+        panic_print_str(esp_mprot_oper_type_to_str(operation));
+    } else {
+        PRINT_MEMPROT_ERROR(res)
+    }
+
+    if (esp_mprot_has_byte_enables(s_memp_intr.mem_type)) {
+        panic_print_str("\r\n  byte-enables: " );
+        uint32_t byte_enables;
+        res = esp_mprot_get_violate_byte_enables(s_memp_intr.mem_type, &byte_enables, &s_memp_intr.core);
+        if (res == ESP_OK) {
+            panic_print_hex(byte_enables);
+        } else {
+            PRINT_MEMPROT_ERROR(res)
+        }
+    }
+
+    panic_print_str("\r\n");
+}
+#endif
+
 void panic_print_registers(const void *f, int core)
 {
     uint32_t *regs = (uint32_t *)f;
@@ -190,7 +258,10 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
 #if SOC_CPU_NUM > 1
         "Interrupt wdt timeout on CPU1",
 #endif
-        "Cache error"
+        "Cache error",
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+        "Memory protection fault",
+#endif
     };
 
     info->reason = pseudo_reason[0];
@@ -204,16 +275,18 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
          * assign function print_cache_err_details to our structure's
          * details field. As its name states, it will give more details
          * about why the error happened. */
+
         info->core = esp_cache_err_get_cpuid();
         info->reason = pseudo_reason[PANIC_RSN_CACHEERR];
         info->details = print_cache_err_details;
+
     } else if (frame->mcause == ETS_T1_WDT_INUM) {
         /* Watchdog interrupt occured, get the core on which it happened
          * and update the reason/message accordingly. */
-        const int core = esp_cache_err_get_cpuid();
 
+        const int core = esp_cache_err_get_cpuid();
         info->core = core;
-        info->exception = PANIC_EXCEPTION_TWDT;
+        info->exception = PANIC_EXCEPTION_IWDT;
 
 #if SOC_CPU_NUM > 1
         _Static_assert(PANIC_RSN_INTWDT_CPU0 + 1 == PANIC_RSN_INTWDT_CPU1,
@@ -221,6 +294,13 @@ void panic_soc_fill_info(void *f, panic_info_t *info)
 #endif
         info->reason = pseudo_reason[PANIC_RSN_INTWDT_CPU0 + core];
     }
+#if CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+    else if (frame->mcause == ETS_MEMPROT_ERR_INUM) {
+        info->reason = pseudo_reason[PANIC_RSN_MEMPROT];
+        info->details = print_memprot_err_details;
+        info->core = esp_mprot_get_active_intr(&s_memp_intr) == ESP_OK ? s_memp_intr.core : -1;
+    }
+#endif
 }
 
 void panic_arch_fill_info(void *frame, panic_info_t *info)
@@ -261,10 +341,10 @@ void panic_arch_fill_info(void *frame, panic_info_t *info)
     info->frame = &regs;
 }
 
-void panic_print_backtrace(const void *frame, int core)
+static void panic_print_basic_backtrace(const void *frame, int core)
 {
     // Basic backtrace
-    panic_print_str("\r\nStack memory:\n");
+    panic_print_str("\r\nStack memory:\r\n");
     uint32_t sp = (uint32_t)((RvExcFrame *)frame)->sp;
     const int per_line = 8;
     for (int x = 0; x < 1024; x += per_line * sizeof(uint32_t)) {
@@ -274,9 +354,24 @@ void panic_print_backtrace(const void *frame, int core)
         for (int y = 0; y < per_line; y++) {
             panic_print_str("0x");
             panic_print_hex(spp[y]);
-            panic_print_char(y == per_line - 1 ? '\n' : ' ');
+            panic_print_str(y == per_line - 1 ? "\r\n" : " ");
         }
     }
+}
+
+void panic_print_backtrace(const void *frame, int core)
+{
+#if CONFIG_ESP_SYSTEM_USE_EH_FRAME
+    if (!spi_flash_cache_enabled()) {
+        panic_print_str("\r\nWarning: SPI Flash cache is disabled, cannot process eh_frame parsing. "
+                        "Falling back to basic backtrace.\r\n");
+        panic_print_basic_backtrace(frame, core);
+    } else {
+        esp_eh_frame_print_backtrace(frame);
+    }
+#else
+    panic_print_basic_backtrace(frame, core);
+#endif
 }
 
 uint32_t panic_get_address(const void *f)

@@ -1,16 +1,8 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /*
  * All the APIs declared here are internal only APIs, it can only be used by
@@ -189,6 +181,27 @@ typedef void (*wifi_netstack_buf_free_cb_t)(void *netstack_buf);
   *    - ESP_ERR_WIFI_POST : caller fails to post event to WiFi task
   */
 esp_err_t esp_wifi_internal_tx_by_ref(wifi_interface_t ifx, void *buffer, size_t len, void *netstack_buf);
+
+/**
+  * @brief     Initialize WAPI function when wpa_supplicant initialize.
+  *
+  * This API is privately used, be careful not open to external applicantion.
+  *
+  * @return
+  *          - ESP_OK : succeed
+  *          - ESP_ERR_WAPI_INTERNAL : Internal error
+  */
+esp_err_t esp_wifi_internal_wapi_init(void);
+
+/**
+  * @brief     De-initialize WAPI function when wpa_supplicant de-initialize.
+  *
+  * This API is privately used, be careful not open to external applicantion.
+  *
+  * @return
+  *          - ESP_OK : succeed
+  */
+esp_err_t esp_wifi_internal_wapi_deinit(void);
 
 /**
   * @brief  register the net stack buffer reference increasing and free callback
@@ -467,7 +480,7 @@ esp_err_t esp_wifi_internal_get_negotiated_channel(wifi_interface_t ifx, uint8_t
   */
 esp_err_t esp_wifi_internal_get_negotiated_bandwidth(wifi_interface_t ifx, uint8_t aid, uint8_t *bw);
 
-#if CONFIG_IDF_TARGET_ESP32S2
+#if SOC_WIFI_HW_TSF
 /**
   * @brief     Check if WiFi TSF is active
   *
@@ -476,7 +489,23 @@ esp_err_t esp_wifi_internal_get_negotiated_bandwidth(wifi_interface_t ifx, uint8
   *    - false: Not active
   */
 bool esp_wifi_internal_is_tsf_active(void);
+
+/**
+  * @brief     Update WIFI light sleep wake ahead time
+  *
+  */
+void esp_wifi_internal_update_light_sleep_wake_ahead_time(uint32_t);
 #endif
+
+/**
+ * @brief Wifi power domain power on
+ */
+void esp_wifi_power_domain_on(void);
+
+/**
+ * @brief Wifi power domain power off
+ */
+void esp_wifi_power_domain_off(void);
 
 #if CONFIG_MAC_BB_PD
 /**
@@ -488,6 +517,16 @@ bool esp_wifi_internal_is_tsf_active(void);
   *    - ESP_OK: succeed
   */
 esp_err_t esp_wifi_internal_set_mac_sleep(bool enable);
+
+/**
+ * @brief mac bb sleep.
+ */
+void pm_mac_sleep(void);
+
+/**
+ * @brief mac bb wakeup.
+ */
+void pm_mac_wakeup(void);
 #endif
 
 /**
@@ -511,6 +550,44 @@ typedef void (* wifi_tx_done_cb_t)(uint8_t ifidx, uint8_t *data, uint16_t *data_
   *    - ESP_ERR_WIFI_NOT_STARTED: WiFi is not started by esp_wifi_start
   */
 esp_err_t esp_wifi_set_tx_done_cb(wifi_tx_done_cb_t cb);
+
+/**
+ * @brief     Set device spp amsdu attributes
+ *
+ * @param     ifx: WiFi interface
+ * @param     spp_cap: spp amsdu capable
+ * @param     spp_req: spp amsdu require
+ *
+ * @return
+ *     - ESP_OK: succeed
+ *     - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
+ *     - ESP_ERR_WIFI_IF : invalid WiFi interface
+ */
+esp_err_t esp_wifi_internal_set_spp_amsdu(wifi_interface_t ifidx, bool spp_cap, bool spp_req);
+
+/**
+ * @brief   Update WIFI light sleep default parameters
+ *
+ * @param   min_freq_mhz: minimum frequency of DFS
+ * @param   max_freq_mhz: maximum frequency of DFS
+ */
+void esp_wifi_internal_update_light_sleep_default_params(int min_freq_mhz, int max_freq_mhz);
+
+/**
+ * @brief   Set the delay time for wifi to enter the sleep state when light sleep
+ *
+ * @param   return_to_sleep_delay: minimum timeout time  for waiting to receive
+ *                      data, when no data is received during the timeout period,
+ *                      the wifi enters the sleep process.
+ */
+void esp_wifi_set_sleep_delay_time(uint32_t return_to_sleep_delay);
+
+/**
+ * @brief   Set wifi keep alive time
+ *
+ * @param   keep_alive_time: keep alive time
+ */
+void esp_wifi_set_keep_alive_time(uint32_t keep_alive_time);
 
 #ifdef __cplusplus
 }

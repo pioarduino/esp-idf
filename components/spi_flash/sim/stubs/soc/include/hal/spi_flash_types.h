@@ -1,17 +1,11 @@
-// Copyright 2010-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * This is a STUB FILE HEADER used when compiling ESP-IDF to run tests on the host system.
+ * The header file used normally for ESP-IDF has the same name but is located elsewhere.
+ */
 #pragma once
 
 #ifdef __cplusplus
@@ -40,6 +34,11 @@ typedef enum {
 
     SPI_FLASH_READ_MODE_MAX,    ///< The fastest io mode supported by the host is ``ESP_FLASH_READ_MODE_MAX-1``.
 } esp_flash_io_mode_t;
+
+/**
+ * Configuration structure for the flash chip suspend feature.
+ */
+typedef struct spi_flash_sus_cmd_conf_dummy spi_flash_sus_cmd_conf;
 
 struct spi_flash_host_driver_s;
 typedef struct spi_flash_host_driver_s spi_flash_host_driver_t;
@@ -121,9 +120,9 @@ struct spi_flash_host_driver_s {
      */
     int (*read_data_slicer)(spi_flash_host_inst_t *host, uint32_t address, uint32_t len, uint32_t *align_addr, uint32_t page_size);
     /**
-     * Check whether the host is idle to perform new operations.
+     * Check the host status, 0:busy, 1:idle, 2:suspended.
      */
-    bool (*host_idle)(spi_flash_host_inst_t *host);
+    uint32_t (*host_status)(spi_flash_host_inst_t *host);
     /**
      * Configure the host to work at different read mode. Responsible to compensate the timing and set IO mode.
      */
@@ -139,6 +138,21 @@ struct spi_flash_host_driver_s {
      * modified, the cache needs to be flushed. Left NULL if not supported.
      */
     esp_err_t (*flush_cache)(spi_flash_host_inst_t* host, uint32_t addr, uint32_t size);
+
+    /**
+     * Resume flash from suspend manually
+     */
+    void (*resume)(spi_flash_host_inst_t *host);
+
+    /**
+     * Set flash in suspend status manually
+     */
+    void (*suspend)(spi_flash_host_inst_t *host);
+
+    /**
+     * Suspend feature setup for setting cmd and status register mask.
+     */
+    esp_err_t (*sus_setup)(spi_flash_host_inst_t *host, const spi_flash_sus_cmd_conf *sus_conf);
 };
 ///Slowest io mode supported by ESP32, currently SlowRd
 #define SPI_FLASH_READ_MODE_MIN SPI_FLASH_SLOWRD

@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include <sys/lock.h>
 
+#include "esp_attr.h"
 #include "esp_system.h"
 
 #include "soc/rtc.h"
@@ -43,6 +44,10 @@
 #include "esp32c3/rom/rtc.h"
 #include "esp32c3/clk.h"
 #include "esp32c3/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32H2
+#include "esp32h2/rom/rtc.h"
+#include "esp32h2/clk.h"
+#include "esp32h2/rtc.h"
 #endif
 
 
@@ -50,7 +55,7 @@
 // Offset between FRC timer and the RTC.
 // Initialized after reset or light sleep.
 #if defined(CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER) && defined(CONFIG_ESP_TIME_FUNCS_USE_ESP_TIMER)
-uint64_t s_microseconds_offset;
+int64_t s_microseconds_offset = 0;
 #endif
 
 #ifndef CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER
@@ -102,15 +107,6 @@ void esp_time_impl_set_boot_time(uint64_t time_us)
     _lock_release(&s_boot_time_lock);
 }
 
-uint64_t esp_clk_rtc_time(void)
-{
-#ifdef CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER
-    return esp_rtc_get_time_us();
-#else
-    return 0;
-#endif
-}
-
 uint64_t esp_time_impl_get_boot_time(void)
 {
     uint64_t result;
@@ -122,52 +118,6 @@ uint64_t esp_time_impl_get_boot_time(void)
 #endif
     _lock_release(&s_boot_time_lock);
     return result;
-}
-
-uint32_t esp_clk_slowclk_cal_get(void)
-{
-    return REG_READ(RTC_SLOW_CLK_CAL_REG);
-}
-
-uint64_t esp_rtc_get_time_us(void)
-{
-    const uint64_t ticks = rtc_time_get();
-    const uint32_t cal = esp_clk_slowclk_cal_get();
-    /* RTC counter result is up to 2^48, calibration factor is up to 2^24,
-     * for a 32kHz clock. We need to calculate (assuming no overflow):
-     *   (ticks * cal) >> RTC_CLK_CAL_FRACT
-     *
-     * An overflow in the (ticks * cal) multiplication would cause time to
-     * wrap around after approximately 13 days, which is probably not enough
-     * for some applications.
-     * Therefore multiplication is split into two terms, for the lower 32-bit
-     * and the upper 16-bit parts of "ticks", i.e.:
-     *   ((ticks_low + 2^32 * ticks_high) * cal) >> RTC_CLK_CAL_FRACT
-     */
-    const uint64_t ticks_low = ticks & UINT32_MAX;
-    const uint64_t ticks_high = ticks >> 32;
-    return ((ticks_low * cal) >> RTC_CLK_CAL_FRACT) +
-           ((ticks_high * cal) << (32 - RTC_CLK_CAL_FRACT));
-}
-
-void esp_clk_slowclk_cal_set(uint32_t new_cal)
-{
-#if defined(CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER)
-    /* To force monotonic time values even when clock calibration value changes,
-     * we adjust boot time, given current time and the new calibration value:
-     *      T = boot_time_old + cur_cal * ticks / 2^19
-     *      T = boot_time_adj + new_cal * ticks / 2^19
-     * which results in:
-     *      boot_time_adj = boot_time_old + ticks * (cur_cal - new_cal) / 2^19
-     */
-    const int64_t ticks = (int64_t) rtc_time_get();
-    const uint32_t cur_cal = REG_READ(RTC_SLOW_CLK_CAL_REG);
-    int32_t cal_diff = (int32_t) (cur_cal - new_cal);
-    int64_t boot_time_diff = ticks * cal_diff / (1LL << RTC_CLK_CAL_FRACT);
-    uint64_t boot_time_adj = esp_time_impl_get_boot_time() + boot_time_diff;
-    esp_time_impl_set_boot_time(boot_time_adj);
-#endif // CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER
-    REG_WRITE(RTC_SLOW_CLK_CAL_REG, new_cal);
 }
 
 void esp_set_time_from_rtc(void)

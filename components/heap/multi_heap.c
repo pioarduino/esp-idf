@@ -251,7 +251,7 @@ void *multi_heap_realloc_impl(multi_heap_handle_t heap, void *p, size_t size)
     return result;
 }
 
-void *multi_heap_aligned_alloc_impl(multi_heap_handle_t heap, size_t size, size_t alignment)
+void *multi_heap_aligned_alloc_impl_offs(multi_heap_handle_t heap, size_t size, size_t alignment, size_t offset)
 {
     if(heap == NULL) {
         return NULL;
@@ -267,7 +267,7 @@ void *multi_heap_aligned_alloc_impl(multi_heap_handle_t heap, size_t size, size_
     }
 
     multi_heap_internal_lock(heap);
-    void *result = tlsf_memalign(heap->heap_data, alignment, size);
+    void *result = tlsf_memalign_offs(heap->heap_data, alignment, size, offset);
     if(result) {
         heap->free_bytes -= tlsf_block_size(result);
         if(heap->free_bytes < heap->minimum_free_bytes) {
@@ -277,6 +277,12 @@ void *multi_heap_aligned_alloc_impl(multi_heap_handle_t heap, size_t size, size_
     multi_heap_internal_unlock(heap);
 
     return result;
+}
+
+
+void *multi_heap_aligned_alloc_impl(multi_heap_handle_t heap, size_t size, size_t alignment)
+{
+    return multi_heap_aligned_alloc_impl_offs(heap, size, alignment, 0);
 }
 
 bool multi_heap_check(multi_heap_handle_t heap, bool print_errors)
@@ -354,6 +360,8 @@ static void multi_heap_get_info_tlsf(void* ptr, size_t size, int used, void* use
 
 void multi_heap_get_info_impl(multi_heap_handle_t heap, multi_heap_info_t *info)
 {
+    uint32_t sl_interval;
+
     memset(info, 0, sizeof(multi_heap_info_t));
 
     if (heap == NULL) {
@@ -365,6 +373,9 @@ void multi_heap_get_info_impl(multi_heap_handle_t heap, multi_heap_info_t *info)
     info->total_allocated_bytes = (heap->pool_size - tlsf_size()) - heap->free_bytes;
     info->minimum_free_bytes = heap->minimum_free_bytes;
     info->total_free_bytes = heap->free_bytes;
-    info->largest_free_block = info->largest_free_block ? 1 << (31 - __builtin_clz(info->largest_free_block)) : 0;
+    if (info->largest_free_block) {
+        sl_interval = (1 << (31 - __builtin_clz(info->largest_free_block))) / SL_INDEX_COUNT;
+        info->largest_free_block = info->largest_free_block & ~(sl_interval - 1);
+    }
     multi_heap_internal_unlock(heap);
 }

@@ -53,6 +53,16 @@ void esp_transport_ssl_set_cert_data(esp_transport_handle_t t, const char *data,
 void esp_transport_ssl_set_cert_data_der(esp_transport_handle_t t, const char *data, int len);
 
 /**
+ * @brief      Enable the use of certification bundle for server verfication for
+ *             an SSL connection.
+ *             It must be first enabled in menuconfig.
+ *
+ * @param      t    ssl transport
+ * @param[in]  crt_bundle_attach    Function pointer to esp_crt_bundle_attach
+ */
+void esp_transport_ssl_crt_bundle_attach(esp_transport_handle_t t, esp_err_t ((*crt_bundle_attach)(void *conf)));
+
+/**
  * @brief      Enable global CA store for SSL connection
  *
  * @param      t    ssl transport
@@ -141,14 +151,12 @@ void esp_transport_ssl_skip_common_name_check(esp_transport_handle_t t);
  */
 void esp_transport_ssl_use_secure_element(esp_transport_handle_t t);
 
-
 /**
  * @brief      Set the ds_data handle in ssl context.(used for the digital signature operation)
  *
  * @param      t        ssl transport
  *             ds_data  the handle for ds data params
  */
-
 void esp_transport_ssl_set_ds_data(esp_transport_handle_t t, void *ds_data);
 
 /**
@@ -164,6 +172,23 @@ void esp_transport_ssl_set_ds_data(esp_transport_handle_t t, void *ds_data);
  * @param[in]  psk_hint_key  psk key and hint structure defined in esp_tls.h
  */
 void esp_transport_ssl_set_psk_key_hint(esp_transport_handle_t t, const psk_hint_key_t* psk_hint_key);
+
+/**
+ * @brief      Set keep-alive status in current ssl context
+ *
+ * @param[in]  t               ssl transport
+ * @param[in]  keep_alive_cfg  The handle for keep-alive configuration
+ */
+void esp_transport_ssl_set_keep_alive(esp_transport_handle_t t, esp_transport_keep_alive_t *keep_alive_cfg);
+
+/**
+ * @brief      Set name of interface that socket can be binded on
+ *             So the data can transport on this interface
+ *
+ * @param[in]  t        The transport handle
+ * @param[in]  if_name  The interface name
+ */
+void esp_transport_ssl_set_interface_name(esp_transport_handle_t t, struct ifreq *if_name);
 
 #ifdef __cplusplus
 }

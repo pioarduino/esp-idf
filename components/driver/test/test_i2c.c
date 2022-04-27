@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 /**
  * test environment UT_T2_I2C:
  * please prepare two ESP32-WROVER-KIT board.
@@ -17,13 +22,15 @@
 #include "soc/uart_struct.h"
 #include "driver/periph_ctrl.h"
 #include "esp_rom_gpio.h"
+#include "hal/gpio_hal.h"
+#include "hal/uart_ll.h"
 
 
 #define DATA_LENGTH          512  /*!<Data buffer length for test buffer*/
 #define RW_TEST_LENGTH       129  /*!<Data length for r/w test, any value from 0-DATA_LENGTH*/
 #define DELAY_TIME_BETWEEN_ITEMS_MS   1234 /*!< delay time between different test items */
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
 #define I2C_SLAVE_SCL_IO     5     /*!<gpio number for i2c slave clock  */
 #define I2C_SLAVE_SDA_IO     6     /*!<gpio number for i2c slave data */
 #else
@@ -38,9 +45,12 @@
 #if CONFIG_IDF_TARGET_ESP32C3
 #define I2C_MASTER_SCL_IO     5     /*!<gpio number for i2c master clock  */
 #define I2C_MASTER_SDA_IO     6     /*!<gpio number for i2c master data */
+#elif CONFIG_IDF_TARGET_ESP32S3
+#define I2C_MASTER_SCL_IO     2     /*!<gpio number for i2c master clock  */
+#define I2C_MASTER_SDA_IO     1     /*!<gpio number for i2c master data */
 #else
-#define I2C_MASTER_SCL_IO    19    /*!< gpio number for I2C master clock */
-#define I2C_MASTER_SDA_IO    18   /*!< gpio number for I2C master data  */
+#define I2C_MASTER_SCL_IO    19     /*!< gpio number for I2C master clock */
+#define I2C_MASTER_SDA_IO    18     /*!< gpio number for I2C master data  */
 #endif
 
 #define I2C_MASTER_NUM I2C_NUM_0   /*!< I2C port number for master dev */
@@ -266,7 +276,7 @@ TEST_CASE("I2C driver memory leaking check", "[i2c]")
     TEST_ASSERT_INT_WITHIN(100, size, esp_get_free_heap_size());
 }
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3)
 
 // print the reading buffer
 static void disp_buf(uint8_t *buf, int len)
@@ -396,7 +406,7 @@ static void slave_write_buffer_test(void)
 
 TEST_CASE_MULTIPLE_DEVICES("I2C master read slave test", "[i2c][test_env=UT_T2_I2C][timeout=150]", master_read_slave_test, slave_write_buffer_test);
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32, ESP32C3)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32)
 static void i2c_master_write_read_test(void)
 {
     uint8_t *data_rd = (uint8_t *) malloc(DATA_LENGTH);
@@ -537,8 +547,8 @@ static void i2c_slave_repeat_read(void)
 TEST_CASE_MULTIPLE_DEVICES("I2C repeat write test", "[i2c][test_env=UT_T2_I2C][timeout=150]", i2c_master_repeat_write, i2c_slave_repeat_read);
 
 
-#endif  //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
-#endif  //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
+#endif  //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3)
+#endif  //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3)
 
 static volatile bool exit_flag;
 static bool test_read_func;
@@ -651,14 +661,15 @@ TEST_CASE("I2C general API test", "[i2c]")
 //Init uart baud rate detection
 static void uart_aut_baud_det_init(int rxd_io_num)
 {
-    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[rxd_io_num], PIN_FUNC_GPIO);
+    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[rxd_io_num], PIN_FUNC_GPIO);
     gpio_set_direction(rxd_io_num, GPIO_MODE_INPUT_OUTPUT);
     esp_rom_gpio_connect_out_signal(rxd_io_num, I2CEXT1_SCL_OUT_IDX, 0, 0);
     esp_rom_gpio_connect_in_signal(rxd_io_num, U1RXD_IN_IDX, 0);
     periph_module_enable(PERIPH_UART1_MODULE);
-    UART1.int_ena.val = 0;
-    UART1.int_clr.val = ~0;
-    UART1.auto_baud.en = 1;
+    /* Reset all the bits */
+    uart_ll_disable_intr_mask(&UART1, ~0);
+    uart_ll_clr_intsts_mask(&UART1, ~0);
+    uart_ll_set_autobaud_en(&UART1, true);
 }
 
 //Calculate I2C scl freq
@@ -666,11 +677,11 @@ static void i2c_scl_freq_cal(void)
 {
     const int i2c_source_clk_freq = 80000000;
     const float i2c_cource_clk_period = 0.0125;
-    int edg_cnt = UART1.rxd_cnt.edge_cnt;
-    int pospulse_cnt =  UART1.pospulse.min_cnt;
-    int negpulse_cnt =  UART1.negpulse.min_cnt;
-    int high_period_cnt =  UART1.highpulse.min_cnt;
-    int low_period_cnt =  UART1.lowpulse.min_cnt;
+    int edg_cnt = uart_ll_get_rxd_edge_cnt(&UART1);
+    int pospulse_cnt = uart_ll_get_pos_pulse_cnt(&UART1);
+    int negpulse_cnt = uart_ll_get_neg_pulse_cnt(&UART1);
+    int high_period_cnt = uart_ll_get_high_pulse_cnt(&UART1);
+    int low_period_cnt = uart_ll_get_low_pulse_cnt(&UART1);
     if(edg_cnt != 542) {
         printf("\nedg_cnt != 542, test fail\n");
         return;
@@ -678,7 +689,7 @@ static void i2c_scl_freq_cal(void)
     printf("\nDetected SCL frequency: %d Hz\n", i2c_source_clk_freq / ((pospulse_cnt + negpulse_cnt) / 2) );
 
     printf("\nSCL high period %.3f (us), SCL low_period %.3f (us)\n\n", (float)(i2c_cource_clk_period * high_period_cnt), (float)(i2c_cource_clk_period * low_period_cnt));
-    UART1.auto_baud.en = 0;
+    uart_ll_set_autobaud_en(&UART1, false);
     periph_module_disable(PERIPH_UART1_MODULE);
 }
 
@@ -711,4 +722,4 @@ TEST_CASE("I2C SCL freq test (local test)", "[i2c][ignore]")
     TEST_ESP_OK(i2c_driver_delete(i2c_num));
 }
 
-#endif // TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
+#endif // TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3, ESP32C3)

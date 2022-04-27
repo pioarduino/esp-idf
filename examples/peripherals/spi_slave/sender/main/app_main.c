@@ -50,19 +50,35 @@ task waits for this semaphore to be given before queueing a transmission.
 /*
 Pins in use. The SPI Master can use the GPIO mux, so feel free to change these if needed.
 */
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
 #define GPIO_HANDSHAKE 2
 #define GPIO_MOSI 12
 #define GPIO_MISO 13
 #define GPIO_SCLK 15
 #define GPIO_CS 14
 
+#elif CONFIG_IDF_TARGET_ESP32C3
+#define GPIO_HANDSHAKE 3
+#define GPIO_MOSI 7
+#define GPIO_MISO 2
+#define GPIO_SCLK 6
+#define GPIO_CS 10
+
+#elif CONFIG_IDF_TARGET_ESP32S3
+#define GPIO_HANDSHAKE 2
+#define GPIO_MOSI 11
+#define GPIO_MISO 13
+#define GPIO_SCLK 12
+#define GPIO_CS 10
+
+#endif //CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
+
+
 #ifdef CONFIG_IDF_TARGET_ESP32
 #define SENDER_HOST HSPI_HOST
-#define DMA_CHAN    2
 
-#elif defined CONFIG_IDF_TARGET_ESP32S2
+#else
 #define SENDER_HOST SPI2_HOST
-#define DMA_CHAN    SENDER_HOST
 
 #endif
 
@@ -78,7 +94,7 @@ static void IRAM_ATTR gpio_handshake_isr_handler(void* arg)
     //Sometimes due to interference or ringing or something, we get two irqs after eachother. This is solved by
     //looking at the time between interrupts and refusing any interrupt too close to another one.
     static uint32_t lasthandshaketime;
-    uint32_t currtime=xthal_get_ccount();
+    uint32_t currtime=esp_cpu_get_ccount();
     uint32_t diff=currtime-lasthandshaketime;
     if (diff<240000) return; //ignore everything <1ms after an earlier irq
     lasthandshaketime=currtime;
@@ -141,7 +157,7 @@ void app_main(void)
     gpio_isr_handler_add(GPIO_HANDSHAKE, gpio_handshake_isr_handler, NULL);
 
     //Initialize the SPI bus and add the device we want to send stuff to.
-    ret=spi_bus_initialize(SENDER_HOST, &buscfg, DMA_CHAN);
+    ret=spi_bus_initialize(SENDER_HOST, &buscfg, SPI_DMA_CH_AUTO);
     assert(ret==ESP_OK);
     ret=spi_bus_add_device(SENDER_HOST, &devcfg, &handle);
     assert(ret==ESP_OK);

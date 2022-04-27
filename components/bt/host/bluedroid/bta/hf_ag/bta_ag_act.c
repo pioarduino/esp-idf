@@ -464,9 +464,6 @@ void bta_ag_rfc_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     bta_ag_at_init(&p_scb->at_cb);
 
     /* call app open call-out */
-#if (BTM_SCO_HCI_INCLUDED == TRUE)
-    bta_ag_sco_co_open(bta_ag_scb_to_idx(p_scb), p_scb->air_mode, BTA_HFP_SCO_OUT_PKT_SIZE, bta_ag_svc_id[p_scb->conn_service]);
-#endif
     bta_sys_conn_open(BTA_ID_AG, p_scb->app_id, p_scb->peer_addr);
     bta_ag_cback_open(p_scb, NULL, BTA_AG_SUCCESS);
 
@@ -494,14 +491,14 @@ void bta_ag_rfc_acp_open(tBTA_AG_SCB *p_scb, tBTA_AG_DATA *p_data)
     UINT16          lcid;
     int             i;
     tBTA_AG_SCB     *ag_scb, *other_scb;
-    BD_ADDR         dev_addr;
+    BD_ADDR         dev_addr = {0};
     int             status;
     /* set role */
     p_scb->role = BTA_AG_ACP;
     APPL_TRACE_DEBUG ("bta_ag_rfc_acp_open: serv_handle0 = %d serv_handle1 = %d",
                        p_scb->serv_handle[0], p_scb->serv_handle[1]);
     /* get bd addr of peer */
-    if (PORT_SUCCESS != (status=PORT_CheckConnection(p_data->rfc.port_handle, dev_addr, &lcid))) {
+    if (PORT_SUCCESS != (status = PORT_CheckConnection(p_data->rfc.port_handle, FALSE, dev_addr, &lcid))) {
         APPL_TRACE_DEBUG ("bta_ag_rfc_acp_open error PORT_CheckConnection returned status %d", status);
     }
     /* Collision Handling */

@@ -17,9 +17,13 @@ gen_configs() {
     # CONFIG_COMPILER_OPTIMIZATION_NONE with flag -O0
     echo "CONFIG_COMPILER_OPTIMIZATION_NONE=y" > esp-idf-template/sdkconfig.ci.O0
     echo "CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_NONE=y" >> esp-idf-template/sdkconfig.ci.O0
+    # -O0 makes the bootloader too large to fit in the default space, otherwise(!)
+    echo "CONFIG_PARTITION_TABLE_OFFSET=0x10000" >> esp-idf-template/sdkconfig.ci.O0
+
     # CONFIG_COMPILER_OPTIMIZATION_SIZE with flag -Os
     echo "CONFIG_COMPILER_OPTIMIZATION_SIZE=y" > esp-idf-template/sdkconfig.ci.Os
     echo "CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_SIZE=y" >> esp-idf-template/sdkconfig.ci.Os
+
     # CONFIG_COMPILER_OPTIMIZATION_PERF with flag -O2
     echo "CONFIG_COMPILER_OPTIMIZATION_PERF=y" > esp-idf-template/sdkconfig.ci.O2
     echo "CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_PERF=y" >> esp-idf-template/sdkconfig.ci.O2
@@ -74,6 +78,7 @@ build_stage2() {
     search_cmake esp32s2 ${CONFIG_STR}
     search_cmake esp32s3 ${CONFIG_STR}
     search_cmake esp32c3 ${CONFIG_STR}
+    search_cmake esp32h2 ${CONFIG_STR}
 
     CONFIG_STR=$(get_config_str sdkconfig.ci.*= sdkconfig.ci2.*=)
     search_make esp32 ${CONFIG_STR}
@@ -86,6 +91,7 @@ build_stage2() {
     search_cmake esp32s2 ${CONFIG_STR}
     search_cmake esp32s3 ${CONFIG_STR}
     search_cmake esp32c3 ${CONFIG_STR}
+    search_cmake esp32h2 ${CONFIG_STR}
 
     # Override EXTRA_CFLAGS and EXTRA_CXXFLAGS in the environment
     export EXTRA_CFLAGS=${PEDANTIC_CFLAGS/-Werror=unused-variable -Werror=unused-but-set-variable -Werror=unused-function/}
@@ -99,6 +105,7 @@ build_stage1() {
     search_cmake esp32s2 ${CONFIG_STR}
     search_cmake esp32s3 ${CONFIG_STR}
     search_cmake esp32c3 ${CONFIG_STR}
+    search_cmake esp32h2 ${CONFIG_STR}
 
     build
 }

@@ -1649,7 +1649,7 @@ BOOLEAN  L2CA_RegisterFixedChannel (UINT16 fixed_cid, tL2CAP_FIXED_CHNL_REG *p_f
 **  Return value:   TRUE if connection started
 **
 *******************************************************************************/
-BOOLEAN L2CA_ConnectFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda, tBLE_ADDR_TYPE bd_addr_type)
+BOOLEAN L2CA_ConnectFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda, tBLE_ADDR_TYPE bd_addr_type, BOOLEAN is_aux)
 {
     tL2C_LCB *p_lcb;
     tBT_TRANSPORT transport = BT_TRANSPORT_BR_EDR;
@@ -1715,13 +1715,9 @@ BOOLEAN L2CA_ConnectFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda, tBLE_ADDR_TYPE
             return TRUE;
         }
 
-#if BLE_INCLUDED == TRUE
         (*l2cb.fixed_reg[fixed_cid - L2CAP_FIRST_FIXED_CHNL].pL2CA_FixedConn_Cb)
-        (fixed_cid, p_lcb->remote_bd_addr, TRUE, 0, p_lcb->transport);
-#else
-        (*l2cb.fixed_reg[fixed_cid - L2CAP_FIRST_FIXED_CHNL].pL2CA_FixedConn_Cb)
-        (fixed_cid, p_lcb->remote_bd_addr, TRUE, 0, BT_TRANSPORT_BR_EDR);
-#endif
+        (fixed_cid, p_lcb->remote_bd_addr, TRUE, 0, transport);
+
         return TRUE;
     }
 
@@ -1740,6 +1736,7 @@ BOOLEAN L2CA_ConnectFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda, tBLE_ADDR_TYPE
         return FALSE;
     }
 #if (BLE_INCLUDED == TRUE)
+    p_lcb->is_aux = is_aux;
     p_lcb->open_addr_type = bd_addr_type;
 #endif
     if (!l2cu_create_conn(p_lcb, transport)) {
@@ -1832,13 +1829,13 @@ UINT16 L2CA_SendFixedChnlData (UINT16 fixed_cid, BD_ADDR rem_bda, BT_HDR *p_buf)
     }
 
     // If already congested, do not accept any more packets
-    if (p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL]->cong_sent) {
-        L2CAP_TRACE_ERROR ("L2CAP - CID: 0x%04x cannot send, already congested\
+    if (p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL]->cong_sent && fixed_cid != L2CAP_SMP_CID) {
+        L2CAP_TRACE_DEBUG ("L2CAP - CID: 0x%04x cannot send, already congested\
             xmit_hold_q.count: %u buff_quota: %u", fixed_cid,
             fixed_queue_length(p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL]->xmit_hold_q),
             p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL]->buff_quota);
         osi_free(p_buf);
-        return (L2CAP_DW_FAILED);
+        return (L2CAP_DW_CONGESTED);
     }
 
     l2c_enqueue_peer_data (p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL], p_buf);
@@ -1857,10 +1854,10 @@ UINT16 L2CA_SendFixedChnlData (UINT16 fixed_cid, BD_ADDR rem_bda, BT_HDR *p_buf)
     return (L2CAP_DW_SUCCESS);
 }
 
-BOOLEAN L2CA_CheckIsCongest(UINT16 fixed_cid, UINT16 handle)
+BOOLEAN L2CA_CheckIsCongest(UINT16 fixed_cid, BD_ADDR addr)
 {
     tL2C_LCB *p_lcb;
-    p_lcb = l2cu_find_lcb_by_handle(handle);
+    p_lcb = l2cu_find_lcb_by_bd_addr(addr, BT_TRANSPORT_LE);
 
     if (p_lcb != NULL && p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL] != NULL) {
         return p_lcb->p_fixed_ccbs[fixed_cid - L2CAP_FIRST_FIXED_CHNL]->cong_sent;
@@ -1979,6 +1976,9 @@ BOOLEAN L2CA_SetFixedChannelTout (BD_ADDR rem_bda, UINT16 fixed_cid, UINT16 idle
         transport = BT_TRANSPORT_LE;
     }
 #endif
+    if (fixed_cid<L2CAP_FIRST_FIXED_CHNL) {
+        return (FALSE);
+    }
 
     /* Is a fixed channel connected to the remote BDA ?*/
     p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda, transport);

@@ -245,6 +245,18 @@ esp_err_t spi_flash_chip_generic_set_io_mode(esp_flash_t *chip);
 esp_err_t spi_flash_chip_generic_get_io_mode(esp_flash_t *chip, esp_flash_io_mode_t* out_quad_mode);
 
 /**
+ * @brief Read the chip unique ID.
+ *
+ * @param chip Pointer to SPI flash chip to use. If NULL, esp_flash_default_chip is substituted.
+ * @param flash_unique_id Pointer to store output unique id.
+ *
+ * @return
+ *      - ESP_OK if success
+ *      - ESP_ERR_NOT_SUPPORTED if the chip doesn't support read id.
+ */
+esp_err_t spi_flash_chip_generic_read_unique_id(esp_flash_t *chip, uint64_t* flash_unique_id);
+
+/**
  * Generic SPI flash chip_drv, uses all the above functions for its operations.
  * In default autodetection, this is used as a catchall if a more specific
  * chip_drv is not found.
@@ -254,24 +266,6 @@ extern const spi_flash_chip_t esp_flash_chip_generic;
 /*******************************************************************************
  *  Utilities
 *******************************************************************************/
-
-/**
- * @brief Wait for the SPI host hardware state machine to be idle.
- *
- * This isn't a flash chip_drv operation, but it's called by
- * spi_flash_chip_generic_wait_idle() and may be useful when implementing
- * alternative drivers.
- *
- * timeout_us will be decremented if the function needs to wait until the host hardware is idle.
- *
- * @param chip Pointer to SPI flash chip to use. If NULL, esp_flash_default_chip is substituted.
- *
- * @return
- *      - ESP_OK if success
- *      - ESP_ERR_TIMEOUT if not idle before timeout
- *      - or other error passed from the ``set_write_protect`` or ``common_command`` function of host driver
- */
-esp_err_t spi_flash_generic_wait_host_idle(esp_flash_t *chip, uint32_t *timeout_us);
 
 /// Function pointer type for reading status register with QE bit.
 typedef esp_err_t (*esp_flash_rdsr_func_t)(esp_flash_t* chip, uint32_t* out_sr);
@@ -376,14 +370,15 @@ esp_err_t spi_flash_common_set_io_mode(esp_flash_t *chip, esp_flash_wrsr_func_t 
  * transactions. Also prepare the command to be sent in read functions.
  *
  * @param chip Pointer to SPI flash chip to use. If NULL, esp_flash_default_chip is substituted.
- * @param addr_32bit Whether 32 bit commands will be used (Currently only W25Q256 is supported)
+ * @param flags Special rules to configure io mode, (i.e. Whether 32 bit commands will be used (Currently only W25Q256 and GD25Q256 are supported))
  *
  * @return
  *      - ESP_OK if success
  *      - ESP_ERR_FLASH_NOT_INITIALISED if chip not initialized properly
  *      - or other error passed from the ``configure_host_mode`` function of host driver
  */
-esp_err_t spi_flash_chip_generic_config_host_io_mode(esp_flash_t *chip, bool addr_32bit);
+esp_err_t spi_flash_chip_generic_config_host_io_mode(esp_flash_t *chip, uint32_t flags);
+#define SPI_FLASH_CONFIG_IO_MODE_32B_ADDR BIT(0)
 
 /**
  * @brief Handle explicit yield requests
@@ -394,5 +389,23 @@ esp_err_t spi_flash_chip_generic_config_host_io_mode(esp_flash_t *chip, bool add
  */
 esp_err_t spi_flash_chip_generic_yield(esp_flash_t* chip, uint32_t wip);
 
+/**
+ * @brief Setup for flash suspend command configuration.
+ *
+ * @param chip Pointer to SPI flash chip to use. If NULL, esp_flash_default_chip is substituted.
+ * @return ESP_OK
+ */
+esp_err_t spi_flash_chip_generic_suspend_cmd_conf(esp_flash_t *chip);
+
+/**
+ *
+ * @brief Read the chip unique ID unsupported function.
+ *
+ * @param chip Pointer to SPI flash chip to use.
+ * @param flash_unique_id Pointer to store output unique id (Although this function is an unsupported function, but the parameter should be kept for the consistence of the function pointer).
+ * @return Always ESP_ERR_NOT_SUPPORTED.
+ */
+esp_err_t spi_flash_chip_generic_read_unique_id_none(esp_flash_t *chip, uint64_t* flash_unique_id);
+
 /// Default timeout configuration used by most chips
-const flash_chip_op_timeout_t spi_flash_chip_generic_timeout;
+extern const flash_chip_op_timeout_t spi_flash_chip_generic_timeout;

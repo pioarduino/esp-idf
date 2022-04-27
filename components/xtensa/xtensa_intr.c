@@ -98,7 +98,7 @@ extern xt_handler_table_entry _xt_interrupt_table[XCHAL_NUM_INTERRUPTS*portNUM_P
 /*
   Default handler for unhandled interrupts.
 */
-void xt_unhandled_interrupt(void * arg)
+void IRAM_ATTR xt_unhandled_interrupt(void * arg)
 {
 	esp_rom_printf("Unhandled interrupt %d on cpu %d!\n", (int)arg, xPortGetCoreID());
 }
@@ -143,7 +143,7 @@ xt_handler xt_set_interrupt_handler(int n, xt_handler f, void * arg)
     return ((old == &xt_unhandled_interrupt) ? 0 : old);
 }
 
-#if CONFIG_SYSVIEW_ENABLE
+#if CONFIG_APPTRACE_SV_ENABLE
 void * xt_get_interrupt_handler_arg(int n)
 {
     xt_handler_table_entry * entry;

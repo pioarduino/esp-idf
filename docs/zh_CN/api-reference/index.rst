@@ -6,13 +6,13 @@ API 参考
 .. toctree::
    :maxdepth: 2
 
-   :esp32: Bluetooth <bluetooth/index>
-   Networking <network/index>
-   Peripherals <peripherals/index>
+   :SOC_BT_SUPPORTED: 蓝牙 <bluetooth/index>
+   连网 <network/index>
+   外设 <peripherals/index>
    协议 <protocols/index>
-   Provisioning <provisioning/index>
-   Storage <storage/index>
+   配网 <provisioning/index>
+   存储 <storage/index>
    System <system/index>
+   API Conventions <api-conventions>
    Configuration Options <kconfig>
    Error Codes Reference <error-codes>
-

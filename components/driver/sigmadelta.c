@@ -1,30 +1,21 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "esp_log.h"
+#include "esp_check.h"
 #include "esp_err.h"
 #include "driver/sigmadelta.h"
 #include "esp_heap_caps.h"
 #include "hal/sigmadelta_hal.h"
+#include "hal/gpio_hal.h"
 #include "esp_rom_gpio.h"
 
 static const char *TAG = "sigma-delta";
 
-#define SIGMADELTA_CHECK(a,str,ret_val) if(!(a)) {                 \
-        ESP_LOGE(TAG,"%s(%d): %s", __FUNCTION__, __LINE__, str);   \
-        return (ret_val);                                          \
-    }
+#define SIGMADELTA_CHECK(a,str,ret_val) ESP_RETURN_ON_FALSE(a, ret_val, TAG, "%s", str)
 
 typedef struct {
     sigmadelta_hal_context_t hal;        /*!< SIGMADELTA hal context*/
@@ -57,7 +48,7 @@ static inline esp_err_t _sigmadelta_set_pin(sigmadelta_port_t sigmadelta_port, s
 {
     SIGMADELTA_OBJ_CHECK(sigmadelta_port);
 
-    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[gpio_num], PIN_FUNC_GPIO);
+    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio_num], PIN_FUNC_GPIO);
     gpio_set_direction(gpio_num, GPIO_MODE_OUTPUT);
     esp_rom_gpio_connect_out_signal(gpio_num, sigma_delta_periph_signals.channels[channel].sd_sig, 0, 0);
     return ESP_OK;

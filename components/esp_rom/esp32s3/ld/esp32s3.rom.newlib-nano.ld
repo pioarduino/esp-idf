@@ -1,28 +1,27 @@
-/**
- * These are the printf/scanf related newlib functions present in ESP32S3 ROM.
- * These functions are compiled with newlib "nano" format option.
- * As such, they don't support 64-bit integer formats.
- * Floating point formats are supported by setting _printf_float and
- * _scanf_float entries in syscall table. This is done automatically by startup code.
+/* ROM function interface esp32s3.rom.newlib-nano.ld for esp32s3
  *
- * See also esp32s3.rom.newlib-data.ld for the list of .data/.bss symbols used by newlib functions.
- * See also esp32s3.rom.newlib-funcs.ld for the list of general newlib functions.
  *
- * Unlike other ROM functions which declare weak symbols using PROVIDE,
- * newlib related functions are exported using assignment, which declare strong symbols.
+ * Generated from ./interface-esp32s3.yml md5sum 39c4ce259b11323b9404c192b01b712b
  *
- * Note: These ROM functions are always linked instead of the ones provided by libc.a.
+ * Compatible with ROM where ECO version equal or greater to 0.
+ *
+ * THIS FILE WAS AUTOMATICALLY GENERATED. DO NOT EDIT.
  */
-_printf_common = 0x40033114;
-_printf_i = 0x40033214;
-__sfputs_r = 0x40032d44;
-fiprintf = 0x40032cdc;
-_fiprintf_r = 0x40032cac;
-__fp_lock_all = 0x40054cbc;
-fprintf = 0x40032cdc;
-_fprintf_r = 0x40032cac;
-__sprint_r = 0x40032d90;
-vfiprintf = 0x400330f4;
-_vfiprintf_r = 0x40032df8;
-vfprintf = 0x400330f4;
-_vfprintf_r = 0x40032df8;
+
+/***************************************
+ Group newlib_nano_format
+ ***************************************/
+
+/* Functions */
+__sprint_r = 0x4000156c;
+_fiprintf_r = 0x40001578;
+_fprintf_r = 0x40001584;
+_printf_common = 0x40001590;
+_printf_i = 0x4000159c;
+_vfiprintf_r = 0x400015a8;
+_vfprintf_r = 0x400015b4;
+fiprintf = 0x400015c0;
+fprintf = 0x400015cc;
+printf = 0x400015d8;
+vfiprintf = 0x400015e4;
+vfprintf = 0x400015f0;

@@ -18,13 +18,22 @@
 #include "hal/touch_sensor_hal.h"
 #include "hal/touch_sensor_types.h"
 
+static int s_sleep_cycle = -1;
+static int s_meas_times = -1;
+
 void touch_hal_init(void)
 {
+    touch_ll_stop_fsm();
     touch_ll_intr_disable(TOUCH_PAD_INTR_MASK_ALL);
+    touch_ll_intr_clear(TOUCH_PAD_INTR_MASK_ALL);
     touch_ll_clear_channel_mask(TOUCH_PAD_BIT_MASK_ALL);
     touch_ll_clear_trigger_status_mask();
     touch_ll_set_meas_times(TOUCH_PAD_MEASURE_CYCLE_DEFAULT);
     touch_ll_set_sleep_time(TOUCH_PAD_SLEEP_CYCLE_DEFAULT);
+    /* Configure the touch-sensor power domain into self-bias since bandgap-bias
+     * level is different under sleep-mode compared to running-mode. self-bias is
+     * always on after chip startup. */
+    touch_ll_sleep_low_power(true);
     touch_ll_set_voltage_high(TOUCH_PAD_HIGH_VOLTAGE_THRESHOLD);
     touch_ll_set_voltage_low(TOUCH_PAD_LOW_VOLTAGE_THRESHOLD);
     touch_ll_set_voltage_attenuation(TOUCH_PAD_ATTEN_VOLTAGE_THRESHOLD);
@@ -141,9 +150,6 @@ void touch_hal_sleep_channel_enable(touch_pad_t pad_num, bool enable)
     if (enable) {
         touch_ll_sleep_set_channel_num(pad_num);
         touch_ll_sleep_set_threshold(SOC_TOUCH_PAD_THRESHOLD_MAX);
-        /* Default change touch dbias to self-dbias to save power.
-        Measuring the sleep pad threshold after `sleep_channel_set_config`. */
-        touch_ll_sleep_low_power(true);
         touch_ll_sleep_reset_benchmark();
     } else {
         touch_ll_sleep_set_channel_num(TOUCH_PAD_NUM0);
@@ -154,4 +160,24 @@ void touch_hal_sleep_channel_get_config(touch_pad_sleep_channel_t *slp_config)
 {
     touch_ll_sleep_get_channel_num(&slp_config->touch_num);
     slp_config->en_proximity = touch_ll_sleep_get_approach_status();
+}
+
+void touch_hal_sleep_channel_set_work_time(uint16_t sleep_cycle, uint16_t meas_times)
+{
+    s_sleep_cycle = (int)sleep_cycle;
+    s_meas_times = (int)meas_times;
+}
+
+void touch_hal_sleep_channel_get_work_time(uint16_t *sleep_cycle, uint16_t *meas_times)
+{
+    if (s_meas_times < 0) {
+        touch_ll_get_measure_times(meas_times);
+    } else {
+        *meas_times = (uint16_t)s_meas_times;
+    }
+    if (s_sleep_cycle < 0) {
+        touch_ll_get_sleep_time(sleep_cycle);
+    } else {
+        *sleep_cycle = (uint16_t)s_sleep_cycle;
+    }
 }

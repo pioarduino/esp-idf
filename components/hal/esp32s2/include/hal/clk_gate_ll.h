@@ -1,16 +1,8 @@
-// Copyright 2015-2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 
@@ -29,6 +21,8 @@ extern "C" {
 static inline uint32_t periph_ll_get_clk_en_mask(periph_module_t periph)
 {
     switch (periph) {
+    case PERIPH_SARADC_MODULE:
+        return DPORT_APB_SARADC_CLK_EN;
     case PERIPH_LEDC_MODULE:
         return DPORT_LEDC_CLK_EN;
     case PERIPH_UART0_MODULE:
@@ -43,20 +37,10 @@ static inline uint32_t periph_ll_get_clk_en_mask(periph_module_t periph)
         return DPORT_I2C_EXT1_CLK_EN;
     case PERIPH_I2S0_MODULE:
         return DPORT_I2S0_CLK_EN;
-    case PERIPH_I2S1_MODULE:
-        return DPORT_I2S1_CLK_EN;
     case PERIPH_TIMG0_MODULE:
         return DPORT_TIMERGROUP_CLK_EN;
     case PERIPH_TIMG1_MODULE:
         return DPORT_TIMERGROUP1_CLK_EN;
-    case PERIPH_PWM0_MODULE:
-        return DPORT_PWM0_CLK_EN;
-    case PERIPH_PWM1_MODULE:
-        return DPORT_PWM1_CLK_EN;
-    case PERIPH_PWM2_MODULE:
-        return DPORT_PWM2_CLK_EN;
-    case PERIPH_PWM3_MODULE:
-        return DPORT_PWM3_CLK_EN;
     case PERIPH_UHCI0_MODULE:
         return DPORT_UHCI0_CLK_EN;
     case PERIPH_UHCI1_MODULE:
@@ -109,6 +93,8 @@ static inline uint32_t periph_ll_get_rst_en_mask(periph_module_t periph, bool en
     (void)enable; // unused
 
     switch (periph) {
+    case PERIPH_SARADC_MODULE:
+        return DPORT_APB_SARADC_RST;
     case PERIPH_LEDC_MODULE:
         return DPORT_LEDC_RST;
     case PERIPH_UART0_MODULE:
@@ -123,20 +109,10 @@ static inline uint32_t periph_ll_get_rst_en_mask(periph_module_t periph, bool en
         return DPORT_I2C_EXT1_RST;
     case PERIPH_I2S0_MODULE:
         return DPORT_I2S0_RST;
-    case PERIPH_I2S1_MODULE:
-        return DPORT_I2S1_RST;
     case PERIPH_TIMG0_MODULE:
         return DPORT_TIMERGROUP_RST;
     case PERIPH_TIMG1_MODULE:
         return DPORT_TIMERGROUP1_RST;
-    case PERIPH_PWM0_MODULE:
-        return DPORT_PWM0_RST;
-    case PERIPH_PWM1_MODULE:
-        return DPORT_PWM1_RST;
-    case PERIPH_PWM2_MODULE:
-        return DPORT_PWM2_RST;
-    case PERIPH_PWM3_MODULE:
-        return DPORT_PWM3_RST;
     case PERIPH_UHCI0_MODULE:
         return DPORT_UHCI0_RST;
     case PERIPH_UHCI1_MODULE:
@@ -287,6 +263,17 @@ static inline bool IRAM_ATTR periph_ll_periph_enabled(periph_module_t periph)
         DPORT_REG_GET_BIT(periph_ll_get_clk_en_reg(periph), periph_ll_get_clk_en_mask(periph)) != 0;
 }
 
+static inline void periph_ll_wifi_module_enable_clk_clear_rst(void)
+{
+    DPORT_SET_PERI_REG_MASK(DPORT_WIFI_CLK_EN_REG, DPORT_WIFI_CLK_WIFI_EN_M);
+    DPORT_CLEAR_PERI_REG_MASK(DPORT_CORE_RST_EN_REG, 0);
+}
+
+static inline void periph_ll_wifi_module_disable_clk_set_rst(void)
+{
+    DPORT_CLEAR_PERI_REG_MASK(DPORT_WIFI_CLK_EN_REG, DPORT_WIFI_CLK_WIFI_EN_M);
+    DPORT_SET_PERI_REG_MASK(DPORT_CORE_RST_EN_REG, 0);
+}
 #ifdef __cplusplus
 }
 #endif

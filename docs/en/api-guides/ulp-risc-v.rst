@@ -2,11 +2,18 @@ ULP-RISC-V Coprocessor programming
 ==================================
 :link_to_translation:`zh_CN:[中文]`
 
+.. only:: esp32s3
+
+    .. warning::
+
+        This feature is not supported in v4.4
+
+
 .. toctree::
    :maxdepth: 1
 
 
-The ULP-RISC-V coprocessor is a variant of the ULP, present in ESP32-S2. Similar to ULP, ULP RISC-V coprocessor can perform tasks such as sensor readings while the main CPU stays in low power modes. The main difference from the FSM ULP is this variant can be programmed in C using standard GNU tools. The ULP-RISC-V coprocessor can access the RTC_SLOW_MEM memory region, and registers in RTC_CNTL, RTC_IO, and SARADC peripherals. The RISC-V processor is a 32-bit, fixed point machine. Its instruction set is based on RV32IMC which includes hardware multiplication and division, and compressed code.  
+The ULP-RISC-V coprocessor is a variant of the ULP, present in ESP32-S2. Similar to ULP, ULP RISC-V coprocessor can perform tasks such as sensor readings while the main CPU stays in low power modes. The main difference from the FSM ULP is this variant can be programmed in C using standard GNU tools. The ULP-RISC-V coprocessor can access the RTC_SLOW_MEM memory region, and registers in RTC_CNTL, RTC_IO, and SARADC peripherals. The RISC-V processor is a 32-bit, fixed point machine. Its instruction set is based on RV32IMC which includes hardware multiplication and division, and compressed code.
 
 Installing the ULP-RISC-V Toolchain
 -----------------------------------
@@ -16,7 +23,6 @@ The ULP-RISC-V coprocessor code is written in C (assembly is also possible) and 
 If you have already set up ESP-IDF with CMake build system according to the :doc:`Getting Started Guide <../../get-started/index>`, then the toolchain should already be installed.
 
 .. note: In earlier versions of ESP-IDF, RISC-V toolchain had a different prefix: `riscv-none-embed-gcc`.
-
 
 Compiling the ULP-RISC-V Code
 -----------------------------
@@ -71,7 +77,7 @@ For example, the ULP-RISC-V program may define a variable ``measurement_count`` 
 
 .. code-block:: c
 
-    volatile int measurement_count; 
+    volatile int measurement_count;
 
     int some_function()
     {
@@ -137,7 +143,9 @@ Once the program is loaded into RTC memory, the application can start it, callin
 ULP-RISC-V Program Flow
 -----------------------
 
-The ULP-RISC-V coprocessor is started by a timer. The timer is started once :cpp:func:`ulp_riscv_run` is called. The timer counts the number of RTC_SLOW_CLK ticks (by default, produced by an internal 90 kHz RC oscillator). The number of ticks is set using ``RTC_CNTL_ULP_CP_TIMER_1_REG`` register. When starting the ULP, ``RTC_CNTL_ULP_CP_TIMER_1_REG`` will be used to set the number of timer ticks.
+{IDF_TARGET_RTC_CLK_FRE:default="150kHz", esp32s2="90kHz"}
+
+The ULP-RISC-V coprocessor is started by a timer. The timer is started once :cpp:func:`ulp_riscv_run` is called. The timer counts the number of RTC_SLOW_CLK ticks (by default, produced by an internal {IDF_TARGET_RTC_CLK_FRE} RC oscillator). The number of ticks is set using ``RTC_CNTL_ULP_CP_TIMER_1_REG`` register. When starting the ULP, ``RTC_CNTL_ULP_CP_TIMER_1_REG`` will be used to set the number of timer ticks.
 
 The application can set ULP timer period values (RTC_CNTL_ULP_CP_TIMER_1_REG) using the :cpp:func:`ulp_set_wakeup_period` function.
 

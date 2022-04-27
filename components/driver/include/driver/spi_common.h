@@ -1,24 +1,18 @@
-// Copyright 2010-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2010-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
+#ifndef SPI_MOCK
 #include "soc/lldesc.h"
 #include "soc/spi_periph.h"
+#endif
 #include "hal/spi_types.h"
 #include "sdkconfig.h"
 
@@ -69,9 +63,28 @@ extern "C"
 #define SPICOMMON_BUSFLAG_DUAL          (1<<6)     ///< Check MOSI and MISO pins can output. Or indicates bus able to work under DIO mode.
 #define SPICOMMON_BUSFLAG_WPHD          (1<<7)     ///< Check existing of WP and HD pins. Or indicates WP & HD pins initialized.
 #define SPICOMMON_BUSFLAG_QUAD          (SPICOMMON_BUSFLAG_DUAL|SPICOMMON_BUSFLAG_WPHD)     ///< Check existing of MOSI/MISO/WP/HD pins as output. Or indicates bus able to work under QIO mode.
-
+#define SPICOMMON_BUSFLAG_IO4_IO7       (1<<8)     ///< Check existing of IO4~IO7 pins. Or indicates IO4~IO7 pins initialized.
+#define SPICOMMON_BUSFLAG_OCTAL         (SPICOMMON_BUSFLAG_QUAD|SPICOMMON_BUSFLAG_IO4_IO7)  ///< Check existing of MOSI/MISO/WP/HD/SPIIO4/SPIIO5/SPIIO6/SPIIO7 pins as output. Or indicates bus able to work under octal mode.
 #define SPICOMMON_BUSFLAG_NATIVE_PINS   SPICOMMON_BUSFLAG_IOMUX_PINS
 
+/**
+ * @brief SPI DMA channels
+ */
+typedef enum {
+  SPI_DMA_DISABLED = 0,     ///< Do not enable DMA for SPI
+#if CONFIG_IDF_TARGET_ESP32
+  SPI_DMA_CH1      = 1,     ///< Enable DMA, select DMA Channel 1
+  SPI_DMA_CH2      = 2,     ///< Enable DMA, select DMA Channel 2
+#endif
+  SPI_DMA_CH_AUTO  = 3,     ///< Enable DMA, channel is automatically selected by driver
+} spi_common_dma_t;
+
+#if __cplusplus
+/* Needed for C++ backwards compatibility with earlier ESP-IDF where this argument is a bare 'int'. Can be removed in ESP-IDF 5 */
+typedef int spi_dma_chan_t;
+#else
+typedef spi_common_dma_t spi_dma_chan_t;
+#endif
 
 /**
  * @brief This is a configuration structure for a SPI bus.
@@ -83,33 +96,48 @@ extern "C"
  * @note Be advised that the slave driver does not use the quadwp/quadhd lines and fields in spi_bus_config_t refering to these lines will be ignored and can thus safely be left uninitialized.
  */
 typedef struct {
-    int mosi_io_num;                ///< GPIO pin for Master Out Slave In (=spi_d) signal, or -1 if not used.
-    int miso_io_num;                ///< GPIO pin for Master In Slave Out (=spi_q) signal, or -1 if not used.
-    int sclk_io_num;                ///< GPIO pin for Spi CLocK signal, or -1 if not used.
-    int quadwp_io_num;              ///< GPIO pin for WP (Write Protect) signal which is used as D2 in 4-bit communication modes, or -1 if not used.
-    int quadhd_io_num;              ///< GPIO pin for HD (HolD) signal which is used as D3 in 4-bit communication modes, or -1 if not used.
-    int max_transfer_sz;            ///< Maximum transfer size, in bytes. Defaults to 4094 if 0.
-    uint32_t flags;                 ///< Abilities of bus to be checked by the driver. Or-ed value of ``SPICOMMON_BUSFLAG_*`` flags.
-    int intr_flags;    /**< Interrupt flag for the bus to set the priority, and IRAM attribute, see
-                         *  ``esp_intr_alloc.h``. Note that the EDGE, INTRDISABLED attribute are ignored
-                         *  by the driver. Note that if ESP_INTR_FLAG_IRAM is set, ALL the callbacks of
-                         *  the driver, and their callee functions, should be put in the IRAM.
-                         */
+    union {
+      int mosi_io_num;    ///< GPIO pin for Master Out Slave In (=spi_d) signal, or -1 if not used.
+      int data0_io_num;   ///< GPIO pin for spi data0 signal in quad/octal mode, or -1 if not used.
+    };
+    union {
+      int miso_io_num;    ///< GPIO pin for Master In Slave Out (=spi_q) signal, or -1 if not used.
+      int data1_io_num;   ///< GPIO pin for spi data1 signal in quad/octal mode, or -1 if not used.
+    };
+    int sclk_io_num;      ///< GPIO pin for SPI Clock signal, or -1 if not used.
+    union {
+      int quadwp_io_num;  ///< GPIO pin for WP (Write Protect) signal, or -1 if not used.
+      int data2_io_num;   ///< GPIO pin for spi data2 signal in quad/octal mode, or -1 if not used.
+    };
+    union {
+      int quadhd_io_num;  ///< GPIO pin for HD (Hold) signal, or -1 if not used.
+      int data3_io_num;   ///< GPIO pin for spi data3 signal in quad/octal mode, or -1 if not used.
+    };
+    int data4_io_num;     ///< GPIO pin for spi data4 signal in octal mode, or -1 if not used.
+    int data5_io_num;     ///< GPIO pin for spi data5 signal in octal mode, or -1 if not used.
+    int data6_io_num;     ///< GPIO pin for spi data6 signal in octal mode, or -1 if not used.
+    int data7_io_num;     ///< GPIO pin for spi data7 signal in octal mode, or -1 if not used.
+    int max_transfer_sz;  ///< Maximum transfer size, in bytes. Defaults to 4092 if 0 when DMA enabled, or to `SOC_SPI_MAXIMUM_BUFFER_SIZE` if DMA is disabled.
+    uint32_t flags;       ///< Abilities of bus to be checked by the driver. Or-ed value of ``SPICOMMON_BUSFLAG_*`` flags.
+    int intr_flags;       /**< Interrupt flag for the bus to set the priority, and IRAM attribute, see
+                           *  ``esp_intr_alloc.h``. Note that the EDGE, INTRDISABLED attribute are ignored
+                           *  by the driver. Note that if ESP_INTR_FLAG_IRAM is set, ALL the callbacks of
+                           *  the driver, and their callee functions, should be put in the IRAM.
+                           */
 } spi_bus_config_t;
 
 
 /**
  * @brief Initialize a SPI bus
  *
- * @warning For now, only supports HSPI and VSPI.
+ * @warning SPI0/1 is not supported
  *
- * @param host_id SPI peripheral that controls this bus
- * @param bus_config Pointer to a spi_bus_config_t struct specifying how the host should be initialized
- * @param dma_chan Either channel 1 or 2, or 0 in the case when no DMA is required. Selecting a DMA channel
- *                 for a SPI bus allows transfers on the bus to have sizes only limited by the amount of
- *                 internal memory. Selecting no DMA channel (by passing the value 0) limits the amount of
- *                 bytes transfered to a maximum of 64. Set to 0 if only the SPI flash uses
- *                 this bus.
+ * @param host_id       SPI peripheral that controls this bus
+ * @param bus_config    Pointer to a spi_bus_config_t struct specifying how the host should be initialized
+ * @param dma_chan      - Selecting a DMA channel for an SPI bus allows transactions on the bus with size only limited by the amount of internal memory.
+ *                      - Selecting SPI_DMA_DISABLED limits the size of transactions.
+ *                      - Set to SPI_DMA_DISABLED if only the SPI flash uses this bus.
+ *                      - Set to SPI_DMA_CH_AUTO to let the driver to allocate the DMA channel.
  *
  * @warning If a DMA channel is selected, any transmit and receive buffer used should be allocated in
  *          DMA-capable memory.
@@ -121,10 +149,11 @@ typedef struct {
  * @return
  *         - ESP_ERR_INVALID_ARG   if configuration is invalid
  *         - ESP_ERR_INVALID_STATE if host already is in use
+ *         - ESP_ERR_NOT_FOUND     if there is no available DMA channel
  *         - ESP_ERR_NO_MEM        if out of memory
  *         - ESP_OK                on success
  */
-esp_err_t spi_bus_initialize(spi_host_device_t host_id, const spi_bus_config_t *bus_config, int dma_chan);
+esp_err_t spi_bus_initialize(spi_host_device_t host_id, const spi_bus_config_t *bus_config, spi_dma_chan_t dma_chan);
 
 /**
  * @brief Free a SPI bus
@@ -134,7 +163,7 @@ esp_err_t spi_bus_initialize(spi_host_device_t host_id, const spi_bus_config_t *
  * @param host_id SPI peripheral to free
  * @return
  *         - ESP_ERR_INVALID_ARG   if parameter is invalid
- *         - ESP_ERR_INVALID_STATE if not all devices on the bus are freed
+ *         - ESP_ERR_INVALID_STATE if bus hasn't been initialized before, or not all devices on the bus are freed
  *         - ESP_OK                on success
  */
 esp_err_t spi_bus_free(spi_host_device_t host_id);

@@ -31,7 +31,6 @@
 
 #include <string.h>
 
-
 static const char *TAG = "esp-netif_lwip-slip";
 
 /**
@@ -101,10 +100,12 @@ esp_err_t esp_netif_start_slip(esp_netif_t *esp_netif)
     // Set the netif up
     netif_set_up(esp_netif->lwip_netif);
     netif_set_link_up(esp_netif->lwip_netif);
+#if CONFIG_LWIP_IPV6
     int8_t addr_index = 0;
 
     netif_ip6_addr_set(esp_netif->lwip_netif, addr_index, (ip6_addr_t *)&slip_ctx->addr);
     netif_ip6_addr_set_state(esp_netif->lwip_netif, addr_index, IP6_ADDR_VALID);
+#endif
     return ESP_OK;
 }
 
@@ -125,12 +126,13 @@ esp_err_t esp_netif_slip_set_params(esp_netif_t *netif, const esp_netif_slip_con
         return ESP_ERR_INVALID_STATE;
     }
 
-    memcpy(&slip_ctx->addr, &slip_config->ip6_addr, sizeof(ip6_addr_t));
+    memcpy(&slip_ctx->addr, &slip_config->ip6_addr, sizeof(esp_ip6_addr_t));
 
 
     return ESP_OK;
 }
 
+#if CONFIG_LWIP_IPV6
 esp_err_t esp_netif_slip_set_ipv6(esp_netif_t *netif, const esp_ip6_addr_t *ipv6)
 {
     lwip_slip_ctx_t *slip_ctx = (lwip_slip_ctx_t *)netif->related_data;
@@ -150,14 +152,13 @@ esp_err_t esp_netif_slip_set_ipv6(esp_netif_t *netif, const esp_ip6_addr_t *ipv6
 
     return ESP_OK;
 }
-
+#endif
 
 /**
  * @brief Write incoming serial data to the SLIP interface
  */
 void esp_netif_lwip_slip_input(void *h, void *buffer, unsigned int len, void *eb)
 {
-#if CONFIG_LWIP_SLIP_SUPPORT
     esp_netif_t *netif = h;
     lwip_slip_ctx_t *slip_ctx = (lwip_slip_ctx_t *)netif->related_data;
     assert(slip_ctx->base.netif_type == SLIP_LWIP_NETIF);
@@ -178,7 +179,6 @@ void esp_netif_lwip_slip_input(void *h, void *buffer, unsigned int len, void *eb
     for (int i = 0; i < len; i++) {
         slipif_process_rxqueue(netif->lwip_netif);
     }
-#endif
 }
 
 /**
@@ -198,7 +198,11 @@ void esp_netif_lwip_slip_raw_output(esp_netif_t *slip_netif, void *buffer, size_
     };
 
     // Call slip if output function to feed data out slip interface
+#if CONFIG_LWIP_IPV6
     lwip_netif->output_ip6(lwip_netif, &p, NULL);
+#else
+    lwip_netif->output(lwip_netif, &p, NULL);
+#endif
 }
 
 /**
@@ -306,4 +310,5 @@ void sio_send(uint8_t c, sio_fd_t fd)
         ESP_LOGD(TAG, "%s: uart_write_bytes error %i", __func__, ret);
     }
 }
+
 #endif /* CONFIG_ESP_NETIF_TCPIP_LWIP */

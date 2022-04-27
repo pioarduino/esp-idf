@@ -1,8 +1,8 @@
 /*  Bluetooth Mesh */
 
 /*
- * Copyright (c) 2017 Intel Corporation
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2017 Intel Corporation
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -751,7 +751,18 @@ static int prov_auth(uint8_t method, uint8_t action, uint8_t size)
             uint32_t num = 0U;
 
             bt_mesh_rand(&num, sizeof(num));
-            num %= div[size - 1];
+
+            if (output == BLE_MESH_BLINK ||
+                output == BLE_MESH_BEEP ||
+                output == BLE_MESH_VIBRATE) {
+                /** NOTE: According to the Bluetooth Mesh Profile Specification
+                 *  Section 5.4.2.4, blink, beep and vibrate should be a random
+                 *  integer between 0 and 10^size.
+                 */
+                num = (num % (div[size - 1] - 1)) + 1;
+            } else {
+                num %= div[size - 1];
+            }
 
             sys_put_be32(num, &link.auth[12]);
             (void)memset(link.auth, 0, 12);
@@ -829,6 +840,7 @@ static void prov_start(const uint8_t *data)
 
 static void send_confirm(void)
 {
+    uint8_t *local_conf = NULL;
     PROV_BUF(cfm, 17);
 
     BT_DBG("ConfInputs[0]   %s", bt_hex(link.conf_inputs, 64));
@@ -861,10 +873,18 @@ static void send_confirm(void)
 
     prov_buf_init(&cfm, PROV_CONFIRM);
 
+    local_conf = net_buf_simple_add(&cfm, 16);
+
     if (bt_mesh_prov_conf(link.conf_key, link.rand, link.auth,
-                          net_buf_simple_add(&cfm, 16))) {
+                          local_conf)) {
         BT_ERR("Unable to generate confirmation value");
         prov_send_fail_msg(PROV_ERR_UNEXP_ERR);
+        return;
+    }
+
+    if (!memcmp(link.conf, local_conf, 16)) {
+        BT_ERR("Confirmation value is identical to ours, rejecting.");
+        prov_send_fail_msg(PROV_ERR_NVAL_FMT);
         return;
     }
 

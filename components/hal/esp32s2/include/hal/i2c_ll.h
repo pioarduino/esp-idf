@@ -16,6 +16,7 @@
 
 #pragma once
 #include "soc/i2c_periph.h"
+#include "soc/i2c_struct.h"
 #include "hal/i2c_types.h"
 
 #ifdef __cplusplus
@@ -25,7 +26,7 @@ extern "C" {
 #define I2C_LL_INTR_MASK          (0x1ffff) /*!< I2C all interrupt bitmap */
 
 /**
- * @brief I2C hardware cmd register filed.
+ * @brief I2C hardware cmd register fields.
  */
 typedef union {
     struct {
@@ -89,6 +90,8 @@ typedef struct {
 #define I2C_LL_SLAVE_RX_INT           (I2C_RXFIFO_WM_INT_ENA_M | I2C_TRANS_COMPLETE_INT_ENA_M)
 // I2C source clock
 #define I2C_LL_CLK_SRC_FREQ(src_clk)  (((src_clk) == I2C_SCLK_REF_TICK) ? 1000*1000 : 80*1000*1000); // Another clock is APB clock
+// I2C max timeout value
+#define I2C_LL_MAX_TIMEOUT I2C_TIME_OUT_REG_V
 /**
  * @brief  Calculate I2C bus frequency
  *
@@ -678,7 +681,7 @@ static inline void i2c_ll_master_clr_rx_it(i2c_dev_t *hw)
 }
 
 /**
- * @brief
+ * @brief Enable I2C slave TX interrupt
  *
  * @param  hw Beginning address of the peripheral registers
  *
@@ -750,7 +753,7 @@ static inline void i2c_ll_slave_clr_rx_it(i2c_dev_t *hw)
 }
 
 /**
- * @brief Reste I2C master FSM. When the master FSM is stuck, call this function to reset the FSM
+ * @brief Reset I2C master FSM. When the master FSM is stuck, call this function to reset the FSM
  *
  * @param  hw Beginning address of the peripheral registers
  *

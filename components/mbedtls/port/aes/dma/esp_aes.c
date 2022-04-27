@@ -31,6 +31,7 @@
 #include "esp_intr_alloc.h"
 #include "driver/periph_ctrl.h"
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "soc/lldesc.h"
 #include "esp_heap_caps.h"
 #include "sys/param.h"
@@ -38,6 +39,7 @@
 #include "esp_crypto_lock.h"
 #include "hal/aes_hal.h"
 #include "aes/esp_aes_internal.h"
+#include "esp_aes_dma_priv.h"
 
 #if CONFIG_IDF_TARGET_ESP32S2
 #include "esp32s2/rom/cache.h"
@@ -52,9 +54,9 @@
 #include "aes/esp_aes_gcm.h"
 #endif
 
-#if SOC_AES_GENERAL_DMA
-#define AES_LOCK() esp_crypto_aes_lock_acquire()
-#define AES_RELEASE() esp_crypto_aes_lock_release()
+#if SOC_AES_GDMA
+#define AES_LOCK() esp_crypto_sha_aes_lock_acquire()
+#define AES_RELEASE() esp_crypto_sha_aes_lock_release()
 #elif SOC_AES_CRYPTO_DMA
 #define AES_LOCK() esp_crypto_dma_lock_acquire()
 #define AES_RELEASE() esp_crypto_dma_lock_release()
@@ -78,7 +80,38 @@ static esp_pm_lock_handle_t s_pm_sleep_lock;
 #endif
 #endif
 
+#if SOC_PSRAM_DMA_CAPABLE
+
+#if (CONFIG_ESP32S2_DATA_CACHE_LINE_16B || CONFIG_ESP32S3_DATA_CACHE_LINE_16B)
+#define DCACHE_LINE_SIZE 16
+#elif (CONFIG_ESP32S2_DATA_CACHE_LINE_32B || CONFIG_ESP32S3_DATA_CACHE_LINE_32B)
+#define DCACHE_LINE_SIZE 32
+#elif CONFIG_ESP32S3_DATA_CACHE_LINE_64B
+#define DCACHE_LINE_SIZE 64
+#endif //(CONFIG_ESP32S2_DATA_CACHE_LINE_16B || CONFIG_ESP32S3_DATA_CACHE_LINE_16B)
+
+#endif //SOC_PSRAM_DMA_CAPABLE
+
 static const char *TAG = "esp-aes";
+
+/* These are static due to:
+ *  * Must be in DMA capable memory, so stack is not a safe place to put them
+ *  * To avoid having to malloc/free them for every DMA operation
+ */
+static DRAM_ATTR lldesc_t s_stream_in_desc;
+static DRAM_ATTR lldesc_t s_stream_out_desc;
+static DRAM_ATTR uint8_t s_stream_in[AES_BLOCK_BYTES];
+static DRAM_ATTR uint8_t s_stream_out[AES_BLOCK_BYTES];
+
+static inline void esp_aes_wait_dma_done(lldesc_t *output)
+{
+    /* Wait for DMA write operation to complete */
+    while (1) {
+        if ( esp_aes_dma_done(output) ) {
+            break;
+        }
+    }
+}
 
 /* Append a descriptor to the chain, set head if chain empty */
 static inline void lldesc_append(lldesc_t **head, lldesc_t *item)
@@ -106,9 +139,8 @@ void esp_aes_acquire_hardware( void )
     /* Enable AES and DMA hardware */
 #if SOC_AES_CRYPTO_DMA
     periph_module_enable(PERIPH_AES_DMA_MODULE);
-#elif SOC_AES_GENERAL_DMA
+#elif SOC_AES_GDMA
     periph_module_enable(PERIPH_AES_MODULE);
-    periph_module_enable(PERIPH_GDMA_MODULE);
 #endif
 }
 
@@ -118,9 +150,8 @@ void esp_aes_release_hardware( void )
     /* Disable AES and DMA hardware */
 #if SOC_AES_CRYPTO_DMA
     periph_module_disable(PERIPH_AES_DMA_MODULE);
-#elif SOC_AES_GENERAL_DMA
+#elif SOC_AES_GDMA
     periph_module_disable(PERIPH_AES_MODULE);
-    periph_module_disable(PERIPH_GDMA_MODULE);
 #endif
 
     AES_RELEASE();
@@ -189,8 +220,12 @@ static void esp_aes_dma_wait_complete(bool use_intr, lldesc_t *output_desc)
 #endif  // CONFIG_PM_ENABLE
     }
 #endif
+    /* Checking this if interrupt is used also, to avoid
+       issues with AES fault injection
+    */
+    aes_hal_wait_done();
 
-    aes_hal_wait_dma_done(output_desc);
+    esp_aes_wait_dma_done(output_desc);
 }
 
 
@@ -275,14 +310,12 @@ cleanup:
 /* Encrypt/decrypt the input using DMA */
 static int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input, unsigned char *output, size_t len, uint8_t *stream_out)
 {
-    lldesc_t stream_in_desc, stream_out_desc;
     lldesc_t *in_desc_head = NULL, *out_desc_head = NULL;
-    lldesc_t *block_desc = NULL, *block_in_desc, *block_out_desc;
+    lldesc_t *out_desc_tail = NULL; /* pointer to the final output descriptor */
+    lldesc_t *block_desc = NULL, *block_in_desc = NULL, *block_out_desc = NULL;
     size_t lldesc_num;
-    uint8_t stream_in[16] = {};
     unsigned stream_bytes = len % AES_BLOCK_BYTES; // bytes which aren't in a full block
     unsigned block_bytes = len - stream_bytes;     // bytes which are in a full block
-    unsigned char *non_icache_input = NULL;
     unsigned blocks = (block_bytes / AES_BLOCK_BYTES) + ((stream_bytes > 0) ? 1 : 0);
     bool use_intr = false;
     bool input_needs_realloc = false;
@@ -304,12 +337,12 @@ static int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input,
 
     if (block_bytes > 0) {
         /* Flush cache if input in external ram */
-#if (CONFIG_SPIRAM_USE_CAPS_ALLOC || CONFIG_SPIRAM_USE_MALLOC)
+#if (CONFIG_SPIRAM && SOC_PSRAM_DMA_CAPABLE)
         if (esp_ptr_external_ram(input)) {
-            Cache_WriteBack_All();
+            Cache_WriteBack_Addr((uint32_t)input, len);
         }
         if (esp_ptr_external_ram(output)) {
-            if (((intptr_t)(output) & 0xF) != 0) {
+            if ((((intptr_t)(output) & (DCACHE_LINE_SIZE - 1)) != 0) || (block_bytes % DCACHE_LINE_SIZE != 0)) {
                 // Non aligned ext-mem buffer
                 output_needs_realloc = true;
             }
@@ -333,7 +366,7 @@ static int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input,
         lldesc_num = lldesc_get_required_num(block_bytes);
 
         /* Allocate both in and out descriptors to save a malloc/free per function call */
-        block_desc = heap_caps_malloc(sizeof(lldesc_t) * lldesc_num * 2, MALLOC_CAP_DMA);
+        block_desc = heap_caps_calloc(lldesc_num * 2, sizeof(lldesc_t), MALLOC_CAP_DMA);
         if (block_desc == NULL) {
             ESP_LOGE(TAG, "Failed to allocate memory");
             ret = -1;
@@ -343,27 +376,39 @@ static int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input,
         block_in_desc = block_desc;
         block_out_desc = block_desc + lldesc_num;
 
-        lldesc_setup_link(block_desc, input, block_bytes, 0);
-        lldesc_setup_link(block_desc + lldesc_num, output, block_bytes, 0);
+        lldesc_setup_link(block_in_desc, input, block_bytes, 0);
+        //Limit max inlink descriptor length to be 16 byte aligned, require for EDMA
+        lldesc_setup_link_constrained(block_out_desc, output, block_bytes, LLDESC_MAX_NUM_PER_DESC_16B_ALIGNED, 0);
+
+        out_desc_tail = &block_out_desc[lldesc_num - 1];
     }
 
     /* Any leftover bytes which are appended as an additional DMA list */
     if (stream_bytes > 0) {
-        memcpy(stream_in, input + block_bytes, stream_bytes);
 
-        lldesc_setup_link(&stream_in_desc, stream_in, AES_BLOCK_BYTES, 0);
-        lldesc_setup_link(&stream_out_desc, stream_out, AES_BLOCK_BYTES, 0);
+        memset(&s_stream_in_desc, 0, sizeof(lldesc_t));
+        memset(&s_stream_out_desc, 0, sizeof(lldesc_t));
+
+        memset(s_stream_in, 0, AES_BLOCK_BYTES);
+        memset(s_stream_out, 0, AES_BLOCK_BYTES);
+
+        memcpy(s_stream_in, input + block_bytes, stream_bytes);
+
+        lldesc_setup_link(&s_stream_in_desc, s_stream_in, AES_BLOCK_BYTES, 0);
+        lldesc_setup_link(&s_stream_out_desc, s_stream_out, AES_BLOCK_BYTES, 0);
 
         if (block_bytes > 0) {
             /* Link with block descriptors*/
-            block_in_desc[lldesc_num - 1].empty = (uint32_t)&stream_in_desc;
-            block_out_desc[lldesc_num - 1].empty = (uint32_t)&stream_out_desc;
+            block_in_desc[lldesc_num - 1].empty = (uint32_t)&s_stream_in_desc;
+            block_out_desc[lldesc_num - 1].empty = (uint32_t)&s_stream_out_desc;
         }
+
+        out_desc_tail = &s_stream_out_desc;
     }
 
     // block buffers are sent to DMA first, unless there aren't any
-    in_desc_head =  (block_bytes > 0) ? block_in_desc : &stream_in_desc;
-    out_desc_head = (block_bytes > 0) ? block_out_desc : &stream_out_desc;
+    in_desc_head =  (block_bytes > 0) ? block_in_desc : &s_stream_in_desc;
+    out_desc_head = (block_bytes > 0) ? block_out_desc : &s_stream_out_desc;
 
 
 #if defined (CONFIG_MBEDTLS_AES_USE_INTERRUPT)
@@ -380,25 +425,30 @@ static int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input,
         aes_hal_interrupt_enable(false);
     }
 
-    aes_hal_transform_dma_start(in_desc_head, out_desc_head, blocks);
-    esp_aes_dma_wait_complete(use_intr, out_desc_head);
+    if (esp_aes_dma_start(in_desc_head, out_desc_head) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_aes_dma_start failed, no DMA channel available");
+        ret = -1;
+        goto cleanup;
+    }
 
-#if (CONFIG_SPIRAM_USE_CAPS_ALLOC || CONFIG_SPIRAM_USE_MALLOC)
+    aes_hal_transform_dma_start(blocks);
+    esp_aes_dma_wait_complete(use_intr, out_desc_tail);
+
+#if (CONFIG_SPIRAM && SOC_PSRAM_DMA_CAPABLE)
     if (block_bytes > 0) {
         if (esp_ptr_external_ram(output)) {
-            Cache_Invalidate_DCache_All();
+            Cache_Invalidate_Addr((uint32_t)output, block_bytes);
         }
     }
 #endif
-
     aes_hal_transform_dma_finish();
 
     if (stream_bytes > 0) {
-        memcpy(output + block_bytes, stream_out, stream_bytes);
+        memcpy(output + block_bytes, s_stream_out, stream_bytes);
+        memcpy(stream_out, s_stream_out, AES_BLOCK_BYTES);
     }
 
 cleanup:
-    free(non_icache_input);
     free(block_desc);
     return ret;
 }
@@ -499,7 +549,13 @@ int esp_aes_process_dma_gcm(esp_aes_context *ctx, const unsigned char *input, un
     }
 
     /* Start AES operation */
-    aes_hal_transform_dma_gcm_start(in_desc_head, out_desc_head, blocks);
+    if (esp_aes_dma_start(in_desc_head, out_desc_head) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_aes_dma_start failed, no DMA channel available");
+        ret = -1;
+        goto cleanup;
+    }
+
+    aes_hal_transform_dma_gcm_start(blocks);
 
     esp_aes_dma_wait_complete(use_intr, out_desc_head);
 

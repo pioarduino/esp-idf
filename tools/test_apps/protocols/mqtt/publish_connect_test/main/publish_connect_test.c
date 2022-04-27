@@ -18,8 +18,8 @@
 
 static const char *TAG = "PUBLISH_CONNECT_TEST";
 
-void connection_test(const char* line);
-void publish_test(const char* line);
+void connection_test(const char *line);
+void publish_test(const char *line);
 
 static void get_string(char *line, size_t size)
 {
@@ -46,8 +46,7 @@ void app_main(void)
 
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
+    esp_log_level_set("TRANSPORT_BASE", ESP_LOG_VERBOSE);
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
     esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 

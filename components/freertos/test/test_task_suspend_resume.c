@@ -89,9 +89,6 @@ TEST_CASE("Suspend/resume task on other core", "[freertos]")
 }
 #endif
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
-// TODO ESP32C3 IDF-2588
-
 /* Task suspends itself, then sets a flag and deletes itself */
 static void task_suspend_self(void *vp_resumed)
 {
@@ -118,7 +115,6 @@ TEST_CASE("Suspend the current running task", "[freertos]")
     // Shouldn't need any delay here, as task should resume on this CPU immediately
     TEST_ASSERT_TRUE(resumed);
 }
-#endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C3)
 
 
 volatile bool timer_isr_fired;
@@ -345,8 +341,8 @@ static void test_scheduler_suspend2(int cpu)
 
     printf("tick_hook_ms[cpu0] = %d, tick_hook_ms[cpu1] = %d\n", tick_hook_ms[0], tick_hook_ms[1]);
 
-    TEST_ASSERT_INT_WITHIN(portTICK_PERIOD_MS, waiting_ms * 2, tick_hook_ms[0]);
-    TEST_ASSERT_INT_WITHIN(portTICK_PERIOD_MS, waiting_ms * 2, tick_hook_ms[1]);
+    TEST_ASSERT_INT_WITHIN(portTICK_PERIOD_MS * 2, waiting_ms * 2, tick_hook_ms[0]);
+    TEST_ASSERT_INT_WITHIN(portTICK_PERIOD_MS * 2, waiting_ms * 2, tick_hook_ms[1]);
     printf("\n");
 }
 

@@ -1,12 +1,14 @@
 from __future__ import unicode_literals
-from tiny_test_fw import Utility
-import debug_backend
+
 import os
-import pexpect
-import serial
 import threading
 import time
+
+import debug_backend
+import pexpect
+import serial
 import ttfw_idf
+from tiny_test_fw import Utility
 
 
 class SerialThread(object):
@@ -33,12 +35,12 @@ class SerialThread(object):
             Utility.console_log('The pyserial thread is still alive', 'O')
 
 
-@ttfw_idf.idf_custom_test(env_tag="test_jtag_arm", group="test-apps")
+@ttfw_idf.idf_custom_test(env_tag='test_jtag_arm', group='test-apps')
 def test_app_loadable_elf(env, extra_data):
-
     rel_project_path = os.path.join('tools', 'test_apps', 'system', 'gdb_loadable_elf')
     app_files = ['gdb_loadable_elf.elf']
-    app = ttfw_idf.LoadableElfTestApp(rel_project_path, app_files, target="esp32")
+    target = 'esp32'
+    app = ttfw_idf.LoadableElfTestApp(rel_project_path, app_files, target=target)
     idf_path = app.get_sdk_path()
     proj_path = os.path.join(idf_path, rel_project_path)
     elf_path = os.path.join(app.binary_path, 'gdb_loadable_elf.elf')
@@ -47,7 +49,7 @@ def test_app_loadable_elf(env, extra_data):
     with SerialThread(esp_log_path):
         openocd_log = os.path.join(proj_path, 'openocd.log')
         gdb_log = os.path.join(proj_path, 'gdb.log')
-        gdb_init = os.path.join(proj_path, 'gdbinit')
+        gdb_init = os.path.join(proj_path, 'gdbinit_' + target)
         gdb_dir = os.path.join(proj_path, 'main')
 
         with ttfw_idf.OCDBackend(openocd_log, app.target):

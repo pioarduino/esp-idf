@@ -1,5 +1,5 @@
-if(IDF_TARGET STREQUAL "esp32")
+if(IDF_TARGET STREQUAL "esp32" OR IDF_TARGET STREQUAL "esp32s3")
     idf_component_register(SRC_DIRS "."
                     PRIV_INCLUDE_DIRS "."
-                    PRIV_REQUIRES cmock test_utils)
+                    PRIV_REQUIRES cmock test_utils esp_ipc)
 endif()

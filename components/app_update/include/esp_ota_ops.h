@@ -1,16 +1,8 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #ifndef _OTA_OPS_H
 #define _OTA_OPS_H
@@ -22,6 +14,7 @@
 #include "esp_partition.h"
 #include "esp_image_format.h"
 #include "esp_flash_partitions.h"
+#include "soc/soc_caps.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -252,6 +245,14 @@ const esp_partition_t* esp_ota_get_next_update_partition(const esp_partition_t *
 esp_err_t esp_ota_get_partition_description(const esp_partition_t *partition, esp_app_desc_t *app_desc);
 
 /**
+ * @brief Returns number of ota partitions provided in partition table.
+ *
+ * @return
+ *  - Number of OTA partitions
+ */
+uint8_t esp_ota_get_app_partition_count(void);
+
+/**
  * @brief This function is called to indicate that the running app is working well.
  *
  * @return
@@ -312,7 +313,7 @@ esp_err_t esp_ota_erase_last_boot_app_partition(void);
  */
 bool esp_ota_check_rollback_is_possible(void);
 
-#if CONFIG_IDF_TARGET_ESP32S2 && (CONFIG_SECURE_BOOT_V2_ENABLED || __DOXYGEN__)
+#if SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS > 1 && (CONFIG_SECURE_BOOT_V2_ENABLED || __DOXYGEN__)
 
 /**
  * Secure Boot V2 public key indexes.
@@ -338,7 +339,7 @@ typedef enum {
  *        - ESP_FAIL: If secure boot v2 has not been enabled.
  */
 esp_err_t esp_ota_revoke_secure_boot_public_key(esp_ota_secure_boot_public_key_index_t index);
-#endif /* CONFIG_IDF_TARGET_ESP32S2 */
+#endif /* SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS > 1 */
 
 #ifdef __cplusplus
 }

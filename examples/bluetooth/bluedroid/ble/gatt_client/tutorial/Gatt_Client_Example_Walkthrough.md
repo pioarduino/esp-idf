@@ -209,7 +209,7 @@ static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
 };
 ```
 
-The initialization of the Application Profile table array includes defining the callback functions for each Profile. These are `gattc_profile_a_event_handler()` and `gattc_profile_a_event_handler()` respectively. In addition, the GATT interface is initialized to the default value of `ESP_GATT_IF_NONE`. Later on, when the Application Profile is registered, the BLE stack returns a GATT interface instance to use with that Application Profile. 
+The initialization of the Application Profile table array includes defining the callback function for Profile. It is `gattc_profile_event_handler()`. In addition, the GATT interface is initialized to the default value of `ESP_GATT_IF_NONE`. Later on, when the Application Profile is registered, the BLE stack returns a GATT interface instance to use with that Application Profile. 
 
 The profile registration triggers an `ESP_GATTC_REG_EVT` event, which is handled by the `esp_gattc_cb()` event handler. The handler takes the GATT interface returned by the event and stores it in the profile table:
 
@@ -437,7 +437,7 @@ esp_log_buffer_hex(GATTC_TAG, gl_profile_tab[PROFILE_A_APP_ID].remote_bda,
 		sizeof(esp_bd_addr_t));
 ```
 
-The typical MTU size for a Bluetooth 4.0 connection is 23 bytes. A client can change the size of MUT, using `esp_ble_gattc_send_mtu_req()` function, which takes the GATT interface and the connection ID. The size of the requested MTU is defined by `esp_ble_gatt_set_local_mtu()`. The server can then accept or reject the request. The ESP32 supports a MTU size of up to 517 bytes, which is defined by the `ESP_GATT_MAX_MTU_SIZE` in `esp_gattc_api.h`. In this example, the MTU size is set to 500 bytes. In case the configuration fails, the returned error is printed:
+The typical MTU size for a Bluetooth 4.0 connection is 23 bytes. A client can change the size of MTU, using `esp_ble_gattc_send_mtu_req()` function, which takes the GATT interface and the connection ID. The size of the requested MTU is defined by `esp_ble_gatt_set_local_mtu()`. The server can then accept or reject the request. The ESP32 supports a MTU size of up to 517 bytes, which is defined by the `ESP_GATT_MAX_MTU_SIZE` in `esp_gattc_api.h`. In this example, the MTU size is set to 500 bytes. In case the configuration fails, the returned error is printed:
 
 ```c
 esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req (gattc_if, conn_id);

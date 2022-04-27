@@ -74,7 +74,7 @@ static void wifi_power_save(void)
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "esp_wifi_set_ps().");
@@ -99,6 +99,10 @@ void app_main(void)
     esp_pm_config_esp32_t pm_config = {
 #elif CONFIG_IDF_TARGET_ESP32S2
     esp_pm_config_esp32s2_t pm_config = {
+#elif CONFIG_IDF_TARGET_ESP32C3
+    esp_pm_config_esp32c3_t pm_config = {
+#elif CONFIG_IDF_TARGET_ESP32S3
+    esp_pm_config_esp32s3_t pm_config = {
 #endif
             .max_freq_mhz = CONFIG_EXAMPLE_MAX_CPU_FREQ_MHZ,
             .min_freq_mhz = CONFIG_EXAMPLE_MIN_CPU_FREQ_MHZ,

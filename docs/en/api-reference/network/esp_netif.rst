@@ -160,7 +160,7 @@ such as softAP and station, are provided in two separate APIs to facilitate simp
 Please note that these functions return the ``esp_netif`` handle, i.e. a pointer to a network interface object allocated and
 configured with default settings, which as a consequence, means that:
 
-* The created object has to be destroyed if a network de-initialization is provided by an application.
+* The created object has to be destroyed if a network de-initialization is provided by an application using :cpp:func:`esp_netif_destroy_default_wifi()`.
 * These *default* interfaces must not be created multiple times, unless the created handle is deleted using :cpp:func:`esp_netif_destroy()`.
 * When using Wifi in ``AP+STA`` mode, both these interfaces has to be created.
 

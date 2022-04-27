@@ -12,16 +12,33 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
+#include "sdkconfig.h"
+#include "soc/soc_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_sleep.h"
 #include "esp_log.h"
-#include "esp32/ulp.h"
-#include "driver/touch_pad.h"
 #include "driver/adc.h"
 #include "driver/rtc_io.h"
-#include "soc/sens_periph.h"
 #include "soc/rtc.h"
+
+#if CONFIG_IDF_TARGET_ESP32
+#include "esp32/ulp.h"
+#endif
+
+#if SOC_TOUCH_SENSOR_NUM > 0
+#include "soc/sens_periph.h"
+#include "driver/touch_pad.h"
+#endif
+
+#ifdef CONFIG_IDF_TARGET_ESP32C3
+#define DEFAULT_WAKEUP_PIN      CONFIG_EXAMPLE_GPIO_WAKEUP_PIN
+#ifdef CONFIG_EXAMPLE_GPIO_WAKEUP_HIGH_LEVEL
+#define DEFAULT_WAKEUP_LEVEL    ESP_GPIO_WAKEUP_GPIO_HIGH
+#else
+#define DEFAULT_WAKEUP_LEVEL    ESP_GPIO_WAKEUP_GPIO_LOW
+#endif
+#endif
 
 static RTC_DATA_ATTR struct timeval sleep_enter_time;
 
@@ -98,6 +115,18 @@ void app_main(void)
             break;
         }
 #endif // CONFIG_EXAMPLE_EXT1_WAKEUP
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
+        case ESP_SLEEP_WAKEUP_GPIO: {
+            uint64_t wakeup_pin_mask = esp_sleep_get_gpio_wakeup_status();
+            if (wakeup_pin_mask != 0) {
+                int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
+                printf("Wake up from GPIO %d\n", pin);
+            } else {
+                printf("Wake up from GPIO\n");
+            }
+            break;
+        }
+#endif //SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
         case ESP_SLEEP_WAKEUP_TIMER: {
             printf("Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
             break;
@@ -155,6 +184,16 @@ void app_main(void)
     esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
 #endif // CONFIG_EXAMPLE_EXT1_WAKEUP
 
+#ifdef CONFIG_EXAMPLE_GPIO_WAKEUP
+    const gpio_config_t config = {
+        .pin_bit_mask = BIT(DEFAULT_WAKEUP_PIN),
+        .mode = GPIO_MODE_INPUT,
+    };
+    ESP_ERROR_CHECK(gpio_config(&config));
+    ESP_ERROR_CHECK(esp_deep_sleep_enable_gpio_wakeup(BIT(DEFAULT_WAKEUP_PIN), DEFAULT_WAKEUP_LEVEL));
+    printf("Enabling GPIO wakeup on pins GPIO%d\n", DEFAULT_WAKEUP_PIN);
+#endif
+
 #ifdef CONFIG_EXAMPLE_TOUCH_WAKEUP
 #if CONFIG_IDF_TARGET_ESP32
     // Initialize touch pad peripheral.
@@ -172,7 +211,7 @@ void app_main(void)
     touch_pad_config(TOUCH_PAD_NUM9, TOUCH_THRESH_NO_USE);
     calibrate_touch_pad(TOUCH_PAD_NUM8);
     calibrate_touch_pad(TOUCH_PAD_NUM9);
-#elif CONFIG_IDF_TARGET_ESP32S2
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
     /* Initialize touch pad peripheral. */
     touch_pad_init();
     /* Only support one touch channel in sleep mode. */
@@ -200,15 +239,19 @@ void app_main(void)
     /* Set sleep touch pad. */
     touch_pad_sleep_channel_enable(TOUCH_PAD_NUM9, true);
     touch_pad_sleep_channel_enable_proximity(TOUCH_PAD_NUM9, false);
+    /* Reducing the operating frequency can effectively reduce power consumption. */
+    touch_pad_sleep_channel_set_work_time(1000, TOUCH_PAD_MEASURE_CYCLE_DEFAULT);
     /* Enable touch sensor clock. Work mode is "timer trigger". */
     touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
     touch_pad_fsm_start();
     vTaskDelay(100 / portTICK_RATE_MS);
-    /* read sleep touch pad value */
-    uint32_t touch_value;
+
+    /* set touchpad wakeup threshold */
+    uint32_t touch_value, wake_threshold;
     touch_pad_sleep_channel_read_smooth(TOUCH_PAD_NUM9, &touch_value);
-    touch_pad_sleep_set_threshold(TOUCH_PAD_NUM9, touch_value * 0.1); //10%
-    printf("test init: touch pad [%d] slp %d, thresh %d\n",
+    wake_threshold = touch_value * 0.1; // wakeup when touch sensor crosses 10% of background level
+    touch_pad_sleep_set_threshold(TOUCH_PAD_NUM9, wake_threshold);
+    printf("Touch pad #%d average: %d, wakeup threshold set to %d\n",
         TOUCH_PAD_NUM9, touch_value, (uint32_t)(touch_value * 0.1));
 #endif
     printf("Enabling touch pad wakeup\n");

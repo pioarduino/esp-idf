@@ -158,6 +158,11 @@ UINT8           active_remote_addr_type;         /* local device address type fo
 BD_FEATURES     peer_le_features;       /* Peer LE Used features mask for the device */
 tBTM_SET_PKT_DATA_LENGTH_CBACK *p_set_pkt_data_cback;
 tBTM_LE_SET_PKT_DATA_LENGTH_PARAMS data_length_params;
+BOOLEAN   data_len_updating;
+// data len update cmd cache
+BOOLEAN   data_len_waiting;
+tBTM_SET_PKT_DATA_LENGTH_CBACK *p_set_data_len_cback_waiting;
+UINT16 tx_len_waiting;
 #endif
 tBTM_PM_MCB     *p_pm_mode_db;          /* Pointer to PM mode control block per ACL link */
 
@@ -550,7 +555,7 @@ typedef struct {
 #endif
     UINT16 auth_mode;                   /* Authentication mode */
 #endif
-#if (BLE_PRIVACY_SPT == TRUE)
+#if (BLE_PRIVACY_SPT == TRUE && (!CONTROLLER_RPA_LIST_ENABLE))
     tBLE_ADDR_TYPE      current_addr_type; /* current adv addr type*/
     BD_ADDR             current_addr;      /* current adv addr*/
     bool                current_addr_valid; /* current addr info is valid or not*/
@@ -669,6 +674,9 @@ struct tBTM_SEC_DEV_REC{
 #if BLE_INCLUDED == TRUE
     tBTM_SEC_BLE        ble;
     tBTM_LE_CONN_PRAMS  conn_params;
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+    tBTM_EXT_CONN_PARAMS ext_conn_params;
+#endif // #if (BLE_50_FEATURE_SUPPORT == TRUE)
 #endif
 
 // btla-specific ++
@@ -953,12 +961,10 @@ extern tBTM_CallbackFunc conn_param_update_cb;
 
 typedef UINT8 tBTM_SEC_ACTION;
 
-/*
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-*/
 
 #if BTM_DYNAMIC_MEMORY == FALSE
 extern tBTM_CB  btm_cb;
@@ -1071,6 +1077,11 @@ void btm_qos_setup_complete (UINT8 status, UINT16 handle, FLOW_SPEC *p_flow);
 void btm_qos_setup_timeout (void *p_tle);
 
 
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+void btm_create_sync_callback(UINT8 status);
+void btm_set_phy_callback(UINT8 status);
+void btm_read_phy_callback(uint8_t hci_status, uint16_t conn_handle, uint8_t tx_phy, uint8_t rx_phy);
+#endif
 /* Internal functions provided by btm_sco.c
 ********************************************
 */

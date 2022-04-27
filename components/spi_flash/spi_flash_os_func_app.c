@@ -1,16 +1,8 @@
-// Copyright 2015-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdarg.h>
 #include <sys/param.h>  //For max/min
@@ -24,7 +16,7 @@
 #include "hal/spi_types.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
-
+#include "esp_compiler.h"
 #include "esp_rom_sys.h"
 
 #include "driver/spi_common_internal.h"
@@ -67,12 +59,16 @@ static inline IRAM_ATTR bool on_spi1_check_yield(spi1_app_func_arg_t* ctx);
 
 IRAM_ATTR static void cache_enable(void* arg)
 {
+#ifndef CONFIG_SPI_FLASH_AUTO_SUSPEND
     g_flash_guard_default_ops.end();
+#endif
 }
 
 IRAM_ATTR static void cache_disable(void* arg)
 {
+#ifndef CONFIG_SPI_FLASH_AUTO_SUSPEND
     g_flash_guard_default_ops.start();
+#endif
 }
 
 static IRAM_ATTR esp_err_t spi_start(void *arg)
@@ -136,11 +132,13 @@ static IRAM_ATTR esp_err_t spi1_flash_os_check_yield(void *arg, uint32_t chip_st
 
 static IRAM_ATTR esp_err_t spi1_flash_os_yield(void *arg, uint32_t* out_status)
 {
+    if (likely(xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)) {
 #ifdef CONFIG_SPI_FLASH_ERASE_YIELD_TICKS
-    vTaskDelay(CONFIG_SPI_FLASH_ERASE_YIELD_TICKS);
+        vTaskDelay(CONFIG_SPI_FLASH_ERASE_YIELD_TICKS);
 #else
-    vTaskDelay(1);
+        vTaskDelay(1);
 #endif
+    }
     on_spi1_yielded((spi1_app_func_arg_t*)arg);
     return ESP_OK;
 }
@@ -230,7 +228,7 @@ esp_err_t esp_flash_init_os_functions(esp_flash_t *chip, int host_id, int* out_d
 
     // Skip initializing the bus lock when the bus is SPI1 and the bus is not shared with SPI Master
     // driver, leaving dev_handle = NULL
-    bool skip_register_dev = (host_id == SPI_HOST);
+    bool skip_register_dev = (host_id == SPI1_HOST);
 #if CONFIG_SPI_FLASH_SHARE_SPI1_BUS
     skip_register_dev = false;
 #endif
@@ -292,6 +290,10 @@ esp_err_t esp_flash_deinit_os_functions(esp_flash_t* chip)
 
 esp_err_t esp_flash_init_main_bus_lock(void)
 {
+    /* The following called functions are only defined if CONFIG_SPI_FLASH_SHARE_SPI1_BUS
+     * is set. Thus, we must not call them if the macro is not defined, else the linker
+     * would trigger errors. */
+#if CONFIG_SPI_FLASH_SHARE_SPI1_BUS
     spi_bus_lock_init_main_bus();
     spi_bus_lock_set_bg_control(g_main_spi_bus_lock, cache_enable, cache_disable, NULL);
 
@@ -300,6 +302,9 @@ esp_err_t esp_flash_init_main_bus_lock(void)
         return err;
     }
     return ESP_OK;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 esp_err_t esp_flash_app_enable_os_functions(esp_flash_t* chip)

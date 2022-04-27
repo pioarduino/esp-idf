@@ -106,7 +106,7 @@ void btc_dm_sec_arg_deep_copy(btc_msg_t *msg, void *dst, void *src)
 
 void btc_dm_sec_evt(tBTA_DM_SEC_EVT event, tBTA_DM_SEC *data)
 {
-    btc_msg_t msg;
+    btc_msg_t msg = {0};
 
     msg.sig = BTC_SIG_API_CB;
     msg.pid = BTC_PID_DM_SEC;
@@ -342,7 +342,7 @@ static void btc_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
            )
 #endif
             if (1) {
-                bt_status_t ret;
+                bt_status_t ret __attribute__((unused));
                 BTC_TRACE_DEBUG("%s: Storing link key. key_type=0x%x",
                           __FUNCTION__, p_auth_cmpl->key_type);
                 ret = btc_storage_add_bonded_device(&bd_addr,
@@ -395,6 +395,7 @@ static void btc_dm_auth_cmpl_evt (tBTA_DM_AUTH_CMPL *p_auth_cmpl)
             break;
         default:
             status =  BT_STATUS_FAIL;
+            break;
         }
     }
 #if (BTC_GAP_BT_INCLUDED == TRUE)

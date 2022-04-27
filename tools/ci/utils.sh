@@ -1,10 +1,5 @@
 # Modified from https://gitlab.com/gitlab-org/gitlab/-/blob/master/scripts/utils.sh
 
-# before each job, we need to check if this job is filtered by bot stage/job filter
-function apply_bot_filter() {
-  python "${IDF_PATH}"/tools/ci/apply_bot_filter.py || exit 0
-}
-
 function add_ssh_keys() {
   local key_string="${1}"
   mkdir -p ~/.ssh
@@ -116,4 +111,14 @@ function retry_failed() {
     info "Done! Spent $duration sec in total"
   fi
   return $exitCode
+}
+
+function internal_pip_install() {
+    project=$1
+    package=$2
+    token_name=${3:-${BOT_TOKEN_NAME}}
+    token=${4:-${BOT_TOKEN}}
+    python=${5:-python}
+
+    $python -m pip install --index-url https://${token_name}:${token}@${GITLAB_HTTPS_HOST}/api/v4/projects/${project}/packages/pypi/simple --force-reinstall --no-deps ${package}
 }

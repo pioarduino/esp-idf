@@ -13,35 +13,40 @@
 # limitations under the License.
 
 """ DUT for IDF applications """
+import collections
+import functools
+import io
 import os
 import os.path
-import sys
 import re
-import functools
-import tempfile
 import subprocess
+import sys
+import tempfile
 import time
+
 import pexpect
+import serial
 
 # python2 and python3 queue package name is different
 try:
     import Queue as _queue
 except ImportError:
-    import queue as _queue
-
+    import queue as _queue  # type: ignore
 
 from serial.tools import list_ports
-
 from tiny_test_fw import DUT, Utility
 
 try:
     import esptool
 except ImportError:  # cheat and use IDF's copy of esptool if available
-    idf_path = os.getenv("IDF_PATH")
+    idf_path = os.getenv('IDF_PATH')
     if not idf_path or not os.path.exists(idf_path):
         raise
-    sys.path.insert(0, os.path.join(idf_path, "components", "esptool_py", "esptool"))
+    sys.path.insert(0, os.path.join(idf_path, 'components', 'esptool_py', 'esptool'))
     import esptool
+
+import espefuse
+import espsecure
 
 
 class IDFToolError(OSError):
@@ -54,14 +59,14 @@ class IDFDUTException(RuntimeError):
 
 class IDFRecvThread(DUT.RecvThread):
 
-    PERFORMANCE_PATTERN = re.compile(r"\[Performance]\[(\w+)]: ([^\r\n]+)\r?\n")
+    PERFORMANCE_PATTERN = re.compile(r'\[Performance]\[(\w+)]: ([^\r\n]+)\r?\n')
     EXCEPTION_PATTERNS = [
         re.compile(r"(Guru Meditation Error: Core\s+\d panic'ed \([\w].*?\))"),
-        re.compile(r"(abort\(\) was called at PC 0x[a-fA-F\d]{8} on core \d)"),
-        re.compile(r"(rst 0x\d+ \(TG\dWDT_SYS_RESET|TGWDT_CPU_RESET\))")
+        re.compile(r'(abort\(\) was called at PC 0x[a-fA-F\d]{8} on core \d)'),
+        re.compile(r'(rst 0x\d+ \(TG\dWDT_SYS_RESET|TGWDT_CPU_RESET\))')
     ]
-    BACKTRACE_PATTERN = re.compile(r"Backtrace:((\s(0x[0-9a-f]{8}):0x[0-9a-f]{8})+)")
-    BACKTRACE_ADDRESS_PATTERN = re.compile(r"(0x[0-9a-f]{8}):0x[0-9a-f]{8}")
+    BACKTRACE_PATTERN = re.compile(r'Backtrace:((\s(0x[0-9a-f]{8}):0x[0-9a-f]{8})+)')
+    BACKTRACE_ADDRESS_PATTERN = re.compile(r'(0x[0-9a-f]{8}):0x[0-9a-f]{8}')
 
     def __init__(self, read, dut):
         super(IDFRecvThread, self).__init__(read, dut)
@@ -71,8 +76,7 @@ class IDFRecvThread(DUT.RecvThread):
     def collect_performance(self, comp_data):
         matches = self.PERFORMANCE_PATTERN.findall(comp_data)
         for match in matches:
-            Utility.console_log("[Performance][{}]: {}".format(match[0], match[1]),
-                                color="orange")
+            Utility.console_log('[Performance][{}]: {}'.format(match[0], match[1]), color='orange')
             self.performance_items.put((match[0], match[1]))
 
     def detect_exception(self, comp_data):
@@ -83,7 +87,7 @@ class IDFRecvThread(DUT.RecvThread):
                 if match:
                     start = match.end()
                     self.exceptions.put(match.group(0))
-                    Utility.console_log("[Exception]: {}".format(match.group(0)), color="red")
+                    Utility.console_log('[Exception]: {}'.format(match.group(0)), color='red')
                 else:
                     break
 
@@ -93,18 +97,18 @@ class IDFRecvThread(DUT.RecvThread):
             match = self.BACKTRACE_PATTERN.search(comp_data, pos=start)
             if match:
                 start = match.end()
-                Utility.console_log("[Backtrace]:{}".format(match.group(1)), color="red")
+                Utility.console_log('[Backtrace]:{}'.format(match.group(1)), color='red')
                 # translate backtrace
                 addresses = self.BACKTRACE_ADDRESS_PATTERN.findall(match.group(1))
-                translated_backtrace = ""
+                translated_backtrace = ''
                 for addr in addresses:
                     ret = self.dut.lookup_pc_address(addr)
                     if ret:
-                        translated_backtrace += ret + "\n"
+                        translated_backtrace += ret + '\n'
                 if translated_backtrace:
-                    Utility.console_log("Translated backtrace\n:" + translated_backtrace, color="yellow")
+                    Utility.console_log('Translated backtrace\n:' + translated_backtrace, color='yellow')
                 else:
-                    Utility.console_log("Failed to translate backtrace", color="yellow")
+                    Utility.console_log('Failed to translate backtrace', color='yellow')
             else:
                 break
 
@@ -123,10 +127,18 @@ def _uses_esptool(func):
         settings = self.port_inst.get_settings()
 
         try:
-            if not self._rom_inst:
-                self._rom_inst = esptool.ESPLoader.detect_chip(self.port_inst)
-            self._rom_inst.connect('hard_reset')
-            esp = self._rom_inst.run_stub()
+            if not self.rom_inst:
+                if not self.secure_boot_en:
+                    self.rom_inst = esptool.ESPLoader.detect_chip(self.port_inst)
+                else:
+                    self.rom_inst = self.get_rom()(self.port_inst)
+            self.rom_inst.connect('hard_reset')
+
+            if (self.secure_boot_en):
+                esp = self.rom_inst
+                esp.flash_spi_attach(0)
+            else:
+                esp = self.rom_inst.run_stub()
 
             ret = func(self, esp, *args, **kwargs)
             # do hard reset after use esptool
@@ -149,7 +161,7 @@ class IDFDUT(DUT.SerialDUT):
 
     # /dev/ttyAMA0 port is listed in Raspberry Pi
     # /dev/tty.Bluetooth-Incoming-Port port is listed in Mac
-    INVALID_PORT_PATTERN = re.compile(r"AMA|Bluetooth")
+    INVALID_PORT_PATTERN = re.compile(r'AMA|Bluetooth')
     # if need to erase NVS partition in start app
     ERASE_NVS = True
     RECV_THREAD_CLS = IDFRecvThread
@@ -159,11 +171,13 @@ class IDFDUT(DUT.SerialDUT):
         self.allow_dut_exception = allow_dut_exception
         self.exceptions = _queue.Queue()
         self.performance_items = _queue.Queue()
-        self._rom_inst = None
+        self.rom_inst = None
+        self.secure_boot_en = self.app.get_sdkconfig_config_value('CONFIG_SECURE_BOOT') and \
+            not self.app.get_sdkconfig_config_value('CONFIG_EFUSE_VIRTUAL')
 
     @classmethod
-    def _get_rom(cls):
-        raise NotImplementedError("This is an abstraction class, method not defined.")
+    def get_rom(cls):
+        raise NotImplementedError('This is an abstraction class, method not defined.')
 
     @classmethod
     def get_mac(cls, app, port):
@@ -176,7 +190,7 @@ class IDFDUT(DUT.SerialDUT):
         """
         esp = None
         try:
-            esp = cls._get_rom()(port)
+            esp = cls.get_rom()(port)
             esp.connect()
             return esp.read_mac()
         except RuntimeError:
@@ -191,7 +205,7 @@ class IDFDUT(DUT.SerialDUT):
     def confirm_dut(cls, port, **kwargs):
         inst = None
         try:
-            expected_rom_class = cls._get_rom()
+            expected_rom_class = cls.get_rom()
         except NotImplementedError:
             expected_rom_class = None
 
@@ -200,7 +214,7 @@ class IDFDUT(DUT.SerialDUT):
             # Otherwise overwrite it in ESP8266DUT
             inst = esptool.ESPLoader.detect_chip(port)
             if expected_rom_class and type(inst) != expected_rom_class:
-                raise RuntimeError("Target not expected")
+                raise RuntimeError('Target not expected')
             return inst.read_mac() is not None, get_target_by_rom_class(type(inst))
         except(esptool.FatalError, RuntimeError):
             return False, None
@@ -208,12 +222,11 @@ class IDFDUT(DUT.SerialDUT):
             if inst is not None:
                 inst._port.close()
 
-    @_uses_esptool
-    def _try_flash(self, esp, erase_nvs, baud_rate):
+    def _try_flash(self, erase_nvs):
         """
-        Called by start_app() to try flashing at a particular baud rate.
+        Called by start_app()
 
-        Structured this way so @_uses_esptool will reconnect each time
+        :return: None
         """
         flash_files = []
         encrypt_files = []
@@ -227,7 +240,7 @@ class IDFDUT(DUT.SerialDUT):
             # and encrypt_files contains the ones to flash encrypted.
             flash_files = self.app.flash_files
             encrypt_files = self.app.encrypt_files
-            encrypt = self.app.flash_settings.get("encrypt", False)
+            encrypt = self.app.flash_settings.get('encrypt', False)
             if encrypt:
                 flash_files = encrypt_files
                 encrypt_files = []
@@ -236,12 +249,12 @@ class IDFDUT(DUT.SerialDUT):
                                for entry in flash_files
                                if entry not in encrypt_files]
 
-            flash_files = [(offs, open(path, "rb")) for (offs, path) in flash_files]
-            encrypt_files = [(offs, open(path, "rb")) for (offs, path) in encrypt_files]
+            flash_files = [(offs, open(path, 'rb')) for (offs, path) in flash_files]
+            encrypt_files = [(offs, open(path, 'rb')) for (offs, path) in encrypt_files]
 
             if erase_nvs:
-                address = self.app.partition_table["nvs"]["offset"]
-                size = self.app.partition_table["nvs"]["size"]
+                address = self.app.partition_table['nvs']['offset']
+                size = self.app.partition_table['nvs']['size']
                 nvs_file = tempfile.TemporaryFile()
                 nvs_file.write(b'\xff' * size)
                 nvs_file.seek(0)
@@ -252,7 +265,7 @@ class IDFDUT(DUT.SerialDUT):
                 # Get the CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT macro
                 # value. If it is set to True, then NVS is always encrypted.
                 sdkconfig_dict = self.app.get_sdkconfig()
-                macro_encryption = "CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT" in sdkconfig_dict
+                macro_encryption = 'CONFIG_SECURE_FLASH_ENCRYPTION_MODE_DEVELOPMENT' in sdkconfig_dict
                 # If the macro is not enabled (plain text flash) or all files
                 # must be encrypted, add NVS to flash_files.
                 if not macro_encryption or encrypt:
@@ -260,37 +273,82 @@ class IDFDUT(DUT.SerialDUT):
                 else:
                     encrypt_files.append((address, nvs_file))
 
-            # fake flasher args object, this is a hack until
-            # esptool Python API is improved
-            class FlashArgs(object):
-                def __init__(self, attributes):
-                    for key, value in attributes.items():
-                        self.__setattr__(key, value)
-
-            # write_flash expects the parameter encrypt_files to be None and not
-            # an empty list, so perform the check here
-            flash_args = FlashArgs({
-                'flash_size': self.app.flash_settings["flash_size"],
-                'flash_mode': self.app.flash_settings["flash_mode"],
-                'flash_freq': self.app.flash_settings["flash_freq"],
-                'addr_filename': flash_files,
-                'encrypt_files': encrypt_files or None,
-                'no_stub': False,
-                'compress': True,
-                'verify': False,
-                'encrypt': encrypt,
-                'ignore_flash_encryption_efuse_setting': False,
-                'erase_all': False,
-            })
-
-            esp.change_baud(baud_rate)
-            esptool.detect_flash_size(esp, flash_args)
-            esptool.write_flash(esp, flash_args)
+            self.write_flash_data(flash_files, encrypt_files, False, encrypt)
         finally:
             for (_, f) in flash_files:
                 f.close()
             for (_, f) in encrypt_files:
                 f.close()
+
+    @_uses_esptool
+    def write_flash_data(self, esp, flash_files=None, encrypt_files=None, ignore_flash_encryption_efuse_setting=True, encrypt=False):
+        """
+        Try flashing at a particular baud rate.
+
+        Structured this way so @_uses_esptool will reconnect each time
+        :return: None
+        """
+        last_error = None
+        for baud_rate in [921600, 115200]:
+            try:
+                # fake flasher args object, this is a hack until
+                # esptool Python API is improved
+                class FlashArgs(object):
+                    def __init__(self, attributes):
+                        for key, value in attributes.items():
+                            self.__setattr__(key, value)
+
+                # write_flash expects the parameter encrypt_files to be None and not
+                # an empty list, so perform the check here
+                flash_args = FlashArgs({
+                    'flash_size': self.app.flash_settings['flash_size'],
+                    'flash_mode': self.app.flash_settings['flash_mode'],
+                    'flash_freq': self.app.flash_settings['flash_freq'],
+                    'addr_filename': flash_files or None,
+                    'encrypt_files': encrypt_files or None,
+                    'no_stub': self.secure_boot_en,
+                    'compress': not self.secure_boot_en,
+                    'verify': False,
+                    'encrypt': encrypt,
+                    'ignore_flash_encryption_efuse_setting': ignore_flash_encryption_efuse_setting,
+                    'erase_all': False,
+                    'after': 'no_reset',
+                })
+
+                esp.change_baud(baud_rate)
+                esptool.detect_flash_size(esp, flash_args)
+                esptool.write_flash(esp, flash_args)
+                break
+            except RuntimeError as e:
+                last_error = e
+        else:
+            raise last_error
+
+    def image_info(self, path_to_file):
+        """
+        get hash256 of app
+
+        :param: path: path to file
+        :return: sha256 appended to app
+        """
+
+        old_stdout = sys.stdout
+        new_stdout = io.StringIO()
+        sys.stdout = new_stdout
+
+        class Args(object):
+            def __init__(self, attributes):
+                for key, value in attributes.items():
+                    self.__setattr__(key, value)
+
+        args = Args({
+            'chip': self.TARGET,
+            'filename': path_to_file,
+        })
+        esptool.image_info(args)
+        output = new_stdout.getvalue()
+        sys.stdout = old_stdout
+        return output
 
     def start_app(self, erase_nvs=ERASE_NVS):
         """
@@ -299,15 +357,50 @@ class IDFDUT(DUT.SerialDUT):
         :param: erase_nvs: whether erase NVS partition during flash
         :return: None
         """
-        last_error = None
-        for baud_rate in [921600, 115200]:
-            try:
-                self._try_flash(erase_nvs, baud_rate)
-                break
-            except RuntimeError as e:
-                last_error = e
-        else:
-            raise last_error
+        self._try_flash(erase_nvs)
+
+    def start_app_no_enc(self):
+        """
+        download and start app.
+
+        :param: erase_nvs: whether erase NVS partition during flash
+        :return: None
+        """
+        flash_files = self.app.flash_files + self.app.encrypt_files
+        self.write_flash(flash_files)
+
+    def write_flash(self, flash_files=None, encrypt_files=None, ignore_flash_encryption_efuse_setting=True, encrypt=False):
+        """
+        Flash files
+
+        :return: None
+        """
+        flash_offs_files = []
+        encrypt_offs_files = []
+        try:
+            if flash_files:
+                flash_offs_files = [(offs, open(path, 'rb')) for (offs, path) in flash_files]
+
+            if encrypt_files:
+                encrypt_offs_files = [(offs, open(path, 'rb')) for (offs, path) in encrypt_files]
+
+            self.write_flash_data(flash_offs_files, encrypt_offs_files, ignore_flash_encryption_efuse_setting, encrypt)
+        finally:
+            for (_, f) in flash_offs_files:
+                f.close()
+            for (_, f) in encrypt_offs_files:
+                f.close()
+
+    def bootloader_flash(self):
+        """
+        download bootloader.
+
+        :return: None
+        """
+        bootloader_path = os.path.join(self.app.binary_path, 'bootloader', 'bootloader.bin')
+        offs = int(self.app.get_sdkconfig()['CONFIG_BOOTLOADER_OFFSET_IN_FLASH'], 0)
+        flash_files = [(offs, bootloader_path)]
+        self.write_flash(flash_files)
 
     @_uses_esptool
     def reset(self, esp):
@@ -326,17 +419,23 @@ class IDFDUT(DUT.SerialDUT):
         :param partition: partition name to erase
         :return: None
         """
-        raise NotImplementedError()  # TODO: implement this
-        # address = self.app.partition_table[partition]["offset"]
-        size = self.app.partition_table[partition]["size"]
-        # TODO can use esp.erase_region() instead of this, I think
-        with open(".erase_partition.tmp", "wb") as f:
-            f.write(chr(0xFF) * size)
+        address = self.app.partition_table[partition]['offset']
+        size = self.app.partition_table[partition]['size']
+        esp.erase_region(address, size)
 
     @_uses_esptool
-    def dump_flush(self, esp, output_file, **kwargs):
+    def erase_flash(self, esp):
         """
-        dump flush
+        erase the flash completely
+
+        :return: None
+        """
+        esp.erase_flash()
+
+    @_uses_esptool
+    def dump_flash(self, esp, output_file, **kwargs):
+        """
+        dump flash
 
         :param output_file: output file name, if relative path, will use sdk path as base path.
         :keyword partition: partition name, dump the partition.
@@ -347,23 +446,41 @@ class IDFDUT(DUT.SerialDUT):
         """
         if os.path.isabs(output_file) is False:
             output_file = os.path.relpath(output_file, self.app.get_log_folder())
-        if "partition" in kwargs:
-            partition = self.app.partition_table[kwargs["partition"]]
-            _address = partition["offset"]
-            _size = partition["size"]
-        elif "address" in kwargs and "size" in kwargs:
-            _address = kwargs["address"]
-            _size = kwargs["size"]
+        if 'partition' in kwargs:
+            partition = self.app.partition_table[kwargs['partition']]
+            _address = partition['offset']
+            _size = partition['size']
+        elif 'address' in kwargs and 'size' in kwargs:
+            _address = kwargs['address']
+            _size = kwargs['size']
         else:
             raise IDFToolError("You must specify 'partition' or ('address' and 'size') to dump flash")
 
         content = esp.read_flash(_address, _size)
-        with open(output_file, "wb") as f:
+        with open(output_file, 'wb') as f:
             f.write(content)
+
+    @staticmethod
+    def _sort_usb_ports(ports):
+        """
+        Move the usb ports to the very beginning
+        :param ports: list of ports
+        :return: list of ports with usb ports at beginning
+        """
+        usb_ports = []
+        rest_ports = []
+        for port in ports:
+            if 'usb' in port.lower():
+                usb_ports.append(port)
+            else:
+                rest_ports.append(port)
+        return usb_ports + rest_ports
 
     @classmethod
     def list_available_ports(cls):
-        ports = [x.device for x in list_ports.comports()]
+        # It will return other kinds of ports as well, such as ttyS* ports.
+        # Give the usb ports higher priority
+        ports = cls._sort_usb_ports([x.device for x in list_ports.comports()])
         espport = os.getenv('ESPPORT')
         if not espport:
             # It's a little hard filter out invalid port with `serial.tools.list_ports.grep()`:
@@ -396,9 +513,9 @@ class IDFDUT(DUT.SerialDUT):
         return ports
 
     def lookup_pc_address(self, pc_addr):
-        cmd = ["%saddr2line" % self.TOOLCHAIN_PREFIX,
-               "-pfiaC", "-e", self.app.elf_file, pc_addr]
-        ret = ""
+        cmd = ['%saddr2line' % self.TOOLCHAIN_PREFIX,
+               '-pfiaC', '-e', self.app.elf_file, pc_addr]
+        ret = ''
         try:
             translation = subprocess.check_output(cmd)
             ret = translation.decode()
@@ -430,7 +547,7 @@ class IDFDUT(DUT.SerialDUT):
 
     def stop_receive(self):
         if self.receive_thread:
-            for name in ["performance_items", "exceptions"]:
+            for name in ['performance_items', 'exceptions']:
                 source_queue = getattr(self.receive_thread, name)
                 dest_queue = getattr(self, name)
                 self._queue_copy(source_queue, dest_queue)
@@ -438,7 +555,7 @@ class IDFDUT(DUT.SerialDUT):
 
     def get_exceptions(self):
         """ Get exceptions detected by DUT receive thread. """
-        return self._get_from_queue("exceptions")
+        return self._get_from_queue('exceptions')
 
     def get_performance_items(self):
         """
@@ -447,66 +564,65 @@ class IDFDUT(DUT.SerialDUT):
 
         :return: a list of performance items.
         """
-        return self._get_from_queue("performance_items")
+        return self._get_from_queue('performance_items')
 
     def close(self):
         super(IDFDUT, self).close()
         if not self.allow_dut_exception and self.get_exceptions():
-            Utility.console_log("DUT exception detected on {}".format(self), color="red")
-            raise IDFDUTException()
+            raise IDFDUTException('DUT exception detected on {}'.format(self))
 
 
 class ESP32DUT(IDFDUT):
-    TARGET = "esp32"
-    TOOLCHAIN_PREFIX = "xtensa-esp32-elf-"
+    TARGET = 'esp32'
+    TOOLCHAIN_PREFIX = 'xtensa-esp32-elf-'
 
     @classmethod
-    def _get_rom(cls):
+    def get_rom(cls):
         return esptool.ESP32ROM
-
-    def erase_partition(self, esp, partition):
-        raise NotImplementedError()
 
 
 class ESP32S2DUT(IDFDUT):
-    TARGET = "esp32s2"
-    TOOLCHAIN_PREFIX = "xtensa-esp32s2-elf-"
+    TARGET = 'esp32s2'
+    TOOLCHAIN_PREFIX = 'xtensa-esp32s2-elf-'
 
     @classmethod
-    def _get_rom(cls):
+    def get_rom(cls):
         return esptool.ESP32S2ROM
+
+
+class ESP32S3DUT(IDFDUT):
+    TARGET = 'esp32s3'
+    TOOLCHAIN_PREFIX = 'xtensa-esp32s3-elf-'
+
+    @classmethod
+    def get_rom(cls):
+        return esptool.ESP32S3ROM
 
     def erase_partition(self, esp, partition):
         raise NotImplementedError()
 
 
 class ESP32C3DUT(IDFDUT):
-    TARGET = "esp32c3"
-    TOOLCHAIN_PREFIX = "riscv32-esp-elf-"
+    TARGET = 'esp32c3'
+    TOOLCHAIN_PREFIX = 'riscv32-esp-elf-'
 
     @classmethod
-    def _get_rom(cls):
+    def get_rom(cls):
         return esptool.ESP32C3ROM
-
-    def erase_partition(self, esp, partition):
-        raise NotImplementedError()
 
 
 class ESP8266DUT(IDFDUT):
-    TARGET = "esp8266"
-    TOOLCHAIN_PREFIX = "xtensa-lx106-elf-"
+    TARGET = 'esp8266'
+    TOOLCHAIN_PREFIX = 'xtensa-lx106-elf-'
 
     @classmethod
-    def _get_rom(cls):
+    def get_rom(cls):
         return esptool.ESP8266ROM
-
-    def erase_partition(self, esp, partition):
-        raise NotImplementedError()
 
 
 def get_target_by_rom_class(cls):
-    for c in [ESP32DUT, ESP32S2DUT, ESP32C3DUT, ESP8266DUT, IDFQEMUDUT]:
-        if c._get_rom() == cls:
+    for c in [ESP32DUT, ESP32S2DUT, ESP32S3DUT, ESP32C3DUT, ESP8266DUT, IDFQEMUDUT]:
+        if c.get_rom() == cls:
             return c.TARGET
     return None
 
@@ -519,47 +635,47 @@ class IDFQEMUDUT(IDFDUT):
     QEMU_SERIAL_PORT = 3334
 
     def __init__(self, name, port, log_file, app, allow_dut_exception=False, **kwargs):
-        self.flash_image = tempfile.NamedTemporaryFile('rb+', suffix=".bin", prefix="qemu_flash_img")
+        self.flash_image = tempfile.NamedTemporaryFile('rb+', suffix='.bin', prefix='qemu_flash_img')
         self.app = app
         self.flash_size = 4 * 1024 * 1024
         self._write_flash_img()
 
         args = [
-            "qemu-system-xtensa",
-            "-nographic",
-            "-machine", self.TARGET,
-            "-drive", "file={},if=mtd,format=raw".format(self.flash_image.name),
-            "-nic", "user,model=open_eth",
-            "-serial", "tcp::{},server,nowait".format(self.QEMU_SERIAL_PORT),
-            "-S",
-            "-global driver=timer.esp32.timg,property=wdt_disable,value=true"]
+            'qemu-system-xtensa',
+            '-nographic',
+            '-machine', self.TARGET,
+            '-drive', 'file={},if=mtd,format=raw'.format(self.flash_image.name),
+            '-nic', 'user,model=open_eth',
+            '-serial', 'tcp::{},server,nowait'.format(self.QEMU_SERIAL_PORT),
+            '-S',
+            '-global driver=timer.esp32.timg,property=wdt_disable,value=true']
         # TODO(IDF-1242): generate a temporary efuse binary, pass it to QEMU
 
-        if "QEMU_BIOS_PATH" in os.environ:
-            args += ["-L", os.environ["QEMU_BIOS_PATH"]]
+        if 'QEMU_BIOS_PATH' in os.environ:
+            args += ['-L', os.environ['QEMU_BIOS_PATH']]
 
-        self.qemu = pexpect.spawn(" ".join(args), timeout=self.DEFAULT_EXPECT_TIMEOUT)
-        self.qemu.expect_exact(b"(qemu)")
+        self.qemu = pexpect.spawn(' '.join(args), timeout=self.DEFAULT_EXPECT_TIMEOUT)
+        self.qemu.expect_exact(b'(qemu)')
         super(IDFQEMUDUT, self).__init__(name, port, log_file, app, allow_dut_exception=allow_dut_exception, **kwargs)
 
     def _write_flash_img(self):
         self.flash_image.seek(0)
         self.flash_image.write(b'\x00' * self.flash_size)
         for offs, path in self.app.flash_files:
-            with open(path, "rb") as flash_file:
+            with open(path, 'rb') as flash_file:
                 contents = flash_file.read()
                 self.flash_image.seek(offs)
                 self.flash_image.write(contents)
         self.flash_image.flush()
 
     @classmethod
-    def _get_rom(cls):
+    def get_rom(cls):
         return esptool.ESP32ROM
 
     @classmethod
     def get_mac(cls, app, port):
         # TODO(IDF-1242): get this from QEMU/efuse binary
-        return "11:22:33:44:55:66"
+        return '11:22:33:44:55:66'
 
     @classmethod
     def confirm_dut(cls, port, **kwargs):
@@ -568,27 +684,30 @@ class IDFQEMUDUT(IDFDUT):
     def start_app(self, erase_nvs=ERASE_NVS):
         # TODO: implement erase_nvs
         # since the flash image is generated every time in the constructor, maybe this isn't needed...
-        self.qemu.sendline(b"cont\n")
-        self.qemu.expect_exact(b"(qemu)")
+        self.qemu.sendline(b'cont\n')
+        self.qemu.expect_exact(b'(qemu)')
 
     def reset(self):
-        self.qemu.sendline(b"system_reset\n")
-        self.qemu.expect_exact(b"(qemu)")
+        self.qemu.sendline(b'system_reset\n')
+        self.qemu.expect_exact(b'(qemu)')
 
     def erase_partition(self, partition):
-        raise NotImplementedError("method not erase_partition not implemented")
+        raise NotImplementedError('method erase_partition not implemented')
 
-    def dump_flush(self, output_file, **kwargs):
-        raise NotImplementedError("method not dump_flush not implemented")
+    def erase_flash(self):
+        raise NotImplementedError('method erase_flash not implemented')
+
+    def dump_flash(self, output_file, **kwargs):
+        raise NotImplementedError('method dump_flash not implemented')
 
     @classmethod
     def list_available_ports(cls):
-        return ["socket://localhost:{}".format(cls.QEMU_SERIAL_PORT)]
+        return ['socket://localhost:{}'.format(cls.QEMU_SERIAL_PORT)]
 
     def close(self):
         super(IDFQEMUDUT, self).close()
-        self.qemu.sendline(b"q\n")
-        self.qemu.expect_exact(b"(qemu)")
+        self.qemu.sendline(b'q\n')
+        self.qemu.expect_exact(b'(qemu)')
         for _ in range(self.DEFAULT_EXPECT_TIMEOUT):
             if not self.qemu.isalive():
                 break
@@ -598,5 +717,172 @@ class IDFQEMUDUT(IDFDUT):
 
 
 class ESP32QEMUDUT(IDFQEMUDUT):
-    TARGET = "esp32"
-    TOOLCHAIN_PREFIX = "xtensa-esp32-elf-"
+    TARGET = 'esp32'  # type: ignore
+    TOOLCHAIN_PREFIX = 'xtensa-esp32-elf-'  # type: ignore
+
+
+class IDFFPGADUT(IDFDUT):
+    TARGET = None                           # type: str
+    TOOLCHAIN_PREFIX = None                 # type: str
+    ERASE_NVS = True
+    FLASH_ENCRYPT_SCHEME = None             # type: str
+    FLASH_ENCRYPT_CNT_KEY = None            # type: str
+    FLASH_ENCRYPT_CNT_VAL = 0
+    FLASH_ENCRYPT_PURPOSE = None            # type: str
+    SECURE_BOOT_EN_KEY = None               # type: str
+    SECURE_BOOT_EN_VAL = 0
+    FLASH_SECTOR_SIZE = 4096
+
+    def __init__(self, name, port, log_file, app, allow_dut_exception=False, efuse_reset_port=None, **kwargs):
+        super(IDFFPGADUT, self).__init__(name, port, log_file, app, allow_dut_exception=allow_dut_exception, **kwargs)
+        self.esp = self.get_rom()(port)
+        self.efuses = None
+        self.efuse_operations = None
+        self.efuse_reset_port = efuse_reset_port
+
+    @classmethod
+    def get_rom(cls):
+        raise NotImplementedError('This is an abstraction class, method not defined.')
+
+    def erase_partition(self, esp, partition):
+        raise NotImplementedError()
+
+    def enable_efuses(self):
+        # We use an extra COM port to reset the efuses on FPGA.
+        # Connect DTR pin of the COM port to the efuse reset pin on daughter board
+        # Set EFUSEPORT env variable to the extra COM port
+        if not self.efuse_reset_port:
+            raise RuntimeError('EFUSEPORT not specified')
+
+        # Stop any previous serial port operation
+        self.stop_receive()
+        if self.secure_boot_en:
+            self.esp.connect()
+        self.efuses, self.efuse_operations = espefuse.get_efuses(self.esp, False, False, True)
+
+    def burn_efuse(self, field, val):
+        if not self.efuse_operations:
+            self.enable_efuses()
+        BurnEfuseArgs = collections.namedtuple('burn_efuse_args', ['name_value_pairs', 'only_burn_at_end'])
+        args = BurnEfuseArgs({field: val}, False)
+        self.efuse_operations.burn_efuse(self.esp, self.efuses, args)
+
+    def burn_efuse_key(self, key, purpose, block):
+        if not self.efuse_operations:
+            self.enable_efuses()
+        BurnKeyArgs = collections.namedtuple('burn_key_args',
+                                             ['keyfile', 'keypurpose', 'block',
+                                              'force_write_always', 'no_write_protect', 'no_read_protect', 'only_burn_at_end'])
+        args = BurnKeyArgs([key],
+                           [purpose],
+                           [block],
+                           False, False, False, False)
+        self.efuse_operations.burn_key(self.esp, self.efuses, args)
+
+    def burn_efuse_key_digest(self, key, purpose, block):
+        if not self.efuse_operations:
+            self.enable_efuses()
+        BurnDigestArgs = collections.namedtuple('burn_key_digest_args',
+                                                ['keyfile', 'keypurpose', 'block',
+                                                 'force_write_always', 'no_write_protect', 'no_read_protect', 'only_burn_at_end'])
+        args = BurnDigestArgs([open(key, 'rb')],
+                              [purpose],
+                              [block],
+                              False, False, True, False)
+        self.efuse_operations.burn_key_digest(self.esp, self.efuses, args)
+
+    def reset_efuses(self):
+        if not self.efuse_reset_port:
+            raise RuntimeError('EFUSEPORT not specified')
+        with serial.Serial(self.efuse_reset_port) as efuseport:
+            print('Resetting efuses')
+            efuseport.dtr = 0
+            self.port_inst.setRTS(1)
+            self.port_inst.setRTS(0)
+            time.sleep(1)
+            efuseport.dtr = 1
+            self.efuse_operations = None
+            self.efuses = None
+
+    def sign_data(self, data_file, key_files, version, append_signature=0):
+        SignDataArgs = collections.namedtuple('sign_data_args',
+                                              ['datafile','keyfile','output', 'version', 'append_signatures'])
+        outfile = tempfile.NamedTemporaryFile()
+        args = SignDataArgs(data_file, key_files, outfile.name, str(version), append_signature)
+        espsecure.sign_data(args)
+        outfile.seek(0)
+        return outfile.read()
+
+
+class ESP32C3FPGADUT(IDFFPGADUT):
+    TARGET = 'esp32c3'
+    TOOLCHAIN_PREFIX = 'riscv32-esp-elf-'
+    FLASH_ENCRYPT_SCHEME = 'AES-XTS'
+    FLASH_ENCRYPT_CNT_KEY = 'SPI_BOOT_CRYPT_CNT'
+    FLASH_ENCRYPT_CNT_VAL = 1
+    FLASH_ENCRYPT_PURPOSE = 'XTS_AES_128_KEY'
+    SECURE_BOOT_EN_KEY = 'SECURE_BOOT_EN'
+    SECURE_BOOT_EN_VAL = 1
+
+    @classmethod
+    def get_rom(cls):
+        return esptool.ESP32C3ROM
+
+    def erase_partition(self, esp, partition):
+        raise NotImplementedError()
+
+    def flash_encrypt_burn_cnt(self):
+        self.burn_efuse(self.FLASH_ENCRYPT_CNT_KEY, self.FLASH_ENCRYPT_CNT_VAL)
+
+    def flash_encrypt_burn_key(self, key, block=0):
+        self.burn_efuse_key(key, self.FLASH_ENCRYPT_PURPOSE, 'BLOCK_KEY%d' % block)
+
+    def flash_encrypt_get_scheme(self):
+        return self.FLASH_ENCRYPT_SCHEME
+
+    def secure_boot_burn_en_bit(self):
+        self.burn_efuse(self.SECURE_BOOT_EN_KEY, self.SECURE_BOOT_EN_VAL)
+
+    def secure_boot_burn_digest(self, digest, key_index=0, block=0):
+        self.burn_efuse_key_digest(digest, 'SECURE_BOOT_DIGEST%d' % key_index, 'BLOCK_KEY%d' % block)
+
+    @classmethod
+    def confirm_dut(cls, port, **kwargs):
+        return True, cls.TARGET
+
+
+class ESP32S3FPGADUT(IDFFPGADUT):
+    TARGET = 'esp32s3'
+    TOOLCHAIN_PREFIX = 'xtensa-esp32s3-elf-'
+    FLASH_ENCRYPT_SCHEME = 'AES-XTS'
+    FLASH_ENCRYPT_CNT_KEY = 'SPI_BOOT_CRYPT_CNT'
+    FLASH_ENCRYPT_CNT_VAL = 1
+    FLASH_ENCRYPT_PURPOSE = 'XTS_AES_128_KEY'
+    SECURE_BOOT_EN_KEY = 'SECURE_BOOT_EN'
+    SECURE_BOOT_EN_VAL = 1
+
+    @classmethod
+    def get_rom(cls):
+        return esptool.ESP32S3ROM
+
+    def erase_partition(self, esp, partition):
+        raise NotImplementedError()
+
+    def flash_encrypt_burn_cnt(self):
+        self.burn_efuse(self.FLASH_ENCRYPT_CNT_KEY, self.FLASH_ENCRYPT_CNT_VAL)
+
+    def flash_encrypt_burn_key(self, key, block=0):
+        self.burn_efuse_key(key, self.FLASH_ENCRYPT_PURPOSE, 'BLOCK_KEY%d' % block)
+
+    def flash_encrypt_get_scheme(self):
+        return self.FLASH_ENCRYPT_SCHEME
+
+    def secure_boot_burn_en_bit(self):
+        self.burn_efuse(self.SECURE_BOOT_EN_KEY, self.SECURE_BOOT_EN_VAL)
+
+    def secure_boot_burn_digest(self, digest, key_index=0, block=0):
+        self.burn_efuse_key_digest(digest, 'SECURE_BOOT_DIGEST%d' % key_index, 'BLOCK_KEY%d' % block)
+
+    @classmethod
+    def confirm_dut(cls, port, **kwargs):
+        return True, cls.TARGET

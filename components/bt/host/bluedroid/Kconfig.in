@@ -42,7 +42,7 @@ config BT_BLUEDROID_MEM_DEBUG
 
 config BT_CLASSIC_ENABLED
     bool "Classic Bluetooth"
-    depends on BT_BLUEDROID_ENABLED
+    depends on BT_BLUEDROID_ENABLED && IDF_TARGET_ESP32
     default n
     help
         For now this option needs "SMP_ENABLE" to be set to yes
@@ -99,12 +99,26 @@ config BT_HFP_WBS_ENABLE
         This enables Wide Band Speech. Should disable it when SCO data path is PCM.
         Otherwise there will be no data transmited via GPIOs.
 
-config BT_HID_HOST_ENABLED
-    bool "Classic BT HID Host"
+config BT_HID_ENABLED
+    bool "Classic BT HID"
     depends on BT_CLASSIC_ENABLED
     default n
     help
         This enables the BT HID Host
+
+choice BT_HID_ROLE
+    prompt "Profile Role configuration"
+    depends on BT_HID_ENABLED
+    config BT_HID_HOST_ENABLED
+        bool "Classic BT HID Host"
+        help
+            This enables the BT HID Host
+
+    config BT_HID_DEVICE_ENABLED
+        bool "Classic BT HID Device"
+        help
+            This enables the BT HID Device
+endchoice
 
 config BT_SSP_ENABLED
     bool "Secure Simple Pairing"
@@ -142,6 +156,16 @@ config BT_BLE_BLUFI_ENABLE
     default n
     help
         This option can be close when the app does not require blufi function.
+
+config BT_GATT_MAX_SR_PROFILES
+    int "Max GATT Server Profiles"
+    depends on BT_GATTS_ENABLE && BT_BLUEDROID_ENABLED
+    range 1 32
+    default 8
+    help
+        Maximum GATT Server Profiles Count
+
+
 
 choice BT_GATTS_SEND_SERVICE_CHANGE_MODE
     prompt "GATTS Service Change Mode"
@@ -182,6 +206,14 @@ config BT_GATTC_CACHE_NVS_FLASH
     default n
     help
         This select can save gattc cache data to nvs flash
+
+config BT_GATTC_CONNECT_RETRY_COUNT
+    int "The number of attempts to reconnect if the connection establishment failed"
+    depends on BT_GATTC_ENABLE
+    range 0 7
+    default 3
+    help
+        The number of attempts to reconnect if the connection establishment failed
 
 config BT_BLE_SMP_ENABLE
     bool "Include BLE security module(SMP)"
@@ -945,7 +977,6 @@ menu "BT DEBUG LOG LEVEL"
 
 endmenu #BT DEBUG LOG LEVEL
 
-
 config BT_ACL_CONNECTIONS
     int "BT/BLE MAX ACL CONNECTIONS(1~7)"
     depends on BT_BLUEDROID_ENABLED
@@ -953,6 +984,13 @@ config BT_ACL_CONNECTIONS
     default 4
     help
         Maximum BT/BLE connection count
+
+config BT_MULTI_CONNECTION_ENBALE
+    bool "Enable BLE multi-conections"
+    depends on BT_BLUEDROID_ENABLED
+    default y
+    help
+        Enable this option if there are multiple connections
 
 config BT_ALLOCATION_FROM_SPIRAM_FIRST
     bool "BT/BLE will first malloc the memory from the PSRAM"
@@ -1002,7 +1040,33 @@ config BT_BLE_ESTAB_LINK_CONN_TOUT
         Bluetooth Connection establishment maximum time, if connection time exceeds this value, the connection
         establishment fails, ESP_GATTC_OPEN_EVT or ESP_GATTS_OPEN_EVT is triggered.
 
-config BT_RESERVE_DRAM
-    hex
-    default 0xdb5c if BT_ENABLED
-    default 0
+config BT_BLE_RPA_SUPPORTED
+    bool "Update RPA to Controller"
+    depends on BT_BLUEDROID_ENABLED
+    default y if (IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32S3)
+    default n if IDF_TARGET_ESP32
+    help
+        This enables controller RPA list function.
+        For ESP32, ESP32 only support network privacy mode. If this option is enabled, ESP32 will only accept
+        advertising packets from peer devices that contain private address, HW will not receive the advertising
+        packets contain identity address after IRK changed. If this option is disabled, address resolution will
+        be performed in the host, so the functions that require controller to resolve address in the white list
+        cannot be used. This option is disabled by default on ESP32, please enable or disable this option according
+        to your own needs.
+
+        For ESP32C3 and esp32s3, devices support network privacy mode and device privacy mode, users can switch the
+        two modes according to their own needs. So this option is enabled by default.
+
+config BT_BLE_50_FEATURES_SUPPORTED
+    bool "Enable BLE 5.0 features"
+    depends on (BT_BLUEDROID_ENABLED && (IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32S3))
+    default y
+    help
+        This enables BLE 5.0 features, this option only support esp32c3/esp32s3 chip
+
+config BT_BLE_42_FEATURES_SUPPORTED
+    bool "Enable BLE 4.2 features"
+    depends on (BT_BLUEDROID_ENABLED && (IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32S3))
+    default n
+    help
+        This enables BLE 4.2 features.

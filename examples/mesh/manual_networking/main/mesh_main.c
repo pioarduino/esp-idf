@@ -136,7 +136,7 @@ void mesh_scan_done_handler(int num)
         esp_wifi_scan_stop();
         scan_config.show_hidden = 1;
         scan_config.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-        ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, 0));
+        esp_wifi_scan_start(&scan_config, 0);
     }
 }
 
@@ -157,7 +157,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         /* mesh softAP is hidden */
         scan_config.show_hidden = 1;
         scan_config.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-        ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, 0));
+        esp_wifi_scan_start(&scan_config, 0);
     }
     break;
     case MESH_EVENT_STOPPED: {
@@ -213,6 +213,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
         last_layer = mesh_layer;
         mesh_connected_indicator(mesh_layer);
         if (esp_mesh_is_root()) {
+            esp_netif_dhcpc_stop(netif_sta);
             esp_netif_dhcpc_start(netif_sta);
         }
     }
@@ -228,7 +229,7 @@ void mesh_event_handler(void *arg, esp_event_base_t event_base,
             esp_wifi_scan_stop();
             scan_config.show_hidden = 1;
             scan_config.scan_type = WIFI_SCAN_TYPE_PASSIVE;
-            ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, 0));
+            esp_wifi_scan_start(&scan_config, 0);
         }
     }
     break;
@@ -322,6 +323,7 @@ void app_main(void)
     /* mesh softAP */
     ESP_ERROR_CHECK(esp_mesh_set_ap_authmode(CONFIG_MESH_AP_AUTHMODE));
     cfg.mesh_ap.max_connection = CONFIG_MESH_AP_CONNECTIONS;
+    cfg.mesh_ap.nonmesh_max_connection = CONFIG_MESH_NON_MESH_AP_CONNECTIONS;
     memcpy((uint8_t *) &cfg.mesh_ap.password, CONFIG_MESH_AP_PASSWD,
            strlen(CONFIG_MESH_AP_PASSWD));
     ESP_ERROR_CHECK(esp_mesh_set_config(&cfg));

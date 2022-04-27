@@ -150,11 +150,12 @@ See :ref:`jtag-debugging-tip-why-next-works-as-step` for potential limitation of
 
 Checking and setting memory
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 To display or set contents of memory use "Memory" tab at the bottom of "Debug" perspective.
 
 With the "Memory" tab, we will read from and write to the memory location ``0x3FF44004`` labeled as ``GPIO_OUT_REG`` used to set and clear individual GPIO's.
 
-For more information please refer to `{IDF_TARGET_NAME} Technical Reference Manual <{IDF_TARGET_TRM_EN_URL}>`__, chapter IO_MUX and GPIO Matrix.
+For more information, see *{IDF_TARGET_NAME} Technical Reference Manual* > *IO MUX and GPIO Matrix (GPIO, IO_MUX)* [`PDF <{IDF_TARGET_TRM_EN_URL}#iomuxgpio>`__].
 
 Being in the same ``blink.c`` project as before, set two breakpoints right after ``gpio_set_level`` instruction. Click "Memory" tab and then "Add Memory Monitor" button. Enter ``0x3FF44004`` in provided dialog.
 
@@ -177,7 +178,6 @@ You should see one bit being flipped over at memory location ``0x3FF44004`` (and
     Observing memory location 0x3FF44004 changing one bit to "OFF"
 
 To set memory use the same "Monitor" tab and the same memory location. Type in alternate bit pattern as previously observed. Immediately after pressing enter you will see LED changing the state.
-
 
 .. _jtag-debugging-examples-eclipse-06:
 
@@ -516,7 +516,7 @@ Displaying the contents of memory is done with command ``x``. With additional pa
 
 We will demonstrate how ``x`` and ``set`` work by reading from and writing to the memory location ``0x3FF44004`` labeled as ``GPIO_OUT_REG`` used to set and clear individual GPIO's.
 
-For more information please refer to `{IDF_TARGET_NAME} Technical Reference Manual <{IDF_TARGET_TRM_EN_URL}>`__, chapter IO_MUX and GPIO Matrix.
+For more information, see *{IDF_TARGET_NAME} Technical Reference Manual* > *IO MUX and GPIO Matrix (GPIO, IO_MUX)* [`PDF <{IDF_TARGET_TRM_EN_URL}#iomuxgpio>`__].
 
 Being in the same ``blink.c`` project as before, set two breakpoints right after ``gpio_set_level`` instruction. Enter two times ``c`` to get to the break point followed by ``x /1wx 0x3FF44004`` to display contents of ``GPIO_OUT_REG`` memory location::
 

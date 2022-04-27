@@ -1,16 +1,8 @@
-// Copyright 2017-2019 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <string.h>
 #include <errno.h>
@@ -100,6 +92,7 @@ _Static_assert(BLE_MESH_MAX_CONN >= CONFIG_BLE_MESH_PBG_SAME_TIME,
 #define PROV_CONF_KEY_SIZE     0x10
 #define PROV_DH_KEY_SIZE       0x20
 #define PROV_CONFIRM_SIZE      0x10
+#define PROV_RANDOM_SIZE       0x10
 #define PROV_PROV_SALT_SIZE    0x10
 #define PROV_CONF_INPUTS_SIZE  0x91
 
@@ -155,6 +148,7 @@ struct prov_link {
 
     uint8_t *rand;              /* Local Random */
     uint8_t *conf;              /* Remote Confirmation */
+    uint8_t *local_conf;        /* Local Confirmation */
 
     uint8_t *prov_salt;         /* Provisioning Salt */
 
@@ -218,12 +212,6 @@ struct bt_mesh_prov_ctx {
 
     /* Provisioning bearers used by Provisioner */
     bt_mesh_prov_bearer_t bearers;
-
-    /* If provisioning random have been generated, set BIT0 to 1 */
-    uint8_t  rand_gen_done;
-
-    /* Provisioner random */
-    uint8_t  random[16];
 
     /* Current number of PB-ADV provisioned devices simultaneously */
     uint8_t  pba_count;
@@ -1256,7 +1244,9 @@ static void prov_memory_free(const uint8_t idx)
 {
     PROV_FREE_MEM(idx, dhkey);
     PROV_FREE_MEM(idx, auth);
+    PROV_FREE_MEM(idx, rand);
     PROV_FREE_MEM(idx, conf);
+    PROV_FREE_MEM(idx, local_conf);
     PROV_FREE_MEM(idx, conf_salt);
     PROV_FREE_MEM(idx, conf_key);
     PROV_FREE_MEM(idx, conf_inputs);
@@ -1932,6 +1922,19 @@ static int prov_auth(const uint8_t idx, uint8_t method, uint8_t action, uint8_t 
         /* Provisioner ouput number/string and wait for device's Provisioning Input Complete PDU */
         link[idx].expect = PROV_INPUT_COMPLETE;
 
+        /* NOTE: The Bluetooth SIG recommends that mesh implementations enforce a randomly
+         * selected AuthValue using all of the available bits, where permitted by the
+         * implementation. A large entropy helps ensure that a brute-force of the AuthValue,
+         * even a static AuthValue, cannot normally be completed in a reasonable time (CVE-2020-26557).
+         *
+         * AuthValues selected using a cryptographically secure random or pseudorandom number
+         * generator and having the maximum permitted entropy (128-bits) will be most difficult
+         * to brute-force. AuthValues with reduced entropy or generated in a predictable manner
+         * will not grant the same level of protection against this vulnerability. Selecting a
+         * new AuthValue with each provisioning attempt can also make it more difficult to launch
+         * a brute-force attack by requiring the attacker to restart the search with each
+         * provisioning attempt (CVE-2020-26556).
+         */
         if (input == BLE_MESH_ENTER_STRING) {
             unsigned char str[9] = {'\0'};
             uint8_t j = 0U;
@@ -1958,7 +1961,17 @@ static int prov_auth(const uint8_t idx, uint8_t method, uint8_t action, uint8_t 
             uint32_t num = 0U;
 
             bt_mesh_rand(&num, sizeof(num));
-            num %= div[size - 1];
+
+            if (input == BLE_MESH_PUSH ||
+                input == BLE_MESH_TWIST) {
+                /** NOTE: According to the Bluetooth Mesh Profile Specification
+                 *  Section 5.4.2.4, push and twist should be a random integer
+                 *  between 0 and 10^size.
+                 */
+                num = (num % (div[size - 1] - 1)) + 1;
+            } else {
+                num %= div[size - 1];
+            }
 
             sys_put_be32(num, &link[idx].auth[12]);
             memset(link[idx].auth, 0, 12);
@@ -1974,6 +1987,7 @@ static int prov_auth(const uint8_t idx, uint8_t method, uint8_t action, uint8_t 
 static void send_confirm(const uint8_t idx)
 {
     PROV_BUF(buf, 17);
+    uint8_t *conf = NULL;
 
     BT_DBG("ConfInputs[0]   %s", bt_hex(link[idx].conf_inputs, 64));
     BT_DBG("ConfInputs[64]  %s", bt_hex(link[idx].conf_inputs + 64, 64));
@@ -2005,31 +2019,36 @@ static void send_confirm(const uint8_t idx)
 
     BT_DBG("ConfirmationKey: %s", bt_hex(link[idx].conf_key, 16));
 
-    /** Provisioner use the same random number for each provisioning
-     *  device, if different random need to be used, here provisioner
-     *  should allocate memory for rand and call bt_mesh_rand() every time.
-     */
-    if (!(prov_ctx.rand_gen_done & BIT(0))) {
-        if (bt_mesh_rand(prov_ctx.random, 16)) {
-            BT_ERR("Failed to generate random number");
-            goto fail;
-        }
-        link[idx].rand = prov_ctx.random;
-        prov_ctx.rand_gen_done |= BIT(0);
-    } else {
-        /* Provisioner random has already been generated. */
-        link[idx].rand = prov_ctx.random;
+    link[idx].rand = bt_mesh_calloc(PROV_RANDOM_SIZE);
+    if (!link[idx].rand) {
+        BT_ERR("%s, Out of memory", __func__);
+        goto fail;
+    }
+
+    if (bt_mesh_rand(link[idx].rand, PROV_RANDOM_SIZE)) {
+        BT_ERR("Failed to generate random number");
+        goto fail;
     }
 
     BT_DBG("LocalRandom: %s", bt_hex(link[idx].rand, 16));
 
     prov_buf_init(&buf, PROV_CONFIRM);
 
-    if (bt_mesh_prov_conf(link[idx].conf_key, link[idx].rand, link[idx].auth,
-                          net_buf_simple_add(&buf, 16))) {
+    conf = net_buf_simple_add(&buf, 16);
+
+    if (bt_mesh_prov_conf(link[idx].conf_key, link[idx].rand,
+                          link[idx].auth, conf)) {
         BT_ERR("Failed to generate confirmation value");
         goto fail;
     }
+
+    link[idx].local_conf = bt_mesh_calloc(PROV_CONFIRM_SIZE);
+    if (!link[idx].local_conf) {
+        BT_ERR("%s, Out of memory", __func__);
+        goto fail;
+    }
+
+    memcpy(link[idx].local_conf, conf, PROV_CONFIRM_SIZE);
 
     if (prov_send(idx, &buf)) {
         BT_ERR("Failed to send Provisioning Confirm");
@@ -2066,7 +2085,7 @@ int bt_mesh_provisioner_set_oob_input_data(const uint8_t idx, const uint8_t *val
     memset(link[idx].auth, 0, 16);
     if (num_flag) {
         /* Provisioner inputs number */
-        memcpy(link[idx].auth + 12, val, sizeof(uint32_t));
+        sys_memcpy_swap(link[idx].auth + 12, val, sizeof(uint32_t));
     } else {
         /* Provisioner inputs string */
         memcpy(link[idx].auth, val, link[idx].auth_size);
@@ -2103,7 +2122,7 @@ int bt_mesh_provisioner_set_oob_output_data(const uint8_t idx, const uint8_t *nu
     if (num_flag) {
         /* Provisioner output number */
         memset(link[idx].auth, 0, 16);
-        memcpy(link[idx].auth + 16 - size, num, size);
+        sys_memcpy_swap(link[idx].auth + 16 - size, num, size);
     } else {
         /* Provisioner output string */
         memset(link[idx].auth, 0, 16);
@@ -2297,6 +2316,17 @@ static void prov_confirm(const uint8_t idx, const uint8_t *data)
     PROV_BUF(buf, 17);
 
     BT_DBG("Remote Confirm: %s", bt_hex(data, 16));
+
+    /* NOTE: The Bluetooth SIG recommends that potentially vulnerable mesh provisioners
+     * restrict the authentication procedure and not accept provisioning random and
+     * provisioning confirmation numbers from a remote peer that are the same as those
+     * selected by the local device (CVE-2020-26560).
+     */
+    if (!memcmp(data, link[idx].local_conf, 16)) {
+        BT_ERR("Confirmation value is identical to ours, rejecting.");
+        close_link(idx, CLOSE_REASON_FAILED);
+        return;
+    }
 
     /* Make sure received pdu is ok and cancel the timeout timer */
     if (bt_mesh_atomic_test_and_clear_bit(link[idx].flags, TIMEOUT_START)) {
@@ -2507,6 +2537,16 @@ static void prov_random(const uint8_t idx, const uint8_t *data)
     uint8_t conf_verify[16] = {0};
 
     BT_DBG("Remote Random: %s", bt_hex(data, 16));
+
+    /* NOTE: The Bluetooth SIG recommends that potentially vulnerable mesh provisioners
+     * restrict the authentication procedure and not accept provisioning random and
+     * provisioning confirmation numbers from a remote peer that are the same as those
+     * selected by the local device (CVE-2020-26560).
+     */
+    if (!memcmp(data, link[idx].rand, 16)) {
+        BT_ERR("Random value is identical to ours, rejecting.");
+        goto fail;
+    }
 
     if (bt_mesh_prov_conf(link[idx].conf_key, data, link[idx].auth, conf_verify)) {
         BT_ERR("Failed to calculate confirmation verification");

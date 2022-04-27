@@ -23,7 +23,11 @@ typedef enum { FALSE = 0, TRUE = 1 } Boolean;
 #define WPA_CIPHER_TKIP                 BIT(1)
 #define WPA_CIPHER_CCMP                 BIT(3)
 #define WPA_CIPHER_AES_128_CMAC         BIT(5)
-#define WPA_CIPHER_GCMP                 BIT(6)
+#define WPA_CIPHER_SMS4                 BIT(10)
+#define WPA_CIPHER_GCMP                 BIT(11)
+#define WPA_CIPHER_GCMP_256             BIT(12)
+#define WPA_CIPHER_BIP_GMAC_128         BIT(13)
+#define WPA_CIPHER_BIP_GMAC_256         BIT(14)
 
 #define WPA_KEY_MGMT_IEEE8021X BIT(0)
 #define WPA_KEY_MGMT_PSK BIT(1)
@@ -134,19 +138,6 @@ enum wifi_key_alg {
 	ALG_AES_CMAC,
 };
 
-enum wpa_alg {
-	WPA_ALG_NONE =0,
-	WPA_ALG_WEP40 = 1,
-	WPA_ALG_TKIP = 2,
-	WPA_ALG_CCMP = 3,
-	WPA_ALG_WAPI = 4,
-	WPA_ALG_WEP104 = 5,
-	WPA_ALG_WEP,
-	WPA_ALG_IGTK,
-	WPA_ALG_PMK,
-	WPA_ALG_GCMP
-};
-
 /**
  * enum wpa_cipher - Cipher suites
  */
@@ -155,7 +146,9 @@ enum wpa_cipher {
 	CIPHER_WEP40,
 	CIPHER_TKIP,
 	CIPHER_CCMP,
-	CIPHER_WEP104
+	CIPHER_WEP104,
+	CIPHER_SMS4,
+	CIPHER_GCMP_256,
 };
 
 /**

@@ -43,6 +43,11 @@ On Linux and macOS, it is recommended to install CMake using the OS-specific pac
 
 ---
 
+.. tool-xtensa-clang-notes
+
+
+---
+
 .. tool-ninja-notes
 
 On Linux and macOS, it is recommended to install ninja using the OS-specific package manager (like apt, yum, brew, etc.). However, for convenience it is possible to install ninja using idf_tools.py along with the other tools.
@@ -60,6 +65,16 @@ On Linux and macOS, it is recommended to install ninja using the OS-specific pac
 ---
 
 .. tool-dfu-util-notes
+
+
+---
+
+.. tool-idf-python-notes
+
+
+---
+
+.. tool-idf-python-wheels-notes
 
 
 ---

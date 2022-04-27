@@ -14,6 +14,8 @@
 #include "soc/soc.h"
 #include "soc/interrupt_reg.h"
 #include "riscv/rvruntime-frames.h"
+#include "soc/soc_caps.h"
+#include "sdkconfig.h"
 
 
 	.equ SAVE_REGS, 32
@@ -123,8 +125,13 @@ _vector_table:
 	j _interrupt_handler		/* 24 identical entries, all pointing to the interrupt handler */
 	.endr
 	j _panic_handler			/* Call panic handler for ETS_T1_WDT_INUM interrupt (soc-level panic)*/
-	j _panic_handler			/* Call panic handler for ETS_CACHEERR_INUM interrupt (soc-level panic)*/
+    j _panic_handler			/* Call panic handler for ETS_CACHEERR_INUM interrupt (soc-level panic)*/
+    #ifdef CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
+    j _panic_handler			/* Call panic handler for ETS_MEMPROT_ERR_INUM interrupt (soc-level panic)*/
+	.rept (ETS_MAX_INUM - ETS_MEMPROT_ERR_INUM)
+	#else
 	.rept (ETS_MAX_INUM - ETS_CACHEERR_INUM)
+	#endif
 	j _interrupt_handler		/* 6 identical entries, all pointing to the interrupt handler */
 	.endr
 
@@ -243,9 +250,25 @@ _interrupt_handler:
 	li t0, 0x8
 	csrrs t0, mstatus, t0
 
+	#ifdef CONFIG_PM_TRACE
+	li      a0, 0       /* = ESP_PM_TRACE_IDLE */
+	#if SOC_CPU_CORES_NUM == 1
+	li      a1, 0       /* No need to check core ID on single core hardware */
+	#else
+	csrr    a1, mhartid
+	#endif
+	la      t0, esp_pm_trace_exit
+	jalr    t0          /* absolute jump, avoid the 1 MiB range constraint */
+	#endif
+
+	#ifdef CONFIG_PM_ENABLE
+	la      t0, esp_pm_impl_isr_hook
+	jalr    t0          /* absolute jump, avoid the 1 MiB range constraint */
+	#endif
+
 	/* call the C dispatcher */
-	mv      a0, sp		/* argument 1, stack pointer */
-	csrr    a1, mcause	/* argument 2, interrupt number */
+	mv      a0, sp      /* argument 1, stack pointer */
+	mv      a1, s1      /* argument 2, interrupt number (mcause) */
 	/* mask off the interrupt flag of mcause */
 	li	    t0, 0x7fffffff
 	and     a1, a1, t0
@@ -253,7 +276,7 @@ _interrupt_handler:
 
 	/* After dispatch c handler, disable interrupt to make freertos make context switch */
 
-	la t0, 0x8
+	li t0, 0x8
 	csrrc t0, mstatus, t0
 
 	/* restore the interrupt threshold level */

@@ -21,9 +21,6 @@ menu "Ethernet"
 
             config ETH_PHY_INTERFACE_RMII
                 bool "Reduced Media Independent Interface (RMII)"
-
-            config ETH_PHY_INTERFACE_MII
-                bool "Media Independent Interface (MII)"
         endchoice
 
         if ETH_PHY_INTERFACE_RMII
@@ -102,6 +99,18 @@ menu "Ethernet"
             help
                 Number of DMA transmit buffers. Each buffer's size is ETH_DMA_BUFFER_SIZE.
                 Larger number of buffers could increase throughput somehow.
+
+        if ETH_DMA_RX_BUFFER_NUM > 15
+            config ETH_SOFT_FLOW_CONTROL
+                bool "Enable software flow control"
+                default n
+                help
+                    Ethernet MAC engine on ESP32 doesn't feature a flow control logic.
+                    The MAC driver can perform a software flow control if you enable this option.
+                    Note that, if the RX buffer number is small, enabling software flow control will
+                    cause obvious performance loss.
+        endif
+
     endif # ETH_USE_ESP32_EMAC
 
     menuconfig ETH_USE_SPI_ETHERNET
@@ -127,6 +136,13 @@ menu "Ethernet"
                 However the driver in ESP-IDF only enables the RAW MAC mode,
                 making it compatible with the software TCP/IP stack.
                 Say yes to enable W5500 driver.
+
+        config ETH_SPI_ETHERNET_KSZ8851SNL
+            bool "Use KSZ8851SNL"
+            help
+                The KSZ8851SNL is a single-chip Fast Ethernet controller consisting of
+                a 10/100 physical layer transceiver (PHY), a MAC, and a Serial Peripheral Interface (SPI).
+                Select this to enable KSZ8851SNL driver.
     endif # ETH_USE_SPI_ETHERNET
 
     menuconfig ETH_USE_OPENETH

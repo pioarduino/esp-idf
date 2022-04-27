@@ -1,5 +1,5 @@
-I2C Driver
-==========
+Inter-Integrated Circuit (I2C)
+==============================
 
 :link_to_translation:`zh_CN:[中文]`
 
@@ -10,8 +10,13 @@ I2C is a serial, synchronous, half-duplex communication protocol that allows co-
 
 With such advantages as simplicity and low manufacturing cost, I2C is mostly used for communication of low-speed peripheral devices over short distances (within one foot).
 
-{IDF_TARGET_NAME} has two I2C controllers (also referred to as ports) which are responsible for handling communications on two I2C buses. Each I2C controller can operate as master or slave. As an example, one controller can act as a master and the other as a slave at the same time.
+.. only:: esp32c3
 
+    {IDF_TARGET_NAME} has only one I2C controller (also referred to as port) which is responsible for handling communications on I2C bus. The I2C controller can operate as master or slave.
+
+.. only:: not esp32c3
+
+    {IDF_TARGET_NAME} has two I2C controllers (also referred to as ports) which are responsible for handling communications on the I2C bus. Each I2C controller can operate as master or slave. As an example, one controller can act as a master and the other as a slave at the same time.
 
 Driver Features
 ---------------
@@ -97,7 +102,7 @@ At this stage, :cpp:func:`i2c_param_config` also sets a few other I2C configurat
 Source Clock Configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Clock sources allocator** is added for supporting different clock sources (Master only). The clock allocator will choose one clock source that meets all the requirements of frequency and capability (as requested in :cpp:member:`i2c_config_t::clk_flags`).
+**Clock sources allocator** is added for supporting different clock sources. The clock allocator will choose one clock source that meets all the requirements of frequency and capability (as requested in :cpp:member:`i2c_config_t::clk_flags`).
 
 When :cpp:member:`i2c_config_t::clk_flags` is 0, the clock allocator will select only according to the desired frequency. If no special capabilities are needed, such as APB, you can configure the clock allocator to select the source clock only according to the desired frequency. For this, set :cpp:member:`i2c_config_t::clk_flags` to 0. For clock characteristics, see the table below.
 
@@ -140,9 +145,52 @@ When :cpp:member:`i2c_config_t::clk_flags` is 0, the clock allocator will select
          - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
 
     Explanations for :cpp:member:`i2c_config_t::clk_flags` are as follows:
-
     1. :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`: Clock's baud rate will not change while APB clock is changing.
     2. :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`: It supports Light-sleep mode, which APB clock cannot do.
+
+.. only:: esp32s3
+
+    .. list-table:: Characteristics of {IDF_TARGET_NAME} clock sources
+       :widths: 5 5 50 20
+       :header-rows: 1
+
+       * - Clock name
+         - Clock frequency
+         - MAX freq for SCL
+         - Clock capabilities
+       * - XTAL clock
+         - 40 MHz
+         - 2 MHz
+         - /
+       * - RTC clock
+         - 20 MHz
+         - 1 MHz
+         - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
+
+.. only:: esp32c3
+
+    .. list-table:: Characteristics of {IDF_TARGET_NAME} clock sources
+       :widths: 5 5 50 100
+       :header-rows: 1
+
+       * - Clock name
+         - Clock frequency
+         - MAX freq for SCL
+         - Clock capabilities
+       * - XTAL clock
+         - 40 MHz
+         - 2 MHz
+         - /
+       * - RTC clock
+         - 20 MHz
+         - 1 MHz
+         - :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`, :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`
+
+Explanations for :cpp:member:`i2c_config_t::clk_flags` are as follows:
+
+1. :c:macro:`I2C_SCLK_SRC_FLAG_AWARE_DFS`: Clock's baud rate will not change while APB clock is changing.
+2. :c:macro:`I2C_SCLK_SRC_FLAG_LIGHT_SLEEP`: It supports Light-sleep mode, which APB clock cannot do.
+3. Some flags may not be supported on {IDF_TARGET_NAME}, reading technical reference manual before using it.
 
 .. note::
 
@@ -158,8 +206,7 @@ After the I2C driver is configured, install it by calling the function :cpp:func
 - Port number, one of the two port numbers from :cpp:type:`i2c_port_t`
 - Master or slave, selected from :cpp:type:`i2c_mode_t`
 - (Slave only) Size of buffers to allocate for sending and receiving data. As I2C is a master-centric bus, data can only go from the slave to the master at the master's request. Therefore, the slave will usually have a send buffer where the slave application writes data. The data remains in the send buffer to be read by the master at the master's own discretion.
-- Flags for allocating the interrupt (see ESP_INTR_FLAG_* values in :component_file:`esp_system/include/esp_intr_alloc.h`)
-
+- Flags for allocating the interrupt (see ESP_INTR_FLAG_* values in :component_file:`esp_hw_support/include/esp_intr_alloc.h`)
 
 .. _i2c-api-master-mode:
 
@@ -260,7 +307,7 @@ A code example showing how to use these functions can be found in :example:`peri
 Interrupt Handling
 ^^^^^^^^^^^^^^^^^^
 
-During driver installation, an interrupt handler is installed by default. However, you can register your own interrupt handler instead of the default one by calling the function :cpp:func:`i2c_isr_register`. When implementing your own interrupt handler, refer to the `{IDF_TARGET_NAME} Technical Reference Manual (PDF) <{IDF_TARGET_TRM_EN_URL}>`_ for the description of interrupts triggered by the I2C controller.
+During driver installation, an interrupt handler is installed by default. However, you can register your own interrupt handler instead of the default one by calling the function :cpp:func:`i2c_isr_register`. When implementing your own interrupt handler, refer to *{IDF_TARGET_NAME} Technical Reference Manual* > *I2C Controller (I2C)* > *Interrupts* [`PDF <{IDF_TARGET_TRM_EN_URL}#i2c>`__] for the description of interrupts triggered by the I2C controller.
 
 To delete an interrupt handler, call :cpp:func:`i2c_isr_free`.
 
@@ -323,6 +370,7 @@ Delete Driver
 
 When the I2C communication is established with the function :cpp:func:`i2c_driver_install` and is not required for some substantial amount of time, the driver may be deinitialized to release allocated resources by calling :cpp:func:`i2c_driver_delete`.
 
+Before calling :cpp:func:`i2c_driver_delete` to remove i2c driver, please make sure that all threads have stopped using the driver in any way, because this function does not guarantee thread safety.
 
 Application Example
 -------------------

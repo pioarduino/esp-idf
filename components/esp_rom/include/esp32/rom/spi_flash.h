@@ -125,6 +125,7 @@ extern "C" {
 
 //Extra dummy for flash read
 #define ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_20M   0
+#define ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_26M   0
 #define ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_40M   1
 #define ESP_ROM_SPIFLASH_DUMMY_LEN_PLUS_80M   2
 
@@ -259,7 +260,7 @@ esp_rom_spiflash_result_t esp_rom_spiflash_read_status(esp_rom_spiflash_chip_t *
 esp_rom_spiflash_result_t esp_rom_spiflash_read_statushigh(esp_rom_spiflash_chip_t *spi, uint32_t *status);
 
 /**
-  * @brief Write status to Falsh status register.
+  * @brief Write status to Flash status register.
   *        Please do not call this function in SDK.
   *
   * @param  esp_rom_spiflash_chip_t *spi : The information for Flash, which is exported from ld file.

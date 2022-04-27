@@ -222,6 +222,15 @@ int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,
 		/* 4 PTKSA replay counters when using WMM */
 		capab |= (RSN_NUM_REPLAY_COUNTERS_16 << 2);
 	}
+
+	if (conf->spp_sup.capable) {
+		capab |= WPA_CAPABILITY_SPP_CAPABLE;
+	}
+
+	if (conf->spp_sup.require) {
+		capab |= WPA_CAPABILITY_SPP_REQUIRED;
+	}
+
 #ifdef CONFIG_IEEE80211W
 	if (conf->ieee80211w != NO_MGMT_FRAME_PROTECTION) {
 		capab |= WPA_CAPABILITY_MFPC;
@@ -353,7 +362,7 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			const u8 *wpa_ie, size_t wpa_ie_len/*,
 			const u8 *mdie, size_t mdie_len*/)
 {
-	struct wpa_ie_data data;
+	struct wpa_ie_data data = {0};
 	int ciphers, key_mgmt, res, version;
 	u32 selector;
 
@@ -363,10 +372,13 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 	if (wpa_ie == NULL || wpa_ie_len < 1)
 		return WPA_INVALID_IE;
 
-	if (wpa_ie[0] == WLAN_EID_RSN)
+	if (wpa_ie[0] == WLAN_EID_RSN) {
 		version = WPA_PROTO_RSN;
-	else
+	} else if (wpa_ie[0] == WLAN_EID_WAPI) {
+		version = WPA_PROTO_WAPI;
+	} else {
 		version = WPA_PROTO_WPA;
+	}
 
 	if (!(wpa_auth->conf.wpa & version)) {
 		wpa_printf( MSG_DEBUG, "Invalid WPA proto (%d) from " MACSTR,
@@ -412,6 +424,9 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 					       data.group_cipher);
 		if (!selector)
 			selector = RSN_CIPHER_SUITE_CCMP;
+	} else if (version == WPA_PROTO_WAPI) {
+		res = 0;
+		selector = WAPI_CIPHER_SUITE_SMS4;
 	} else {
 		res = wpa_parse_wpa_ie_wpa(wpa_ie, wpa_ie_len, &data);
 
@@ -485,6 +500,18 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 			   version == WPA_PROTO_RSN ? "RSN" : "WPA",
 			   data.pairwise_cipher, MAC2STR(sm->addr));
 		return WPA_INVALID_PAIRWISE;
+	}
+
+	if (data.capabilities & WPA_CAPABILITY_SPP_CAPABLE) {
+		sm->spp_sup.capable = SPP_AMSDU_CAP_ENABLE;
+	} else {
+		sm->spp_sup.capable = SPP_AMSDU_CAP_DISABLE;
+	}
+
+	if (data.capabilities & WPA_CAPABILITY_SPP_REQUIRED) {
+		sm->spp_sup.require = SPP_AMSDU_REQ_ENABLE;
+	} else {
+		sm->spp_sup.require = SPP_AMSDU_REQ_DISABLE;
 	}
 
 #ifdef CONFIG_IEEE80211W

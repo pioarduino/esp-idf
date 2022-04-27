@@ -1,8 +1,8 @@
 /*  Bluetooth Mesh */
 
 /*
- * Copyright (c) 2017 Intel Corporation
- * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ * SPDX-FileCopyrightText: 2017 Intel Corporation
+ * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -543,7 +543,7 @@ static void ble_mesh_relay_task_post(bt_mesh_msg_t *msg, uint32_t timeout)
         BT_INFO("Full queue, remove the oldest relay packet");
         /* Remove the oldest relay packet from queue */
         if (xQueueReceive(relay_queue.handle, &old_msg, K_NO_WAIT) != pdTRUE) {
-            BT_ERR("Failed to remove item from queue");
+            BT_ERR("Failed to remove item from relay queue");
             bt_mesh_unref_buf(msg);
             return;
         }
@@ -652,6 +652,7 @@ void bt_mesh_adv_init(void)
     int ret = xTaskCreatePinnedToCore(adv_thread, BLE_MESH_ADV_TASK_NAME, BLE_MESH_ADV_TASK_STACK_SIZE, NULL,
                                       BLE_MESH_ADV_TASK_PRIO, &adv_task.handle, BLE_MESH_ADV_TASK_CORE);
     __ASSERT(ret == pdTRUE, "Failed to create adv thread");
+    (void)ret;
 #endif /* CONFIG_BLE_MESH_FREERTOS_STATIC_ALLOC_EXTERNAL && CONFIG_SPIRAM_CACHE_WORKAROUND && CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY */
 }
 
