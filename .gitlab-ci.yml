@@ -56,7 +56,7 @@ variables:
 
   # Docker images
   BOT_DOCKER_IMAGE_TAG: ":latest"
-  ESP_IDF_DOC_ENV_IMAGE: "$CI_DOCKER_REGISTRY/esp-idf-doc-env:v4.4-1-v4"
+  ESP_IDF_DOC_ENV_IMAGE: "$CI_DOCKER_REGISTRY/esp-idf-doc-env:v4.4-1-v6"
   ESP_ENV_IMAGE: "$CI_DOCKER_REGISTRY/esp-env:v4.4-1"
   AFL_FUZZER_TEST_IMAGE: "$CI_DOCKER_REGISTRY/afl-fuzzer-test:v4.4-1-1"
   CLANG_STATIC_ANALYSIS_IMAGE: "${CI_DOCKER_REGISTRY}/clang-static-analysis:v4.4-1-2"
@@ -68,7 +68,7 @@ variables:
   # target test repo parameters
   TEST_ENV_CONFIG_REPO: "https://gitlab-ci-token:${BOT_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/qa/ci-test-runner-configs.git"
   CI_AUTO_TEST_SCRIPT_REPO_URL: "https://gitlab-ci-token:${BOT_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/qa/auto_test_script.git"
-  CI_AUTO_TEST_SCRIPT_REPO_BRANCH: "ci/v3.1"
+  CI_AUTO_TEST_SCRIPT_REPO_BRANCH: "ci/v4.1"
 
 .setup_tools_unless_target_test: &setup_tools_unless_target_test |
   if [[ -n "$IDF_DONT_USE_MIRRORS" ]]; then
@@ -88,6 +88,7 @@ variables:
 
 before_script:
   - source tools/ci/utils.sh
+  - is_based_on_commits $REQUIRED_ANCESTOR_COMMITS
   - source tools/ci/setup_python.sh
   - add_gitlab_ssh_keys
   - source tools/ci/configure_ci_environment.sh
@@ -99,6 +100,7 @@ before_script:
   before_script:
     - echo "Not setting up GitLab key, not fetching submodules"
     - source tools/ci/utils.sh
+    - is_based_on_commits $REQUIRED_ANCESTOR_COMMITS
     - source tools/ci/setup_python.sh
     - source tools/ci/configure_ci_environment.sh
 
@@ -106,10 +108,12 @@ before_script:
   before_script:
     - echo "Only load utils.sh"
     - source tools/ci/utils.sh
+    - is_based_on_commits $REQUIRED_ANCESTOR_COMMITS
 
 .before_script_macos:
   before_script:
     - source tools/ci/utils.sh
+    - is_based_on_commits $REQUIRED_ANCESTOR_COMMITS
     - export IDF_TOOLS_PATH="${HOME}/.espressif_runner_${CI_RUNNER_ID}_${CI_CONCURRENT_ID}"
     - $IDF_PATH/tools/idf_tools.py install-python-env
     # On macOS, these tools need to be installed

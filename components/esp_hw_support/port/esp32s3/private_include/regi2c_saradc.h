@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,7 @@
  */
 
 #define I2C_SAR_ADC            0X69
-#define I2C_SAR_ADC_HOSTID     0
+#define I2C_SAR_ADC_HOSTID     1
 
 #define ADC_SAR1_ENCAL_GND_ADDR 0x7
 #define ADC_SAR1_ENCAL_GND_ADDR_MSB 5
@@ -53,3 +53,30 @@
 #define ADC_SAR1_SAMPLE_CYCLE_ADDR 0x2
 #define ADC_SAR1_SAMPLE_CYCLE_ADDR_MSB 0x2
 #define ADC_SAR1_SAMPLE_CYCLE_ADDR_LSB 0x0
+
+#define ADC_SARADC_DTEST_RTC_ADDR 0x7
+#define ADC_SARADC_DTEST_RTC_ADDR_MSB 1
+#define ADC_SARADC_DTEST_RTC_ADDR_LSB 0
+
+#define ADC_SARADC_ENT_TSENS_ADDR 0x7
+#define ADC_SARADC_ENT_TSENS_ADDR_MSB 2
+#define ADC_SARADC_ENT_TSENS_ADDR_LSB 2
+
+#define ADC_SARADC_ENT_RTC_ADDR 0x7
+#define ADC_SARADC_ENT_RTC_ADDR_MSB 3
+#define ADC_SARADC_ENT_RTC_ADDR_LSB 3
+
+#define ADC_SARADC_ENCAL_REF_ADDR 0x7
+#define ADC_SARADC_ENCAL_REF_ADDR_MSB 4
+#define ADC_SARADC_ENCAL_REF_ADDR_LSB 4
+
+#define I2C_SARADC_TSENS_DAC 0x6
+#define I2C_SARADC_TSENS_DAC_MSB 3
+#define I2C_SARADC_TSENS_DAC_LSB 0
+
+/**
+ * Restore regi2c analog calibration related configuration registers.
+ * This is a workaround, and is fixed on later chips
+ */
+#define REGI2C_ANA_CALI_PD_WORKAROUND    1
+#define REGI2C_ANA_CALI_BYTE_NUM         8

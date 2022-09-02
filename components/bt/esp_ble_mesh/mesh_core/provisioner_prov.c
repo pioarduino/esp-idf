@@ -74,6 +74,7 @@ _Static_assert(BLE_MESH_MAX_CONN >= CONFIG_BLE_MESH_PBG_SAME_TIME,
 
 #define START_PAYLOAD_MAX      20
 #define CONT_PAYLOAD_MAX       23
+#define START_LAST_SEG_MAX     2
 
 #define START_LAST_SEG(gpc)    (gpc >> 2)
 #define CONT_SEG_INDEX(gpc)    (gpc >> 2)
@@ -2942,6 +2943,12 @@ static void gen_prov_ack(const uint8_t idx, struct prov_rx *rx, struct net_buf_s
         case PROV_START:
             pub_key_oob = link[idx].conf_inputs[13];
             send_pub_key(idx, pub_key_oob);
+            /* For case MESH/PVNR/PROV/BV-04-C, if using OOB public key,
+             * the value of expect_ack_for shall be PROV_PUB_KEY.
+             */
+            if (pub_key_oob) {
+                return;
+            }
             break;
         case PROV_PUB_KEY:
             prov_gen_dh_key(idx);
@@ -2976,6 +2983,12 @@ static void gen_prov_start(const uint8_t idx, struct prov_rx *rx, struct net_buf
     /* Provisioner can not receive zero-length provisioning pdu */
     if (link[idx].rx.buf->len < 1) {
         BT_ERR("Ignoring zero-length provisioning PDU");
+        close_link(idx, CLOSE_REASON_FAILED);
+        return;
+    }
+
+    if (START_LAST_SEG(rx->gpc) > START_LAST_SEG_MAX) {
+        BT_ERR("Invalid SegN 0x%02x", START_LAST_SEG(rx->gpc));
         close_link(idx, CLOSE_REASON_FAILED);
         return;
     }

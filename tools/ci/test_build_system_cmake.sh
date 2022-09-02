@@ -35,6 +35,9 @@
 
 export PATH="$IDF_PATH/tools:$PATH"  # for idf.py
 
+# Some tests assume that ccache is not enabled
+unset IDF_CCACHE_ENABLE
+
 function run_tests()
 {
     FAILURES=
@@ -351,6 +354,24 @@ function run_tests()
     rm sdkconfig
     rm sdkconfig.defaults
 
+    print_status "Compiler flags on build command line are taken into account"
+    clean_build_dir
+    # Backup original source file
+    cp main/main.c main/main.c.bak
+    # Alter source file to check user flag
+    echo -e "\n#ifndef USER_FLAG \n \
+#error \"USER_FLAG is not defined!\" \n \
+#endif\n" >> main/main.c
+    idf.py build -DCMAKE_C_FLAGS=-DUSER_FLAG || failure "User flags should have been taken into account"
+    # Restore original file
+    mv main/main.c.bak main/main.c
+
+    print_status "Compiler flags cannot be overwritten"
+    clean_build_dir
+    # If the compiler flags are overriden, the following build command will
+    # cause issues at link time.
+    idf.py build -DCMAKE_C_FLAGS= -DCMAKE_CXX_FLAGS= || failure "CMake compiler flags have been overriden"
+
     # the next tests use the esp32s2 target
     export other_target=esp32s2
 
@@ -477,6 +498,19 @@ function run_tests()
     (set -euo pipefail && source build.sh)
     popd
     rm -r $IDF_PATH/examples/build_system/cmake/idf_as_lib/build
+
+    print_status "Test build ESP-IDF as a library to a custom CMake projects for all targets"
+    IDF_AS_LIB=$IDF_PATH/examples/build_system/cmake/idf_as_lib
+    # note: we just need to run cmake
+    for TARGET in "esp32" "esp32s2" "esp32s3" "esp32c3" "esp32h2"
+    do
+      echo "Build idf_as_lib for $TARGET target"
+      rm -rf build
+      mkdir -p build && cd build
+      cmake $IDF_AS_LIB -DCMAKE_TOOLCHAIN_FILE=$IDF_PATH/tools/cmake/toolchain-$TARGET.cmake -DTARGET=$TARGET || failure "Failed to generate idf_as_lib build files for target $TARGET"
+      cmake --build . || failure "Failed to build idf_as_lib for target $TARGET"
+      cd ..
+    done
 
     print_status "Building a project with CMake library imported and PSRAM workaround, all files compile with workaround"
     # Test for libraries compiled within ESP-IDF

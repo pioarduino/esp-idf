@@ -850,8 +850,12 @@
 
 /* Maximum local device name length stored btm database.
   '0' disables storage of the local name in BTM */
-#ifndef BTM_MAX_LOC_BD_NAME_LEN
+#if UC_MAX_LOC_BD_NAME_LEN
+#define BTM_MAX_LOC_BD_NAME_LEN     UC_MAX_LOC_BD_NAME_LEN
+#define BTC_MAX_LOC_BD_NAME_LEN     BTM_MAX_LOC_BD_NAME_LEN
+#else
 #define BTM_MAX_LOC_BD_NAME_LEN     64
+#define BTC_MAX_LOC_BD_NAME_LEN     BTM_MAX_LOC_BD_NAME_LEN
 #endif
 
 /* Fixed Default String. When this is defined as null string, the device's
@@ -2171,12 +2175,6 @@ The maximum number of payload octets that the local device can receive in a sing
 /* Enable/disable BTSnoop memory logging */
 #ifndef BTSNOOP_MEM
 #define BTSNOOP_MEM FALSE
-#endif
-
-#if UC_BT_BLUEDROID_MEM_DEBUG
-#define HEAP_MEMORY_DEBUG   TRUE
-#else
-#define HEAP_MEMORY_DEBUG   FALSE
 #endif
 
 #if UC_HEAP_ALLOCATION_FROM_SPIRAM_FIRST

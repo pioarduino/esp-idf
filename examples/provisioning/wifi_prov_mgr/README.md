@@ -1,6 +1,3 @@
-| Supported Targets | ESP32 | ESP32-S2 | ESP32-C3 |
-| ----------------- | ----- | -------- | -------- |
-
 # Wi-Fi Provisioning Manager Example
 
 (See the README.md file in the upper level 'examples' directory for more information about examples.)
@@ -265,6 +262,17 @@ Now erase NVS partition by running the following commands :
 ```
 $IDF_PATH/components/esptool_py/esptool/esptool.py erase_region 0x9000 0x6000
 ```
+
+### Bluetooth Pairing Request during provisioning
+
+ESP-IDF now enforces link encryption requirement while performing GATT write on characteristics of provisioning service. This results in a pairing pop-up dialog, if link is not encrypted. This feature is enabled by default. In order to disable this feature and fallback to earlier behaviour of no pairing pop up during provisioning, please set CONFIG_WIFI_PROV_BLE_FORCE_ENCRYPTION=n in the sdkconfig or unselect the configuration using "idf.py menuconfig" .
+
+```
+Component Config --> Wi-Fi Provisioning Manager --> Force Link Encryption during Characteristic Read/Write
+
+```
+Recompiling the application with above changes should suffice to disable this functionality.
+
 
 ### Unsupported platform
 

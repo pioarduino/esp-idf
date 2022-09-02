@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,8 +29,7 @@
 #include "esp_private/gdma.h"
 #endif
 
-#include "soc/rtc.h"
-
+#include "soc/clk_ctrl_os.h"
 #include "esp_intr_alloc.h"
 #include "esp_err.h"
 #include "esp_check.h"
@@ -101,8 +100,9 @@ typedef struct {
 #ifdef CONFIG_PM_ENABLE
     esp_pm_lock_handle_t pm_lock;
 #endif
-    i2s_hal_context_t hal;       /*!< I2S hal context*/
-    i2s_hal_config_t hal_cfg; /*!< I2S hal configurations*/
+    i2s_hal_context_t hal;      /*!< I2S hal context*/
+    i2s_channel_fmt_t   init_chan_fmt;  /*!< The initial channel format while installing, used for keep left or right mono when switch between mono and stereo */
+    i2s_hal_config_t hal_cfg;   /*!< I2S hal configurations*/
 } i2s_obj_t;
 
 static i2s_obj_t *p_i2s[SOC_I2S_NUM];
@@ -888,123 +888,54 @@ esp_err_t i2s_zero_dma_buffer(i2s_port_t i2s_num)
                    I2S clock operation
   -------------------------------------------------------------*/
 #if SOC_I2S_SUPPORTS_APLL
-/**
- * @brief Get APLL frequency
- */
-static float i2s_apll_get_freq(int bits_per_sample, int sdm0, int sdm1, int sdm2, int odir)
+static esp_err_t i2s_set_apll_freq(uint32_t expt_freq, uint32_t *real_freq)
 {
-    int f_xtal = (int)rtc_clk_xtal_freq_get() * 1000000;
+    uint32_t rtc_xtal_freq = (uint32_t)rtc_clk_xtal_freq_get();
+    ESP_RETURN_ON_FALSE(rtc_xtal_freq, ESP_ERR_INVALID_STATE, TAG, "Get xtal clock frequency failed, it has not been set yet");
 
-#if CONFIG_IDF_TARGET_ESP32
-    /* ESP32 rev0 silicon issue for APLL range/accuracy, please see ESP32 ECO document for more information on this */
-    if (esp_efuse_get_chip_ver() == 0) {
-        sdm0 = 0;
-        sdm1 = 0;
+    /* Reference formula: apll_freq = xtal_freq * (4 + sdm2 + sdm1/256 + sdm0/65536) / ((o_div + 2) * 2)
+     *                                ----------------------------------------------   -----------------
+     *                                     350 MHz <= Numerator <= 500 MHz                Denominator
+     */
+    int o_div = 0; // range: 0~31
+    int sdm0 = 0;  // range: 0~255
+    int sdm1 = 0;  // range: 0~255
+    int sdm2 = 0;  // range: 0~63
+    /* Firstly try to satisfy the condition that the operation frequency of numerator should be greater than 350 MHz,
+     * i.e. xtal_freq * (4 + sdm2 + sdm1/256 + sdm0/65536) >= 350 MHz, '+1' in the following code is to get the ceil value.
+     * With this condition, as we know the 'o_div' can't be greater than 31, then we can calculate the APLL minimum support frequency is
+     * 350 MHz / ((31 + 2) * 2) = 5303031 Hz (for ceil) */
+    o_div = (int)(SOC_APLL_MULTIPLIER_OUT_MIN_HZ / (float)(expt_freq * 2) + 1) - 2;
+    ESP_RETURN_ON_FALSE(o_div < 32, ESP_ERR_INVALID_ARG, TAG, "Expected frequency is too small");
+    if (o_div < 0) {
+        /* Try to satisfy the condition that the operation frequency of numerator should be smaller than 500 MHz,
+         * i.e. xtal_freq * (4 + sdm2 + sdm1/256 + sdm0/65536) <= 500 MHz, we need to get the floor value in the following code.
+         * With this condition, as we know the 'o_div' can't be smaller than 0, then we can calculate the APLL maximum support frequency is
+         * 500 MHz / ((0 + 2) * 2) = 125000000 Hz */
+        o_div = (int)(SOC_APLL_MULTIPLIER_OUT_MAX_HZ / (float)(expt_freq * 2)) - 2;
+        ESP_RETURN_ON_FALSE(o_div >= 0, ESP_ERR_INVALID_ARG, TAG, "Expected frequency is too small");
     }
-#endif
-    float fout = f_xtal * (sdm2 + sdm1 / 256.0f + sdm0 / 65536.0f + 4);
-    if (fout < SOC_I2S_APLL_MIN_FREQ || fout > SOC_I2S_APLL_MAX_FREQ) {
-        return SOC_I2S_APLL_MAX_FREQ;
+    // sdm2 = (int)(((o_div + 2) * 2) * apll_freq / xtal_freq) - 4
+    sdm2 = (int)(((o_div + 2) * 2 * expt_freq) / (rtc_xtal_freq * 1000000)) - 4;
+    // numrator = (((o_div + 2) * 2) * apll_freq / xtal_freq) - 4 - sdm2
+    float numrator = (((o_div + 2) * 2 * expt_freq) / ((float)rtc_xtal_freq * 1000000)) - 4 - sdm2;
+    // If numrator is bigger than 255/256 + 255/65536 + (1/65536)/2 = 1 - (1 / 65536)/2, carry bit to sdm2
+    if (numrator > 1.0 - (1.0 / 65536.0) / 2.0) {
+        sdm2++;
     }
-    float fpll = fout / (2 * (odir + 2)); //== fi2s (N=1, b=0, a=1)
-    return fpll / 2;
-}
+    // If numrator is smaller than (1/65536)/2, keep sdm0 = sdm1 = 0, otherwise calculate sdm0 and sdm1
+    else if (numrator > (1.0 / 65536.0) / 2.0) {
+        // Get the closest sdm1
+        sdm1 = (int)(numrator * 65536.0 + 0.5) / 256;
+        // Get the closest sdm0
+        sdm0 = (int)(numrator * 65536.0 + 0.5) % 256;
+    }
+    rtc_clk_apll_enable(true, sdm0, sdm1, sdm2, o_div);
+    *real_freq = (uint32_t)(rtc_xtal_freq * 1000000 * (4 + sdm2 + (float)sdm1/256.0 + (float)sdm0/65536.0) / (((float)o_div + 2) * 2));
 
-/**
- * @brief     APLL calculate function, was described by following:
- *            APLL Output frequency is given by the formula:
- *
- *            apll_freq = xtal_freq * (4 + sdm2 + sdm1/256 + sdm0/65536)/((o_div + 2) * 2)
- *            apll_freq = fout / ((o_div + 2) * 2)
- *
- *            The dividend in this expression should be in the range of 240 - 600 MHz.
- *            In rev. 0 of ESP32, sdm0 and sdm1 are unused and always set to 0.
- *            * sdm0  frequency adjustment parameter, 0..255
- *            * sdm1  frequency adjustment parameter, 0..255
- *            * sdm2  frequency adjustment parameter, 0..63
- *            * o_div  frequency divider, 0..31
- *
- *            The most accurate way to find the sdm0..2 and odir parameters is to loop through them all,
- *            then apply the above formula, finding the closest frequency to the desired one.
- *            But 256*256*64*32 = 134,217,728 loops are too slow with ESP32
- *            1. We will choose the parameters with the highest level of change,
- *               With 350MHz<fout<500MHz, we limit the sdm2 from 4 to 9,
- *               Take average frequency close to the desired frequency, and select sdm2
- *            2. Next, we look for sequences of less influential and more detailed parameters,
- *               also by taking the average of the largest and smallest frequencies closer to the desired frequency.
- *            3. And finally, loop through all the most detailed of the parameters, finding the best desired frequency
- *
- * @param[in]       rate             The I2S Frequency (MCLK)
- * @param[in]       bits_per_sample  The bits per sample
- * @param[out]      sdm0             The sdm 0
- * @param[out]      sdm1             The sdm 1
- * @param[out]      sdm2             The sdm 2
- * @param[out]      odir             The odir
- */
-static void i2s_apll_calculate_fi2s(int rate, int bits_per_sample, int *sdm0, int *sdm1, int *sdm2, int *odir)
-{
-    int _odir, _sdm0, _sdm1, _sdm2;
-    float avg;
-    float min_rate, max_rate, min_diff;
-
-    *sdm0 = 0;
-    *sdm1 = 0;
-    *sdm2 = 0;
-    *odir = 0;
-    min_diff = SOC_I2S_APLL_MAX_FREQ;
-
-    for (_sdm2 = 4; _sdm2 < 9; _sdm2 ++) {
-        max_rate = i2s_apll_get_freq(bits_per_sample, 255, 255, _sdm2, 0);
-        min_rate = i2s_apll_get_freq(bits_per_sample, 0, 0, _sdm2, 31);
-        avg = (max_rate + min_rate) / 2;
-        if (abs(avg - rate) < min_diff) {
-            min_diff = abs(avg - rate);
-            *sdm2 = _sdm2;
-        }
-    }
-    min_diff = SOC_I2S_APLL_MAX_FREQ;
-    for (_odir = 0; _odir < 32; _odir ++) {
-        max_rate = i2s_apll_get_freq(bits_per_sample, 255, 255, *sdm2, _odir);
-        min_rate = i2s_apll_get_freq(bits_per_sample, 0, 0, *sdm2, _odir);
-        avg = (max_rate + min_rate) / 2;
-        if (abs(avg - rate) < min_diff) {
-            min_diff = abs(avg - rate);
-            *odir = _odir;
-        }
-    }
-    min_diff = SOC_I2S_APLL_MAX_FREQ;
-    for (_sdm2 = 4; _sdm2 < 9; _sdm2 ++) {
-        max_rate = i2s_apll_get_freq(bits_per_sample, 255, 255, _sdm2, *odir);
-        min_rate = i2s_apll_get_freq(bits_per_sample, 0, 0, _sdm2, *odir);
-        avg = (max_rate + min_rate) / 2;
-        if (abs(avg - rate) < min_diff) {
-            min_diff = abs(avg - rate);
-            *sdm2 = _sdm2;
-        }
-    }
-
-    min_diff = SOC_I2S_APLL_MAX_FREQ;
-    for (_sdm1 = 0; _sdm1 < 256; _sdm1 ++) {
-        max_rate = i2s_apll_get_freq(bits_per_sample, 255, _sdm1, *sdm2, *odir);
-        min_rate = i2s_apll_get_freq(bits_per_sample, 0, _sdm1, *sdm2, *odir);
-        avg = (max_rate + min_rate) / 2;
-        if (abs(avg - rate) < min_diff) {
-            min_diff = abs(avg - rate);
-            *sdm1 = _sdm1;
-        }
-    }
-
-    min_diff = SOC_I2S_APLL_MAX_FREQ;
-    for (_sdm0 = 0; _sdm0 < 256; _sdm0 ++) {
-        avg = i2s_apll_get_freq(bits_per_sample, _sdm0, *sdm1, *sdm2, *odir);
-        if (abs(avg - rate) < min_diff) {
-            min_diff = abs(avg - rate);
-            *sdm0 = _sdm0;
-        }
-    }
+    return ESP_OK;
 }
 #endif
-
 /**
  * @brief   Config I2S source clock and get its frequency
  *
@@ -1020,21 +951,26 @@ static uint32_t i2s_config_source_clock(i2s_port_t i2s_num, bool use_apll, uint3
 {
 #if SOC_I2S_SUPPORTS_APLL
     if (use_apll) {
-        int sdm0 = 0;
-        int sdm1 = 0;
-        int sdm2 = 0;
-        int odir = 0;
-        if ((mclk / p_i2s[i2s_num]->hal_cfg.chan_bits / p_i2s[i2s_num]->hal_cfg.total_chan) < SOC_I2S_APLL_MIN_RATE) {
-            ESP_LOGE(TAG, "mclk is too small");
+        /* Calculate the expected APLL  */
+        int div = (int)((SOC_APLL_MIN_HZ / mclk) + 1);
+        /* apll_freq = mclk * div
+         * when div = 1, hardware will still divide 2
+         * when div = 0, the final mclk will be unpredictable
+         * So the div here should be at least 2 */
+        div = div < 2 ? 2 : div;
+        uint32_t expt_freq = mclk * div;
+        /* Set APLL coefficients to the given frequency */
+        uint32_t real_freq = 0;
+        esp_err_t ret = i2s_set_apll_freq(expt_freq, &real_freq);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "set APLL coefficients failed");
             return 0;
         }
-        i2s_apll_calculate_fi2s(mclk, p_i2s[i2s_num]->hal_cfg.sample_bits, &sdm0, &sdm1, &sdm2, &odir);
-        ESP_LOGI(TAG, "APLL Enabled, coefficient: sdm0=%d, sdm1=%d, sdm2=%d, odir=%d", sdm0, sdm1, sdm2, odir);
-        rtc_clk_apll_enable(true, sdm0, sdm1, sdm2, odir);
+        ESP_LOGI(TAG, "APLL expected frequency is %d Hz, real frequency is %d Hz", expt_freq, real_freq);
         /* Set I2S_APLL as I2S module clock source */
         i2s_hal_set_clock_src(&(p_i2s[i2s_num]->hal), I2S_CLK_APLL);
         /* In APLL mode, there is no sclk but only mclk, so return 0 here to indicate APLL mode */
-        return 0;
+        return real_freq;
     }
     /* Set I2S_D2CLK (160M) as default I2S module clock source */
     i2s_hal_set_clock_src(&(p_i2s[i2s_num]->hal), I2S_CLK_D2CLK);
@@ -1065,9 +1001,9 @@ static esp_err_t i2s_calculate_adc_dac_clock(int i2s_num, i2s_hal_clock_cfg_t *c
     ESP_RETURN_ON_FALSE(p_i2s[i2s_num]->hal_cfg.mode & (I2S_MODE_DAC_BUILT_IN | I2S_MODE_ADC_BUILT_IN), ESP_ERR_INVALID_ARG, TAG, "current mode is not built-in ADC/DAC");
 
     /* Set I2S bit clock */
-    clk_cfg->bclk = p_i2s[i2s_num]->hal_cfg.sample_rate * I2S_LL_AD_BCK_FACTOR * 2;
+    clk_cfg->bclk = p_i2s[i2s_num]->hal_cfg.sample_rate * I2S_LL_AD_BCK_FACTOR;
     /* Set I2S bit clock default division */
-    clk_cfg->bclk_div = I2S_LL_AD_BCK_FACTOR;
+    clk_cfg->bclk_div = p_i2s[i2s_num]->hal_cfg.chan_bits;
     /* If fixed_mclk and use_apll are set, use fixed_mclk as mclk frequency, otherwise calculate by mclk = sample_rate * multiple */
     clk_cfg->mclk = (p_i2s[i2s_num]->use_apll && p_i2s[i2s_num]->fixed_mclk) ?
                     p_i2s[i2s_num]->fixed_mclk : clk_cfg->bclk * clk_cfg->bclk_div;
@@ -1079,7 +1015,7 @@ static esp_err_t i2s_calculate_adc_dac_clock(int i2s_num, i2s_hal_clock_cfg_t *c
     clk_cfg->mclk_div = clk_cfg->sclk / clk_cfg->mclk;
 
     /* Check if the configuration is correct */
-    ESP_RETURN_ON_FALSE(!clk_cfg->sclk || clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
 
     return ESP_OK;
 }
@@ -1117,7 +1053,7 @@ static esp_err_t i2s_calculate_pdm_tx_clock(int i2s_num, i2s_hal_clock_cfg_t *cl
     clk_cfg->mclk_div = clk_cfg->sclk / clk_cfg->mclk;
 
     /* Check if the configuration is correct */
-    ESP_RETURN_ON_FALSE(!clk_cfg->sclk || clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
 
     return ESP_OK;
 }
@@ -1155,7 +1091,9 @@ static esp_err_t i2s_calculate_pdm_rx_clock(int i2s_num, i2s_hal_clock_cfg_t *cl
     clk_cfg->mclk_div = clk_cfg->sclk / clk_cfg->mclk;
 
     /* Check if the configuration is correct */
-    ESP_RETURN_ON_FALSE(!clk_cfg->sclk || clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_LOGD(TAG, "[sclk] %d [mclk] %d [mclk_div] %d [bclk] %d [bclk_div] %d",
+             clk_cfg->sclk, clk_cfg->mclk, clk_cfg->mclk_div, clk_cfg->bclk, clk_cfg->bclk_div);
 
     return ESP_OK;
 }
@@ -1211,7 +1149,7 @@ static esp_err_t i2s_calculate_common_clock(int i2s_num, i2s_hal_clock_cfg_t *cl
     clk_cfg->mclk_div = clk_cfg->sclk / clk_cfg->mclk;
 
     /* Check if the configuration is correct */
-    ESP_RETURN_ON_FALSE(!clk_cfg->sclk || clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_cfg->mclk <= clk_cfg->sclk, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
 
     return ESP_OK;
 }
@@ -1278,7 +1216,7 @@ static esp_err_t i2s_calculate_clock(i2s_port_t i2s_num, i2s_hal_clock_cfg_t *cl
 static uint32_t i2s_get_max_channel_num(i2s_channel_t chan_mask)
 {
     uint32_t max_chan = 0;
-    uint32_t channel = chan_mask & 0xFFFF;
+    uint32_t channel = chan_mask >> 16;
     for (int i = 0; channel && i < 16; i++, channel >>= 1) {
         if (channel & 0x01) {
             max_chan = i + 1;
@@ -1311,7 +1249,7 @@ static uint32_t i2s_get_active_channel_num(const i2s_hal_config_t *hal_cfg)
 #if SOC_I2S_SUPPORTS_TDM
     case I2S_CHANNEL_FMT_MULTIPLE: {
         uint32_t num = 0;
-        uint32_t chan_mask = hal_cfg->chan_mask & 0xFFFF;
+        uint32_t chan_mask = hal_cfg->chan_mask >> 16;
         for (int i = 0; chan_mask && i < 16; i++, chan_mask >>= 1) {
             if (chan_mask & 0x01) {
                 num++;
@@ -1467,6 +1405,14 @@ esp_err_t i2s_pcm_config(i2s_port_t i2s_num, const i2s_pcm_cfg_t *pcm_cfg)
     ESP_RETURN_ON_FALSE(p_i2s[i2s_num], ESP_FAIL, TAG, "i2s has not installed yet");
     ESP_RETURN_ON_FALSE((p_i2s[i2s_num]->hal_cfg.comm_fmt & I2S_COMM_FORMAT_STAND_PCM_SHORT),
                         ESP_ERR_INVALID_ARG, TAG, "i2s communication mode is not PCM mode");
+
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_TX) {
+        xSemaphoreTake(p_i2s[i2s_num]->tx->mux, (portTickType)portMAX_DELAY);
+    }
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_RX) {
+        xSemaphoreTake(p_i2s[i2s_num]->rx->mux, (portTickType)portMAX_DELAY);
+    }
+
     i2s_stop(i2s_num);
     I2S_ENTER_CRITICAL(i2s_num);
     if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_TX) {
@@ -1476,6 +1422,14 @@ esp_err_t i2s_pcm_config(i2s_port_t i2s_num, const i2s_pcm_cfg_t *pcm_cfg)
     }
     I2S_EXIT_CRITICAL(i2s_num);
     i2s_start(i2s_num);
+
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_TX) {
+        xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
+    }
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_RX) {
+        xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
+    }
+
     return ESP_OK;
 }
 #endif
@@ -1501,9 +1455,12 @@ esp_err_t i2s_set_pdm_rx_down_sample(i2s_port_t i2s_num, i2s_pdm_dsr_t downsampl
 {
     ESP_RETURN_ON_FALSE(p_i2s[i2s_num], ESP_FAIL, TAG, "i2s has not installed yet");
     ESP_RETURN_ON_FALSE((p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_PDM), ESP_ERR_INVALID_ARG, TAG, "i2s mode is not PDM mode");
+
+    xSemaphoreTake(p_i2s[i2s_num]->rx->mux, (portTickType)portMAX_DELAY);
     i2s_stop(i2s_num);
     i2s_hal_set_rx_pdm_dsr(&(p_i2s[i2s_num]->hal), downsample);
-    // i2s will start in 'i2s_set_clk'
+    i2s_start(i2s_num);
+    xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
     return i2s_set_clk(i2s_num, p_i2s[i2s_num]->hal_cfg.sample_rate, p_i2s[i2s_num]->hal_cfg.sample_bits, p_i2s[i2s_num]->hal_cfg.active_chan);
 }
 #endif
@@ -1526,9 +1483,12 @@ esp_err_t i2s_set_pdm_tx_up_sample(i2s_port_t i2s_num, const i2s_pdm_tx_upsample
 {
     ESP_RETURN_ON_FALSE(p_i2s[i2s_num], ESP_FAIL, TAG, "i2s has not installed yet");
     ESP_RETURN_ON_FALSE((p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_PDM), ESP_ERR_INVALID_ARG, TAG, "i2s mode is not PDM mode");
+
+    xSemaphoreTake(p_i2s[i2s_num]->tx->mux, (portTickType)portMAX_DELAY);
     i2s_stop(i2s_num);
     i2s_hal_set_tx_pdm_fpfs(&(p_i2s[i2s_num]->hal), upsample_cfg->fp, upsample_cfg->fs);
-    // i2s will start in 'i2s_set_clk'
+    i2s_start(i2s_num);
+    xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
     return i2s_set_clk(i2s_num, upsample_cfg->sample_rate, p_i2s[i2s_num]->hal_cfg.sample_bits, p_i2s[i2s_num]->hal_cfg.active_chan);
 }
 #endif
@@ -1631,33 +1591,74 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
     ESP_RETURN_ON_FALSE(p_i2s[i2s_num], ESP_ERR_INVALID_ARG, TAG, "I2S%d has not installed yet", i2s_num);
 
     i2s_hal_config_t *cfg = &p_i2s[i2s_num]->hal_cfg;
+
+    /* Acquire the lock before stop i2s, otherwise reading/writing operation will stuck on receiving the message queue from interrupt */
+    if (cfg->mode & I2S_MODE_TX) {
+        xSemaphoreTake(p_i2s[i2s_num]->tx->mux, (portTickType)portMAX_DELAY);
+    }
+    if (cfg->mode & I2S_MODE_RX) {
+        xSemaphoreTake(p_i2s[i2s_num]->rx->mux, (portTickType)portMAX_DELAY);
+    }
+
+    /* Stop I2S */
+    i2s_stop(i2s_num);
+
     /* If not the first time, update configuration */
     if (p_i2s[i2s_num]->last_buf_size) {
         cfg->sample_rate = rate;
         cfg->sample_bits = bits_cfg & 0xFFFF;
         cfg->chan_bits = (bits_cfg >> 16) > cfg->sample_bits ? (bits_cfg >> 16) : cfg->sample_bits;
 #if SOC_I2S_SUPPORTS_TDM
-        cfg->chan_mask = ch;
-        cfg->chan_fmt = ch == I2S_CHANNEL_MONO ? I2S_CHANNEL_FMT_ONLY_RIGHT : cfg->chan_fmt;
-        cfg->active_chan   = i2s_get_active_channel_num(cfg);
-        uint32_t max_channel = i2s_get_max_channel_num(cfg->chan_mask);
-        /* If total channel is smaller than max actived channel number then set it to the max active channel number */
-        cfg->total_chan = p_i2s[i2s_num]->hal_cfg.total_chan < max_channel ? max_channel : p_i2s[i2s_num]->hal_cfg.total_chan;
+        if (ch & I2S_CHANNEL_MONO) {
+            if (ch >> 16) {
+                cfg->chan_fmt = I2S_CHANNEL_FMT_MULTIPLE;
+                cfg->chan_mask = 1 << __builtin_ctz(ch & 0xFFFF0000); // mono the minimun actived slot
+                cfg->total_chan = i2s_get_max_channel_num(ch);
+            } else {
+                if (p_i2s[i2s_num]->init_chan_fmt == I2S_CHANNEL_FMT_ONLY_LEFT) {
+                    cfg->chan_mask = I2S_TDM_ACTIVE_CH1; // left slot mono
+                    cfg->chan_fmt = I2S_CHANNEL_FMT_ONLY_LEFT;
+                } else {
+                    cfg->chan_mask = I2S_TDM_ACTIVE_CH0; // right slot mono
+                    cfg->chan_fmt = I2S_CHANNEL_FMT_ONLY_RIGHT;
+                }
+#if SOC_I2S_SUPPORTS_PDM_RX
+                cfg->total_chan = (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_PDM) ? 1 : 2;
+#else
+                cfg->total_chan = 2;
+#endif
+            }
+        } else {
+            if (ch >> 16) {
+                cfg->chan_fmt = I2S_CHANNEL_FMT_MULTIPLE;
+                cfg->chan_mask = ch & 0xFFFF0000;
+                cfg->total_chan = i2s_get_max_channel_num(cfg->chan_mask);
+            } else {
+                /* If no TDM channels activated, use 2 channels as defualt */
+                cfg->chan_fmt = I2S_CHANNEL_FMT_RIGHT_LEFT;
+                cfg->chan_mask = I2S_TDM_ACTIVE_CH0 | I2S_TDM_ACTIVE_CH1;
+                cfg->total_chan = 2;
+            }
+        }
 #else
         /* Default */
-        cfg->chan_fmt = ch == I2S_CHANNEL_MONO ? I2S_CHANNEL_FMT_ONLY_RIGHT : cfg->chan_fmt;
+        if (ch & I2S_CHANNEL_MONO) {
+            if (p_i2s[i2s_num]->init_chan_fmt == I2S_CHANNEL_FMT_ONLY_LEFT) {
+                cfg->chan_fmt = I2S_CHANNEL_FMT_ONLY_LEFT;
+            } else {
+                cfg->chan_fmt = I2S_CHANNEL_FMT_ONLY_RIGHT;
+            }
+        } else {
+            cfg->chan_fmt = I2S_CHANNEL_FMT_RIGHT_LEFT;
+        }
         cfg->active_chan = i2s_get_active_channel_num(cfg);
         cfg->total_chan = 2;
 #endif
         if (cfg->mode & I2S_MODE_TX) {
-            xSemaphoreTake(p_i2s[i2s_num]->tx->mux, (portTickType)portMAX_DELAY);
             i2s_hal_tx_set_channel_style(&(p_i2s[i2s_num]->hal), cfg);
-            xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
         }
         if (cfg->mode & I2S_MODE_RX) {
-            xSemaphoreTake(p_i2s[i2s_num]->rx->mux, (portTickType)portMAX_DELAY);
             i2s_hal_rx_set_channel_style(&(p_i2s[i2s_num]->hal), cfg);
-            xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
         }
     }
     uint32_t data_bits = cfg->sample_bits;
@@ -1665,9 +1666,6 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
     /* Check the validity of sample bits */
     ESP_RETURN_ON_FALSE((data_bits % 8 == 0), ESP_ERR_INVALID_ARG, TAG, "Invalid bits per sample");
     ESP_RETURN_ON_FALSE((data_bits <= I2S_BITS_PER_SAMPLE_32BIT), ESP_ERR_INVALID_ARG, TAG, "Invalid bits per sample");
-
-    /* Stop I2S */
-    i2s_stop(i2s_num);
 
     i2s_hal_clock_cfg_t clk_cfg;
     /* To get sclk, mclk, mclk_div bclk and bclk_div */
@@ -1680,8 +1678,14 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
     if (cfg->mode & I2S_MODE_TX) {
         ESP_RETURN_ON_FALSE(p_i2s[i2s_num]->tx, ESP_ERR_INVALID_ARG, TAG, "I2S TX DMA object has not initialized yet");
         /* Waiting for transmit finish */
-        xSemaphoreTake(p_i2s[i2s_num]->tx->mux, (portTickType)portMAX_DELAY);
         i2s_tx_set_clk_and_channel(i2s_num, &clk_cfg);
+        /* Workaround for ESP32-S3/C3, overwrite with speicial coefficients to lower down the noise */
+#if SOC_I2S_SUPPORTS_PDM_CODEC
+        if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_PDM) {
+            i2s_ll_tx_set_raw_clk_div(p_i2s[i2s_num]->hal.dev, 1, 1, 0, 0);
+        }
+#endif // SOC_I2S_SUPPORTS_PDM_TX
+
         /* If buffer size changed, the DMA buffer need realloc */
         if (need_realloc) {
             p_i2s[i2s_num]->tx->buf_size = buf_size;
@@ -1693,14 +1697,12 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
         }
         /* Reset the queue to avoid receive invalid data */
         xQueueReset(p_i2s[i2s_num]->tx->queue);
-        xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
         ESP_RETURN_ON_ERROR(ret, TAG, "I2S%d tx DMA buffer malloc failed", i2s_num);
     }
     /* RX mode clock reset */
     if (cfg->mode & I2S_MODE_RX) {
         ESP_RETURN_ON_FALSE(p_i2s[i2s_num]->rx, ESP_ERR_INVALID_ARG, TAG, "I2S TX DMA object has not initialized yet");
         /* Waiting for receive finish */
-        xSemaphoreTake(p_i2s[i2s_num]->rx->mux, (portTickType)portMAX_DELAY);
         i2s_rx_set_clk_and_channel(i2s_num, &clk_cfg);
         /* If buffer size changed, the DMA buffer need realloc */
         if (need_realloc) {
@@ -1715,7 +1717,6 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
         }
         /* Reset the queue to avoid receiving invalid data */
         xQueueReset(p_i2s[i2s_num]->rx->queue);
-        xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
         ESP_RETURN_ON_ERROR(ret, TAG, "I2S%d rx DMA buffer malloc failed", i2s_num);
     }
     /* Update last buffer size */
@@ -1723,6 +1724,13 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, uint32_t bits_cfg, i2s_
 
     /* I2S start */
     i2s_start(i2s_num);
+
+    if (cfg->mode & I2S_MODE_TX) {
+        xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
+    }
+    if (cfg->mode & I2S_MODE_RX) {
+        xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
+    }
 
     return ESP_OK;
 }
@@ -1813,6 +1821,7 @@ static esp_err_t i2s_driver_init(i2s_port_t i2s_num, const i2s_config_t *i2s_con
     p_i2s[i2s_num]->fixed_mclk = i2s_config->fixed_mclk;
     p_i2s[i2s_num]->mclk_multiple = i2s_config->mclk_multiple;
     p_i2s[i2s_num]->tx_desc_auto_clear = i2s_config->tx_desc_auto_clear;
+    p_i2s[i2s_num]->init_chan_fmt = i2s_config->channel_format;
 
     /* I2S HAL configuration assignment */
     p_i2s[i2s_num]->hal_cfg.mode = i2s_config->mode;
@@ -1838,14 +1847,17 @@ static esp_err_t i2s_driver_init(i2s_port_t i2s_num, const i2s_config_t *i2s_con
         p_i2s[i2s_num]->hal_cfg.chan_mask = I2S_TDM_ACTIVE_CH0 | I2S_TDM_ACTIVE_CH1;
         p_i2s[i2s_num]->hal_cfg.total_chan = 2;
         break;
-    case I2S_CHANNEL_FMT_ONLY_RIGHT:    // fall through
+    case I2S_CHANNEL_FMT_ONLY_RIGHT:
+        p_i2s[i2s_num]->hal_cfg.chan_mask = I2S_TDM_ACTIVE_CH1;
+        p_i2s[i2s_num]->hal_cfg.total_chan = 2;
+        break;
     case I2S_CHANNEL_FMT_ONLY_LEFT:
         p_i2s[i2s_num]->hal_cfg.chan_mask = I2S_TDM_ACTIVE_CH0;
         p_i2s[i2s_num]->hal_cfg.total_chan = 2;
         break;
     case I2S_CHANNEL_FMT_MULTIPLE:
-        ESP_RETURN_ON_FALSE(i2s_config->chan_mask, ESP_ERR_INVALID_ARG, TAG, "i2s all channel are disabled");
-        p_i2s[i2s_num]->hal_cfg.chan_mask = i2s_config->chan_mask;
+        ESP_RETURN_ON_FALSE((i2s_config->chan_mask >> 16), ESP_ERR_INVALID_ARG, TAG, "i2s all channel are disabled");
+        p_i2s[i2s_num]->hal_cfg.chan_mask = i2s_config->chan_mask & 0xFFFF0000;
         /* Get the max actived channel number */
         uint32_t max_channel = i2s_get_max_channel_num(p_i2s[i2s_num]->hal_cfg.chan_mask);
         /* If total channel is smaller than max actived channel number then set it to the max active channel number */
@@ -1960,6 +1972,14 @@ esp_err_t i2s_driver_install(i2s_port_t i2s_num, const i2s_config_t *i2s_config,
 #endif
     /* Enable module clock */
     i2s_hal_enable_module_clock(&p_i2s[i2s_num]->hal);
+#if SOC_I2S_SUPPORTS_TDM
+    if (i2s_config->mode & I2S_MODE_TX) {
+        i2s_ll_tx_enable_clock(p_i2s[i2s_num]->hal.dev);
+    }
+    if (i2s_config->mode & I2S_MODE_RX) {
+        i2s_ll_rx_enable_clock(p_i2s[i2s_num]->hal.dev);
+    }
+#endif
 
     /* Step 5: Initialize I2S configuration and set the configurations to register */
     i2s_hal_config_param(&(pre_alloc_i2s_obj->hal), &pre_alloc_i2s_obj->hal_cfg);
@@ -1976,6 +1996,7 @@ esp_err_t i2s_driver_install(i2s_port_t i2s_num, const i2s_config_t *i2s_config,
 
     /* Step 7: Set I2S clocks and start. No need to give parameters since configurations has been set in 'i2s_driver_init' */
     ESP_GOTO_ON_ERROR(i2s_set_clk(i2s_num, 0, 0, 0), err, TAG, "I2S set clock failed");
+
     return ESP_OK;
 
 err:
@@ -2038,6 +2059,14 @@ esp_err_t i2s_driver_uninstall(i2s_port_t i2s_num)
         p_i2s[i2s_num]->pm_lock = NULL;
     }
 #endif
+#if SOC_I2S_SUPPORTS_TDM
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_TX) {
+        i2s_ll_tx_disable_clock(p_i2s[i2s_num]->hal.dev);
+    }
+    if (p_i2s[i2s_num]->hal_cfg.mode & I2S_MODE_RX) {
+        i2s_ll_rx_disable_clock(p_i2s[i2s_num]->hal.dev);
+    }
+#endif
     /* Disable module clock */
     i2s_hal_disable_module_clock(&p_i2s[i2s_num]->hal);
     i2s_priv_deregister_object(i2s_num);
@@ -2064,7 +2093,6 @@ esp_err_t i2s_driver_uninstall(i2s_port_t i2s_num)
  */
 esp_err_t i2s_write(i2s_port_t i2s_num, const void *src, size_t size, size_t *bytes_written, TickType_t ticks_to_wait)
 {
-    esp_err_t ret = ESP_OK;
     char *data_ptr, *src_byte;
     size_t bytes_can_write;
     *bytes_written = 0;
@@ -2078,7 +2106,6 @@ esp_err_t i2s_write(i2s_port_t i2s_num, const void *src, size_t size, size_t *by
     while (size > 0) {
         if (p_i2s[i2s_num]->tx->rw_pos == p_i2s[i2s_num]->tx->buf_size || p_i2s[i2s_num]->tx->curr_ptr == NULL) {
             if (xQueueReceive(p_i2s[i2s_num]->tx->queue, &p_i2s[i2s_num]->tx->curr_ptr, ticks_to_wait) == pdFALSE) {
-                ret = ESP_ERR_TIMEOUT;
                 break;
             }
             p_i2s[i2s_num]->tx->rw_pos = 0;
@@ -2100,7 +2127,7 @@ esp_err_t i2s_write(i2s_port_t i2s_num, const void *src, size_t size, size_t *by
     esp_pm_lock_release(p_i2s[i2s_num]->pm_lock);
 #endif
     xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
-    return ret;
+    return ESP_OK;
 }
 
 /**
@@ -2125,7 +2152,6 @@ esp_err_t i2s_write(i2s_port_t i2s_num, const void *src, size_t size, size_t *by
  */
 esp_err_t i2s_write_expand(i2s_port_t i2s_num, const void *src, size_t size, size_t src_bits, size_t aim_bits, size_t *bytes_written, TickType_t ticks_to_wait)
 {
-    esp_err_t ret = ESP_OK;
     char *data_ptr;
     int bytes_can_write, tail;
     int src_bytes, aim_bytes, zero_bytes;
@@ -2160,7 +2186,6 @@ esp_err_t i2s_write_expand(i2s_port_t i2s_num, const void *src, size_t size, siz
     while (size > 0) {
         if (p_i2s[i2s_num]->tx->rw_pos == p_i2s[i2s_num]->tx->buf_size || p_i2s[i2s_num]->tx->curr_ptr == NULL) {
             if (xQueueReceive(p_i2s[i2s_num]->tx->queue, &p_i2s[i2s_num]->tx->curr_ptr, ticks_to_wait) == pdFALSE) {
-                ret = ESP_ERR_TIMEOUT;
                 break;
             }
             p_i2s[i2s_num]->tx->rw_pos = 0;
@@ -2184,7 +2209,7 @@ esp_err_t i2s_write_expand(i2s_port_t i2s_num, const void *src, size_t size, siz
         p_i2s[i2s_num]->tx->rw_pos += bytes_can_write;
     }
     xSemaphoreGive(p_i2s[i2s_num]->tx->mux);
-    return ret;
+    return ESP_OK;
 }
 
 /**
@@ -2203,7 +2228,6 @@ esp_err_t i2s_write_expand(i2s_port_t i2s_num, const void *src, size_t size, siz
  */
 esp_err_t i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_read, TickType_t ticks_to_wait)
 {
-    esp_err_t ret = ESP_OK;
     char *data_ptr, *dest_byte;
     int bytes_can_read;
     *bytes_read = 0;
@@ -2217,7 +2241,6 @@ esp_err_t i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_re
     while (size > 0) {
         if (p_i2s[i2s_num]->rx->rw_pos == p_i2s[i2s_num]->rx->buf_size || p_i2s[i2s_num]->rx->curr_ptr == NULL) {
             if (xQueueReceive(p_i2s[i2s_num]->rx->queue, &p_i2s[i2s_num]->rx->curr_ptr, ticks_to_wait) == pdFALSE) {
-                ret = ESP_ERR_TIMEOUT;
                 break;
             }
             p_i2s[i2s_num]->rx->rw_pos = 0;
@@ -2238,7 +2261,7 @@ esp_err_t i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_re
     esp_pm_lock_release(p_i2s[i2s_num]->pm_lock);
 #endif
     xSemaphoreGive(p_i2s[i2s_num]->rx->mux);
-    return ret;
+    return ESP_OK;
 }
 
 esp_err_t i2s_priv_register_object(void *driver_obj, int port_id)
