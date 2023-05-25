@@ -14,7 +14,6 @@ Functional Overview
 The following sections of this document cover the typical steps to install and use the ADC calibration driver:
 
 -  `Calibration Scheme Creation <#calibration-scheme-creation>`__ - covers how to create a calibration scheme handle and delete the calibration scheme handle.
--  `Calibration Configuration <#calibration-configuration>`__ - covers how to configure the calibration driver to calculate necessary characteristics used for calibration.
 -  `Result Conversion <#result-conversion>`__ - convers how to convert ADC raw result to calibrated result.
 -  `Thread Safety <#thread-safety>`__ - lists which APIs are guaranteed to be thread safe by the driver.
 -  `Minimize Noise <#minimize-noise>`__ - describes a general way to minimize the noise.
@@ -120,7 +119,7 @@ For those users who use their custom ADC calibration schemes, you could either m
         ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(handle));
 
 
-.. only:: esp32h4
+.. only:: esp32h2
 
     There is no supported calibration scheme yet.
 

@@ -19,8 +19,7 @@ from esp_docs.conf_docs import *  # noqa: F403,F401
 if os.environ.get('IDF_PATH') is None:
     raise RuntimeError('IDF_PATH should be set, run export.sh before building docs')
 
-BT_DOCS = ['api-guides/blufi.rst',
-           'api-reference/bluetooth/bt_le.rst',
+BT_DOCS = ['api-reference/bluetooth/bt_le.rst',
            'api-reference/bluetooth/esp_bt_defs.rst',
            'api-reference/bluetooth/esp_bt_device.rst',
            'api-reference/bluetooth/esp_bt_main.rst',
@@ -30,7 +29,6 @@ BT_DOCS = ['api-guides/blufi.rst',
            'api-reference/bluetooth/esp_gatt_defs.rst',
            'api-reference/bluetooth/esp_gatts.rst',
            'api-reference/bluetooth/esp_gattc.rst',
-           'api-reference/bluetooth/esp_blufi.rst',
            'api-reference/bluetooth/index.rst',
            'api-reference/bluetooth/nimble/index.rst']
 
@@ -56,6 +54,9 @@ CLASSIC_BT_DOCS = ['api-reference/bluetooth/classic_bt.rst',
                    'api-reference/bluetooth/esp_gap_bt.rst',
                    'migration-guides/release-5.x/5.0/bluetooth-classic.rst']
 
+BLUFI_DOCS = ['api-guides/blufi.rst',
+              'api-reference/bluetooth/esp_blufi.rst']
+
 WIFI_DOCS = ['api-guides/wifi.rst',
              'api-guides/wifi-security.rst',
              'api-guides/wireshark-user-guide.rst']
@@ -73,6 +74,8 @@ SDIO_SLAVE_DOCS = ['api-reference/peripherals/sdio_slave.rst',
 MCPWM_DOCS = ['api-reference/peripherals/mcpwm.rst']
 
 DEDIC_GPIO_DOCS = ['api-reference/peripherals/dedic_gpio.rst']
+
+PARLIO_DOCS = ['api-reference/peripherals/parlio.rst']
 
 PCNT_DOCS = ['api-reference/peripherals/pcnt.rst']
 
@@ -102,9 +105,9 @@ FTDI_JTAG_DOCS = ['api-guides/jtag-debugging/configure-ft2232h-jtag.rst']
 USB_SERIAL_JTAG_DOCS = ['api-guides/jtag-debugging/configure-builtin-jtag.rst',
                         'api-guides/usb-serial-jtag-console.rst']
 
-ULP_DOCS = ['api-reference/system/ulp.rst',
-            'api-reference/system/ulp_macros.rst',
-            'api-reference/system/ulp_instruction_set.rst']
+ULP_FSM_DOCS = ['api-reference/system/ulp.rst',
+                'api-reference/system/ulp_macros.rst',
+                'api-reference/system/ulp_instruction_set.rst']
 
 RISCV_COPROC_DOCS = ['api-reference/system/ulp-risc-v.rst',]
 
@@ -124,6 +127,8 @@ RTC_MEM_DOCS = ['api-guides/deep-sleep-stub.rst']
 ADC_DOCS = ['api-reference/peripherals/adc_oneshot.rst',
             'api-reference/peripherals/adc_calibration.rst']
 ADC_DMA_DOCS = ['api-reference/peripherals/adc_continuous.rst']
+
+ANA_CMPR_DOCS = ['api-reference/peripherals/ana_cmpr.rst']
 
 ESP32_DOCS = ['api-reference/system/himem.rst',
               'api-guides/romconsole.rst',
@@ -163,6 +168,7 @@ ESP32C6_DOCS = ['api-guides/RF_calibration.rst',
 conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_BLE_SUPPORTED':BLE_DOCS,
                             'SOC_BLE_MESH_SUPPORTED':BLE_MESH_DOCS,
+                            'SOC_BLUFI_SUPPORTED':BLUFI_DOCS,
                             'SOC_WIFI_SUPPORTED':WIFI_DOCS,
                             'SOC_BT_CLASSIC_SUPPORTED':CLASSIC_BT_DOCS,
                             'SOC_SUPPORT_COEXISTENCE':COEXISTENCE_DOCS,
@@ -173,12 +179,13 @@ conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_USB_SERIAL_JTAG_SUPPORTED':USB_SERIAL_JTAG_DOCS,
                             'SOC_DEDICATED_GPIO_SUPPORTED':DEDIC_GPIO_DOCS,
                             'SOC_SPIRAM_SUPPORTED':SPIRAM_DOCS,
+                            'SOC_PARLIO_SUPPORTED':PARLIO_DOCS,
                             'SOC_PCNT_SUPPORTED':PCNT_DOCS,
                             'SOC_RMT_SUPPORTED':RMT_DOCS,
                             'SOC_DAC_SUPPORTED':DAC_DOCS,
                             'SOC_ETM_SUPPORTED':ETM_DOCS,
                             'SOC_TOUCH_SENSOR_SUPPORTED':TOUCH_SENSOR_DOCS,
-                            'SOC_ULP_SUPPORTED':ULP_DOCS,
+                            'SOC_ULP_FSM_SUPPORTED':ULP_FSM_DOCS,
                             'SOC_RISCV_COPROC_SUPPORTED':RISCV_COPROC_DOCS,
                             'SOC_DIG_SIGN_SUPPORTED':['api-reference/peripherals/ds.rst'],
                             'SOC_HMAC_SUPPORTED':['api-reference/peripherals/hmac.rst'],
@@ -191,6 +198,7 @@ conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_RTC_MEM_SUPPORTED': RTC_MEM_DOCS,
                             'SOC_ADC_SUPPORTED':ADC_DOCS,
                             'SOC_ADC_DMA_SUPPORTED':ADC_DMA_DOCS,
+                            'SOC_ANA_CMPR_SUPPORTED': ANA_CMPR_DOCS,
                             'SOC_SDM_SUPPORTED':SDM_DOCS,
                             'SOC_WIFI_MESH_SUPPORT':WIFI_MESH_DOCS,
                             'esp32':ESP32_DOCS,
@@ -245,7 +253,11 @@ linkcheck_exclude_documents = ['index',  # several false positives due to the wa
 
 linkcheck_ignore = ['https://webhome.phy.duke.edu/~rgb/General/dieharder.php',  # Certificate error
                     'https://docs.espressif.com/projects/esptool/en/latest/esp32c2/espefuse/index.html',  # Not published
+                    'https://docs.espressif.com/projects/esptool/en/latest/esp32c2/espsecure/index.html#remote-signing-using-an-external-hs',  # Not published
                     'https://docs.espressif.com/projects/esptool/en/latest/esp32c6/espefuse/index.html',  # Not published
+                    'https://docs.espressif.com/projects/esptool/en/latest/esp32c6/espsecure/index.html#remote-signing-using-an-external-hs',  # Not published
+                    'https://docs.espressif.com/projects/esptool/en/latest/esp32h2/espefuse/index.html',  # Not published
+                    'https://docs.espressif.com/projects/esptool/en/latest/esp32h2/espsecure/index.html#remote-signing-using-an-external-hs',  # Not published
                     'https://www.cadence.com/content/dam/cadence-www/global/en_US/documents/tools/ip/tensilica-ip/isa-summary.pdf',  # Rejects user-agent
                     ]
 

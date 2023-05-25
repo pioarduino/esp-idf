@@ -6,6 +6,8 @@
 
 #include <string.h>
 
+#include "common/code_utils.hpp"
+#include "common/logging.hpp"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_netif.h"
@@ -14,9 +16,8 @@
 #include "esp_openthread_common_macro.h"
 #include "esp_openthread_lock.h"
 #include "esp_openthread_netif_glue.h"
+#include "esp_openthread_netif_glue_priv.h"
 #include "esp_openthread_task_queue.h"
-#include "common/code_utils.hpp"
-#include "common/logging.hpp"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/ip6.h"
@@ -88,6 +89,7 @@ static ip_addr_t map_openthread_addr_to_lwip_addr(const otIp6Address *address)
     ip_addr_t addr;
 
     memcpy(ip_2_ip6(&addr)->addr, address->mFields.m8, sizeof(ip_2_ip6(&addr)->addr));
+#if CONFIG_LWIP_IPV4
     if (ip6_addr_isipv4mappedipv6(ip_2_ip6(&addr))) {
         unmap_ipv4_mapped_ipv6(ip_2_ip4(&addr), ip_2_ip6(&addr));
         addr.type = IPADDR_TYPE_V4;
@@ -95,8 +97,13 @@ static ip_addr_t map_openthread_addr_to_lwip_addr(const otIp6Address *address)
         addr.type = IPADDR_TYPE_V6;
 #if LWIP_IPV6_SCOPES
         addr.u_addr.ip6.zone = IP6_NO_ZONE;
-#endif
+#endif // LWIP_IPV6_SCOPES
     }
+#else
+#if LWIP_IPV6_SCOPES
+    addr.zone = IP6_NO_ZONE;
+#endif // LWIP_IPV6_SCOPES
+#endif // CONFIG_LWIP_IPV4
     return addr;
 }
 
@@ -106,7 +113,7 @@ static void udp_recv_task(void *ctx)
 
     otMessageInfo message_info;
     otMessage *message = NULL;
-    otMessageSettings msg_settings = {.mLinkSecurityEnabled = false, .mPriority = OT_MESSAGE_PRIORITY_NORMAL};
+    otMessageSettings msg_settings = { .mLinkSecurityEnabled = false, .mPriority = OT_MESSAGE_PRIORITY_NORMAL };
     struct pbuf *recv_buf = task->recv_buf;
     uint8_t *data_buf = (uint8_t *)recv_buf->payload;
     uint8_t *data_buf_to_free = NULL;
@@ -115,9 +122,11 @@ static void udp_recv_task(void *ctx)
     memset(&message_info.mSockAddr, 0, sizeof(message_info.mSockAddr));
     message_info.mHopLimit = task->hop_limit;
     message_info.mPeerPort = task->port;
+#if CONFIG_LWIP_IPV4
     if (task->addr.type == IPADDR_TYPE_V4) {
         ip4_2_ipv4_mapped_ipv6(ip_2_ip6(&task->addr), ip_2_ip4(&task->addr));
     }
+#endif
     memcpy(&message_info.mPeerAddr, ip_2_ip6(&task->addr)->addr, sizeof(message_info.mPeerAddr));
 
     if (recv_buf->next != NULL) {
@@ -150,7 +159,9 @@ static void handle_udp_recv(void *ctx, struct udp_pcb *pcb, struct pbuf *p, cons
 {
     udp_recv_task_t *task = (udp_recv_task_t *)malloc(sizeof(udp_recv_task_t));
     const struct ip6_hdr *ip6_hdr = ip6_current_header();
+#if CONFIG_LWIP_IPV4
     const struct ip_hdr *ip4_hdr = ip4_current_header();
+#endif
     struct netif *source_netif = ip_current_netif();
 
     if (task == NULL) {
@@ -160,7 +171,11 @@ static void handle_udp_recv(void *ctx, struct udp_pcb *pcb, struct pbuf *p, cons
     task->recv_buf = p;
     task->addr = *addr;
     task->port = port;
+#if CONFIG_LWIP_IPV4
     task->hop_limit = (addr->type == IPADDR_TYPE_V6) ? IP6H_HOPLIM(ip6_hdr) : IPH_TTL(ip4_hdr);
+#else
+    task->hop_limit = IP6H_HOPLIM(ip6_hdr);
+#endif
     task->is_host_interface =
         (netif_get_index(source_netif) == esp_netif_get_netif_impl_index(esp_openthread_get_backbone_netif()));
 
@@ -182,7 +197,7 @@ otError otPlatUdpSocket(otUdpSocket *udp_socket)
 {
     otError error = OT_ERROR_NONE;
 
-    udp_new_task_t task = {.source_task = xTaskGetCurrentTaskHandle(), .socket = udp_socket};
+    udp_new_task_t task = { .source_task = xTaskGetCurrentTaskHandle(), .socket = udp_socket };
     tcpip_callback(udp_new_task, &task);
     wait_for_task_notification();
     VerifyOrExit(task.pcb_ret != NULL, error = OT_ERROR_FAILED);
@@ -227,7 +242,9 @@ otError otPlatUdpBind(otUdpSocket *udp_socket)
     };
     ESP_LOGI(OT_PLAT_LOG_TAG, "Platform UDP bound to port %d", udp_socket->mSockName.mPort);
 
+#if CONFIG_LWIP_IPV4
     task.addr.type = IPADDR_TYPE_ANY;
+#endif
     memcpy(ip_2_ip6(&task.addr)->addr, udp_socket->mSockName.mAddress.mFields.m8, sizeof(ip_2_ip6(&task.addr)->addr));
     tcpip_callback(udp_bind_task, &task);
     wait_for_task_notification();
@@ -306,6 +323,7 @@ static bool is_multicast(const otIp6Address *address)
 
 static void udp_send_task(void *ctx)
 {
+    err_t err = ERR_OK;
     udp_send_task_t *task = (udp_send_task_t *)ctx;
     struct pbuf *send_buf = NULL;
     uint16_t len = otMessageGetLength(task->message);
@@ -313,10 +331,16 @@ static void udp_send_task(void *ctx)
     task->pcb->ttl = task->hop_limit;
     task->pcb->netif_idx = task->netif_index;
 #if LWIP_IPV6_SCOPES
-    if (task->peer_addr.type == IPADDR_TYPE_V6) {
+#if CONFIG_LWIP_IPV4
+    if (task->peer_addr.type == IPADDR_TYPE_V6)
+#endif
+    {
         ip_2_ip6(&task->peer_addr)->zone = task->netif_index;
     }
-    if (task->source_addr.type == IPADDR_TYPE_V6) {
+#if CONFIG_LWIP_IPV4
+    if (task->source_addr.type == IPADDR_TYPE_V6)
+#endif
+    {
         ip_2_ip6(&task->source_addr)->zone = task->netif_index;
     }
 #endif
@@ -327,13 +351,23 @@ static void udp_send_task(void *ctx)
         task->pcb->flags |= UDP_FLAGS_MULTICAST_LOOP;
     }
     send_buf = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
-    otMessageRead(task->message, 0, send_buf->payload, len);
     VerifyOrExit(send_buf != NULL);
-    udp_sendto(task->pcb, send_buf, &task->peer_addr, task->peer_port);
+    otMessageRead(task->message, 0, send_buf->payload, len);
+
+    if (task->netif_index == get_netif_index(OT_NETIF_THREAD)) {
+        // If the input arguments indicated the netif is OT, directly send the message.
+        err = udp_sendto_if_src(task->pcb, send_buf, &task->peer_addr, task->peer_port, netif_get_by_index(task->netif_index), &task->source_addr);
+    } else {
+        // Otherwise, let Lwip to determine which netif will be used.
+        err = udp_sendto(task->pcb, send_buf, &task->peer_addr, task->peer_port);
+    }
 
 exit:
     if (send_buf) {
         pbuf_free(send_buf);
+    }
+    if (err != ERR_OK) {
+        ESP_LOGE(OT_PLAT_LOG_TAG, "Failed to Send UDP message, err: %d", err);
     }
     esp_openthread_task_switching_lock_acquire(portMAX_DELAY);
     otMessageFree(task->message);
@@ -343,15 +377,17 @@ exit:
 
 static inline bool is_addr_ip6_any(const ip_addr_t *addr)
 {
-    return addr->type == IPADDR_TYPE_V6 && addr->u_addr.ip6.addr[0] == 0 && addr->u_addr.ip6.addr[1] == 0 &&
-        addr->u_addr.ip6.addr[2] == 0 && addr->u_addr.ip6.addr[3] == 0;
+    return ip_2_ip6(addr)->addr[0] == 0 && ip_2_ip6(addr)->addr[1] == 0 && ip_2_ip6(addr)->addr[2] == 0 && ip_2_ip6(addr)->addr[3] == 0
+#if CONFIG_LWIP_IPV4
+        && addr->type == IPADDR_TYPE_V6
+#endif
+        ;
 }
 
 otError otPlatUdpSend(otUdpSocket *udp_socket, otMessage *message, const otMessageInfo *message_info)
 {
     udp_send_task_t *task = (udp_send_task_t *)malloc(sizeof(udp_send_task_t));
     otError error = OT_ERROR_NONE;
-
     VerifyOrExit(task != NULL, error = OT_ERROR_NO_BUFS);
     task->pcb = (struct udp_pcb *)udp_socket->mHandle;
     task->message = message;
@@ -362,12 +398,19 @@ otError otPlatUdpSend(otUdpSocket *udp_socket, otMessage *message, const otMessa
     task->netif_index = NETIF_NO_INDEX;
     task->source_addr = map_openthread_addr_to_lwip_addr(&message_info->mSockAddr);
     task->peer_addr = map_openthread_addr_to_lwip_addr(&message_info->mPeerAddr);
+#if CONFIG_LWIP_IPV4
     if (task->peer_addr.type == IPADDR_TYPE_V4 && is_addr_ip6_any(&task->source_addr)) {
         task->source_addr.type = IPADDR_TYPE_ANY;
     }
+#endif
 
     if (is_link_local(&message_info->mPeerAddr) || is_multicast(&message_info->mPeerAddr)) {
         task->netif_index = get_netif_index(message_info->mIsHostInterface ? OT_NETIF_BACKBONE : OT_NETIF_THREAD);
+    }
+
+    if (is_openthread_internal_mesh_local_addr(&message_info->mPeerAddr)) {
+        // If the destination address is a openthread mesh local address, set the netif OT.
+        task->netif_index = get_netif_index(OT_NETIF_THREAD);
     }
     tcpip_callback(udp_send_task, task);
 
@@ -398,9 +441,10 @@ otError otPlatUdpJoinMulticastGroup(otUdpSocket *socket, otNetifIdentifier netif
     otError error = OT_ERROR_NONE;
 
     VerifyOrExit(task != NULL, error = OT_ERROR_NO_BUFS);
-    memcpy(task->addr.addr, addr->mFields.m8, sizeof(task->addr.addr));
     task->is_join = true;
     task->netif_index = get_netif_index(netif_id);
+    task->addr.zone = task->netif_index;
+    memcpy(task->addr.addr, addr->mFields.m8, sizeof(task->addr.addr));
     tcpip_callback(udp_multicast_join_leave_task, task);
 
 exit:
@@ -414,9 +458,10 @@ otError otPlatUdpLeaveMulticastGroup(otUdpSocket *socket, otNetifIdentifier neti
     otError error = OT_ERROR_NONE;
 
     VerifyOrExit(task != NULL, error = OT_ERROR_NO_BUFS);
-    memcpy(task->addr.addr, addr->mFields.m8, sizeof(task->addr.addr));
     task->is_join = false;
     task->netif_index = get_netif_index(netif_id);
+    task->addr.zone = task->netif_index;
+    memcpy(task->addr.addr, addr->mFields.m8, sizeof(task->addr.addr));
     tcpip_callback(udp_multicast_join_leave_task, task);
 
 exit:

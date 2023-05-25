@@ -212,6 +212,12 @@ const char *esp_sntp_getservername(u8_t idx);
  */
 const ip_addr_t* esp_sntp_getserver(u8_t idx);
 
+/**
+ * @brief Checks if sntp is enabled
+ * @return true if sntp module is enabled
+ */
+bool esp_sntp_enabled(void);
+
 #if LWIP_DHCP_GET_NTP_SRV
 /**
  * @brief Enable acquiring SNTP server from DHCP
@@ -228,7 +234,7 @@ void esp_sntp_servermode_dhcp(bool enable);
 static inline __attribute__((deprecated("use esp_sntp_setoperatingmode() instead")))
 void sntp_setoperatingmode(u8_t operating_mode)
 {
-    esp_sntp_setoperatingmode(operating_mode);
+    esp_sntp_setoperatingmode((esp_sntp_operatingmode_t)operating_mode);
 }
 
 static inline __attribute__((deprecated("use esp_sntp_servermode_dhcp() instead")))

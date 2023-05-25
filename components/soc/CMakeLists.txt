@@ -13,13 +13,6 @@ set(includes "include" "${target}")
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${target}/include")
     list(APPEND includes "${target}/include")
-    if(target STREQUAL "esp32h4")
-        if(CONFIG_IDF_TARGET_ESP32H4_BETA_VERSION_1)
-            list(APPEND includes "${target}/include/rev1")
-        elseif(CONFIG_IDF_TARGET_ESP32H4_BETA_VERSION_2)
-            list(APPEND includes "${target}/include/rev2")
-        endif()
-    endif()
 endif()
 
 if(target STREQUAL "esp32")
@@ -28,6 +21,10 @@ endif()
 
 if(CONFIG_SOC_ADC_SUPPORTED)
     list(APPEND srcs "${target}/adc_periph.c")
+endif()
+
+if(CONFIG_SOC_ANA_CMPR_SUPPORTED)
+    list(APPEND srcs "${target}/ana_cmpr_periph.c")
 endif()
 
 if(CONFIG_SOC_DEDICATED_GPIO_SUPPORTED)
@@ -78,8 +75,16 @@ if(CONFIG_SOC_LCDCAM_SUPPORTED OR CONFIG_SOC_LCD_I80_SUPPORTED)
     list(APPEND srcs "${target}/lcd_periph.c")
 endif()
 
+if(CONFIG_SOC_PARLIO_SUPPORTED)
+    list(APPEND srcs "${target}/parlio_periph.c")
+endif()
+
 if(CONFIG_SOC_MCPWM_SUPPORTED)
     list(APPEND srcs "${target}/mcpwm_periph.c")
+endif()
+
+if(CONFIG_SOC_MPI_SUPPORTED)
+    list(APPEND srcs "${target}/mpi_periph.c")
 endif()
 
 if(CONFIG_SOC_SDMMC_HOST_SUPPORTED)
@@ -92,6 +97,12 @@ endif()
 
 if(CONFIG_SOC_TWAI_SUPPORTED)
     list(APPEND srcs "${target}/twai_periph.c")
+endif()
+
+if(CONFIG_SOC_IEEE802154_SUPPORTED)
+    if(NOT target STREQUAL "esp32h4")
+        list(APPEND srcs "${target}/ieee802154_periph.c")
+    endif()
 endif()
 
 if(CONFIG_SOC_USB_OTG_SUPPORTED)
@@ -114,6 +125,11 @@ endif()
 idf_component_register(SRCS ${srcs}
                        INCLUDE_DIRS ${includes}
                        LDFRAGMENTS "linker.lf")
+
+# For an embedded system, the MMU page size should always be defined statically
+# For IDF, we define it according to the Flash size that user selects
+# Replace this value in an adaptive way, if Kconfig isn't available on your platform
+target_compile_definitions(${COMPONENT_LIB} INTERFACE SOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE)
 
 if(target STREQUAL "esp32")
     # esp_dport_access_reg_read is added as an undefined symbol because otherwise

@@ -1,12 +1,29 @@
 # Designed to be included from an IDF app's CMakeLists.txt file
 cmake_minimum_required(VERSION 3.16)
 
+# Get the currently selected sdkconfig file early, so this doesn't
+# have to be done multiple times on different places.
+if(SDKCONFIG)
+    get_filename_component(sdkconfig "${SDKCONFIG}" ABSOLUTE)
+else()
+    set(sdkconfig "${CMAKE_SOURCE_DIR}/sdkconfig")
+endif()
+
+# Check if the cmake was started as part of the set-target action.
+# If so, check for existing sdkconfig file and rename it.
+# This is done before __target_init, so the existing IDF_TARGET from sdkconfig
+# is not considered for consistence checking.
+if("$ENV{_IDF_PY_SET_TARGET_ACTION}" EQUAL "1" AND EXISTS "${sdkconfig}")
+    file(RENAME "${sdkconfig}" "${sdkconfig}.old")
+    message(STATUS "Existing sdkconfig '${sdkconfig}' renamed to '${sdkconfig}.old'.")
+endif()
+
 include(${CMAKE_CURRENT_LIST_DIR}/targets.cmake)
 # Initialize build target for this build using the environment variable or
 # value passed externally.
-__target_init()
+__target_init("${sdkconfig}")
 
-# The mere inclusion of this CMake file sets up some interal build properties.
+# The mere inclusion of this CMake file sets up some internal build properties.
 # These properties can be modified in between this inclusion the the idf_build_process
 # call.
 include(${CMAKE_CURRENT_LIST_DIR}/idf.cmake)
@@ -104,7 +121,7 @@ function(paths_with_spaces_to_list variable_name)
 endfunction()
 
 #
-# Output the built components to the user. Generates files for invoking idf_monitor.py
+# Output the built components to the user. Generates files for invoking esp_idf_monitor
 # that doubles as an overview of some of the more important build properties.
 #
 function(__project_info test_components)
@@ -152,6 +169,12 @@ function(__project_info test_components)
     idf_build_get_property(COMPONENT_KCONFIGS KCONFIGS)
     idf_build_get_property(COMPONENT_KCONFIGS_PROJBUILD KCONFIG_PROJBUILDS)
     idf_build_get_property(debug_prefix_map_gdbinit DEBUG_PREFIX_MAP_GDBINIT)
+
+    if(CONFIG_APP_BUILD_TYPE_RAM)
+        set(PROJECT_BUILD_TYPE ram_app)
+    else()
+        set(PROJECT_BUILD_TYPE flash_app)
+    endif()
 
     # Write project description JSON file
     idf_build_get_property(build_dir BUILD_DIR)
@@ -310,7 +333,7 @@ function(__project_init components_var test_components_var)
     set(${test_components_var} "${test_components}" PARENT_SCOPE)
 endfunction()
 
-# Trick to temporarily redefine project(). When functions are overriden in CMake, the originals can still be accessed
+# Trick to temporarily redefine project(). When functions are overridden in CMake, the originals can still be accessed
 # using an underscore prefixed function of the same name. The following lines make sure that __project  calls
 # the original project(). See https://cmake.org/pipermail/cmake/2015-October/061751.html.
 function(project)
@@ -425,12 +448,6 @@ macro(project project_name)
         list(APPEND sdkconfig_defaults ${sdkconfig_default})
     endforeach()
 
-    if(SDKCONFIG)
-        get_filename_component(sdkconfig "${SDKCONFIG}" ABSOLUTE)
-    else()
-        set(sdkconfig "${CMAKE_CURRENT_LIST_DIR}/sdkconfig")
-    endif()
-
     if(BUILD_DIR)
         get_filename_component(build_dir "${BUILD_DIR}" ABSOLUTE)
         if(NOT EXISTS "${build_dir}")
@@ -484,7 +501,7 @@ macro(project project_name)
     set(project_elf ${CMAKE_PROJECT_NAME}.elf)
 
     # Create a dummy file to work around CMake requirement of having a source file while adding an
-    # executable. This is also used by idf_size.py to detect the target
+    # executable. This is also used by esp_idf_size to detect the target
     set(project_elf_src ${CMAKE_BINARY_DIR}/project_elf_src_${IDF_TARGET}.c)
     add_custom_command(OUTPUT ${project_elf_src}
         COMMAND ${CMAKE_COMMAND} -E touch ${project_elf_src}
@@ -549,23 +566,32 @@ macro(project project_name)
         string(TOUPPER ${idf_target} idf_target)
         # Add cross-reference table to the map file
         target_link_options(${project_elf} PRIVATE "-Wl,--cref")
-        # Add this symbol as a hint for idf_size.py to guess the target name
+        # Add this symbol as a hint for esp_idf_size to guess the target name
         target_link_options(${project_elf} PRIVATE "-Wl,--defsym=IDF_TARGET_${idf_target}=0")
         # Enable map file output
         target_link_options(${project_elf} PRIVATE "-Wl,--Map=${mapfile}")
+        # Check if linker supports --no-warn-rwx-segments
+        execute_process(COMMAND ${CMAKE_LINKER} "--no-warn-rwx-segments" "--version"
+            RESULT_VARIABLE result
+            OUTPUT_QUIET
+            ERROR_QUIET)
+        if(${result} EQUAL 0)
+            # Do not print RWX segment warnings
+            target_link_options(${project_elf} PRIVATE "-Wl,--no-warn-rwx-segments")
+        endif()
         unset(idf_target)
     endif()
 
     set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" APPEND PROPERTY
-        ADDITIONAL_MAKE_CLEAN_FILES
+        ADDITIONAL_CLEAN_FILES
         "${mapfile}" "${project_elf_src}")
 
     idf_build_get_property(idf_path IDF_PATH)
     idf_build_get_property(python PYTHON)
 
-    set(idf_size ${python} ${idf_path}/tools/idf_size.py)
+    set(idf_size ${python} -m esp_idf_size)
 
-    # Add size targets, depend on map file, run idf_size.py
+    # Add size targets, depend on map file, run esp_idf_size
     # OUTPUT_JSON is passed for compatibility reasons, SIZE_OUTPUT_FORMAT
     # environment variable is recommended and has higher priority
     add_custom_target(size

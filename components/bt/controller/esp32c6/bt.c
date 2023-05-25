@@ -67,7 +67,6 @@
 #define ACL_DATA_MBUF_LEADINGSPCAE    4
 #endif // CONFIG_BT_BLUEDROID_ENABLED
 
-#define PHY_ENABLE_VERSION_PRINT    (1)
 
 /* Types definition
  ************************************************************************
@@ -110,7 +109,6 @@ struct ext_funcs_t {
  ************************************************************************
  */
 extern int ble_osi_coex_funcs_register(struct osi_coex_funcs_t *coex_funcs);
-extern int coex_core_ble_conn_dyn_prio_get(bool *low, bool *high);
 extern int ble_controller_init(esp_bt_controller_config_t *cfg);
 extern int ble_controller_deinit(void);
 extern int ble_controller_enable(uint8_t mode);
@@ -121,7 +119,6 @@ extern int esp_ble_ll_set_public_addr(const uint8_t *addr);
 extern int esp_register_npl_funcs (struct npl_funcs_t *p_npl_func);
 extern void esp_unregister_npl_funcs (void);
 extern void npl_freertos_mempool_deinit(void);
-extern void bt_bb_v2_init_cmplx(uint8_t i);
 extern int os_msys_buf_alloc(void);
 extern uint32_t r_os_cputime_get32(void);
 extern uint32_t r_os_cputime_ticks_to_usecs(uint32_t ticks);
@@ -170,7 +167,9 @@ static int esp_intr_free_wrapper(void **ret_handle);
 static void osi_assert_wrapper(const uint32_t ln, const char *fn, uint32_t param1, uint32_t param2);
 static uint32_t osi_random_wrapper(void);
 static void esp_reset_rpa_moudle(void);
-
+static int esp_ecc_gen_key_pair(uint8_t *pub, uint8_t *priv);
+static int esp_ecc_gen_dh_key(const uint8_t *peer_pub_key_x, const uint8_t *peer_pub_key_y,
+                              const uint8_t *our_priv_key, uint8_t *out_dhkey);
 /* Local variable definition
  ***************************************************************************
  */
@@ -221,8 +220,8 @@ struct ext_funcs_t ext_funcs_ro = {
     ._task_delete = task_delete_wrapper,
     ._osi_assert = osi_assert_wrapper,
     ._os_random = osi_random_wrapper,
-    ._ecc_gen_key_pair = ble_sm_alg_gen_key_pair,
-    ._ecc_gen_dh_key = ble_sm_alg_gen_dhkey,
+    ._ecc_gen_key_pair = esp_ecc_gen_key_pair,
+    ._ecc_gen_dh_key = esp_ecc_gen_dh_key,
     ._esp_reset_rpa_moudle = esp_reset_rpa_moudle,
     .magic = EXT_FUNC_MAGIC_VALUE,
 };
@@ -309,7 +308,7 @@ void esp_vhci_host_send_packet(uint8_t *data, uint16_t len)
     if (*(data) == DATA_TYPE_ACL) {
         struct os_mbuf *om = os_msys_get_pkthdr(len, ACL_DATA_MBUF_LEADINGSPCAE);
         assert(om);
-        os_mbuf_append(om, &data[1], len - 1);
+        assert(os_mbuf_append(om, &data[1], len - 1) == 0);
         ble_hci_trans_hs_acl_tx(om);
     }
 }
@@ -336,6 +335,25 @@ static int task_create_wrapper(void *task_func, const char *name, uint32_t stack
 static void task_delete_wrapper(void *task_handle)
 {
     vTaskDelete(task_handle);
+}
+
+static int esp_ecc_gen_key_pair(uint8_t *pub, uint8_t *priv)
+{
+    int rc = -1;
+#if CONFIG_BT_LE_SM_LEGACY || CONFIG_BT_LE_SM_SC
+    rc = ble_sm_alg_gen_key_pair(pub, priv);
+#endif // CONFIG_BT_LE_SM_LEGACY || CONFIG_BT_LE_SM_SC
+    return rc;
+}
+
+static int esp_ecc_gen_dh_key(const uint8_t *peer_pub_key_x, const uint8_t *peer_pub_key_y,
+                              const uint8_t *our_priv_key, uint8_t *out_dhkey)
+{
+    int rc = -1;
+#if CONFIG_BT_LE_SM_LEGACY || CONFIG_BT_LE_SM_SC
+    rc = ble_sm_alg_gen_dhkey(peer_pub_key_x, peer_pub_key_y, our_priv_key, out_dhkey);
+#endif // CONFIG_BT_LE_SM_LEGACY || CONFIG_BT_LE_SM_SC
+    return rc;
 }
 
 #ifdef CONFIG_BT_LE_HCI_INTERFACE_USE_UART
@@ -632,7 +650,7 @@ esp_err_t esp_bt_controller_init(esp_bt_controller_config_t *cfg)
     modem_clock_select_lp_clock_source(PERIPH_BT_MODULE, MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL, 249);
     esp_phy_modem_init();
     esp_phy_enable();
-    bt_bb_v2_init_cmplx(PHY_ENABLE_VERSION_PRINT);
+    esp_btbb_enable();
     s_ble_active = true;
 
     if (ble_osi_coex_funcs_register((struct osi_coex_funcs_t *)&s_osi_coex_funcs_ro) != 0) {
@@ -670,6 +688,7 @@ esp_err_t esp_bt_controller_init(esp_bt_controller_config_t *cfg)
 free_controller:
     controller_sleep_deinit();
     ble_controller_deinit();
+    esp_btbb_disable();
     esp_phy_disable();
     esp_phy_modem_deinit();
     modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE);
@@ -696,13 +715,15 @@ esp_err_t esp_bt_controller_deinit(void)
 
     controller_sleep_deinit();
 
+    esp_btbb_disable();
+
     if (s_ble_active) {
         esp_phy_disable();
-        esp_phy_modem_deinit();
-        modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE);
-        modem_clock_module_disable(PERIPH_BT_MODULE);
         s_ble_active = false;
     }
+    esp_phy_modem_deinit();
+    modem_clock_deselect_lp_clock_source(PERIPH_BT_MODULE);
+    modem_clock_module_disable(PERIPH_BT_MODULE);
 
     ble_controller_deinit();
 

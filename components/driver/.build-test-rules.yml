@@ -1,5 +1,9 @@
 # Documentation: .gitlab/ci/README.md#manifest-file-to-control-the-buildtest-apps
 
+components/driver/test_apps/analog_comparator:
+  disable:
+    - if: SOC_ANA_CMPR_SUPPORTED != 1
+
 components/driver/test_apps/dac_test_apps/dac:
   disable:
     - if: SOC_DAC_SUPPORTED != 1
@@ -13,6 +17,10 @@ components/driver/test_apps/gptimer:
     - if: SOC_GPTIMER_SUPPORTED != 1
 
 components/driver/test_apps/i2s_test_apps:
+  disable:
+    - if: SOC_I2S_SUPPORTED != 1
+
+components/driver/test_apps/i2s_test_apps/i2s:
   disable:
     - if: SOC_I2S_SUPPORTED != 1
 
@@ -59,6 +67,10 @@ components/driver/test_apps/legacy_timer_driver:
 components/driver/test_apps/mcpwm:
   disable:
     - if: SOC_MCPWM_SUPPORTED != 1
+
+components/driver/test_apps/parlio:
+  disable:
+    - if: SOC_PARLIO_SUPPORTED != 1
 
 components/driver/test_apps/pulse_cnt:
   disable:

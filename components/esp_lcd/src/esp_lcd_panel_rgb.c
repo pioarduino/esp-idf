@@ -26,22 +26,21 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_rom_gpio.h"
 #include "soc/soc_caps.h"
-#include "esp_private/esp_clk.h"
+#include "esp_clk_tree.h"
 #include "hal/dma_types.h"
 #include "hal/gpio_hal.h"
 #include "esp_private/gdma.h"
 #include "driver/gpio.h"
 #include "esp_bit_defs.h"
 #include "esp_private/periph_ctrl.h"
-#if CONFIG_SPIRAM
 #include "esp_psram.h"
-#endif
 #include "esp_lcd_common.h"
 #include "soc/lcd_periph.h"
 #include "hal/lcd_hal.h"
 #include "hal/lcd_ll.h"
 #include "hal/gdma_ll.h"
 #include "rom/cache.h"
+#include "esp_cache.h"
 
 #if CONFIG_LCD_RGB_ISR_IRAM_SAFE
 #define LCD_RGB_INTR_ALLOC_FLAGS     (ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_INTRDISABLED)
@@ -114,7 +113,7 @@ struct esp_rgb_panel_t {
     int y_gap;                      // Extra gap in y coordinate, it's used when calculate the flush window
     portMUX_TYPE spinlock;          // to protect panel specific resource from concurrent access (e.g. between task and ISR)
     int lcd_clk_flags;              // LCD clock calculation flags
-    int rotate_mask;                     // panel rotate_mask mask, Or'ed of `panel_rotate_mask_t`
+    int rotate_mask;                // panel rotate_mask mask, Or'ed of `panel_rotate_mask_t`
     struct {
         uint32_t disp_en_level: 1;       // The level which can turn on the screen by `disp_gpio_num`
         uint32_t stream_mode: 1;         // If set, the LCD transfers data continuously, otherwise, it stops refreshing the LCD when transaction done
@@ -592,7 +591,7 @@ static esp_err_t rgb_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int 
     int pixels_per_line = rgb_panel->timings.h_res;
     uint32_t bytes_per_line = bytes_per_pixel * pixels_per_line;
     uint8_t *fb = rgb_panel->fbs[rgb_panel->cur_fb_index];
-    uint32_t bytes_to_flush = v_res * h_res * bytes_per_pixel;
+    size_t bytes_to_flush = v_res * h_res * bytes_per_pixel;
     uint8_t *flush_ptr = fb;
 
     if (do_copy) {
@@ -795,10 +794,10 @@ static esp_err_t rgb_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int 
 
     }
 
+    // Note that if we use a bounce buffer, the data gets read by the CPU as well so no need to write back
     if (rgb_panel->flags.fb_in_psram && !rgb_panel->bb_size) {
         // CPU writes data to PSRAM through DCache, data in PSRAM might not get updated, so write back
-        // Note that if we use a bounce buffer, the data gets read by the CPU as well so no need to write back
-        Cache_WriteBack_Addr((uint32_t)(flush_ptr), bytes_to_flush);
+        ESP_RETURN_ON_ERROR(esp_cache_msync(flush_ptr, bytes_to_flush, 0), TAG, "flush cache buffer failed");
     }
 
     if (!rgb_panel->bb_size) {
@@ -867,7 +866,7 @@ static esp_err_t lcd_rgb_panel_configure_gpio(esp_rgb_panel_t *panel, const esp_
 {
     int panel_id = panel->panel_id;
     // check validation of GPIO number
-    bool valid_gpio = (panel_config->pclk_gpio_num >= 0);
+    bool valid_gpio = true;
     if (panel_config->de_gpio_num < 0) {
         // Hsync and Vsync are required in HV mode
         valid_gpio = valid_gpio && (panel_config->hsync_gpio_num >= 0) && (panel_config->vsync_gpio_num >= 0);
@@ -897,10 +896,13 @@ static esp_err_t lcd_rgb_panel_configure_gpio(esp_rgb_panel_t *panel, const esp_
         esp_rom_gpio_connect_out_signal(panel_config->vsync_gpio_num,
                                         lcd_periph_signals.panels[panel_id].vsync_sig, false, false);
     }
-    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[panel_config->pclk_gpio_num], PIN_FUNC_GPIO);
-    gpio_set_direction(panel_config->pclk_gpio_num, GPIO_MODE_OUTPUT);
-    esp_rom_gpio_connect_out_signal(panel_config->pclk_gpio_num,
-                                    lcd_periph_signals.panels[panel_id].pclk_sig, false, false);
+    // PCLK may not be necessary in some cases (i.e. VGA output)
+    if (panel_config->pclk_gpio_num >= 0) {
+        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[panel_config->pclk_gpio_num], PIN_FUNC_GPIO);
+        gpio_set_direction(panel_config->pclk_gpio_num, GPIO_MODE_OUTPUT);
+        esp_rom_gpio_connect_out_signal(panel_config->pclk_gpio_num,
+                                        lcd_periph_signals.panels[panel_id].pclk_sig, false, false);
+    }
     // DE signal might not be necessary for some RGB LCD
     if (panel_config->de_gpio_num >= 0) {
         gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[panel_config->de_gpio_num], PIN_FUNC_GPIO);
@@ -919,33 +921,23 @@ static esp_err_t lcd_rgb_panel_configure_gpio(esp_rgb_panel_t *panel, const esp_
 
 static esp_err_t lcd_rgb_panel_select_clock_src(esp_rgb_panel_t *panel, lcd_clock_source_t clk_src)
 {
-    esp_err_t ret = ESP_OK;
-    switch (clk_src) {
-    case LCD_CLK_SRC_PLL240M:
-        panel->src_clk_hz = 240000000;
-        break;
-    case LCD_CLK_SRC_PLL160M:
-        panel->src_clk_hz = 160000000;
-        break;
-    case LCD_CLK_SRC_XTAL:
-        panel->src_clk_hz = esp_clk_xtal_freq();
-        break;
-    default:
-        ESP_RETURN_ON_FALSE(false, ESP_ERR_NOT_SUPPORTED, TAG, "unsupported clock source: %d", clk_src);
-        break;
-    }
+    // get clock source frequency
+    uint32_t src_clk_hz = 0;
+    ESP_RETURN_ON_ERROR(esp_clk_tree_src_get_freq_hz((soc_module_clk_t)clk_src, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &src_clk_hz),
+                        TAG, "get clock source frequency failed");
+    panel->src_clk_hz = src_clk_hz;
     lcd_ll_select_clk_src(panel->hal.dev, clk_src);
 
-    if (clk_src == LCD_CLK_SRC_PLL240M || clk_src == LCD_CLK_SRC_PLL160M) {
+    // create pm lock based on different clock source
+    // clock sources like PLL and XTAL will be turned off in light sleep
 #if CONFIG_PM_ENABLE
-        ret = esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "rgb_panel", &panel->pm_lock);
-        ESP_RETURN_ON_ERROR(ret, TAG, "create ESP_PM_APB_FREQ_MAX lock failed");
-        // hold the lock during the whole lifecycle of RGB panel
-        esp_pm_lock_acquire(panel->pm_lock);
-        ESP_LOGD(TAG, "installed ESP_PM_APB_FREQ_MAX lock and hold the lock during the whole panel lifecycle");
+    ESP_RETURN_ON_ERROR(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "rgb_panel", &panel->pm_lock), TAG, "create pm lock failed");
+    // hold the lock during the whole lifecycle of RGB panel
+    esp_pm_lock_acquire(panel->pm_lock);
+    ESP_LOGD(TAG, "installed pm lock and hold the lock during the whole panel lifecycle");
 #endif
-    }
-    return ret;
+
+    return ESP_OK;
 }
 
 static IRAM_ATTR bool lcd_rgb_panel_fill_bounce_buffer(esp_rgb_panel_t *panel, uint8_t *buffer)
@@ -964,11 +956,7 @@ static IRAM_ATTR bool lcd_rgb_panel_fill_bounce_buffer(esp_rgb_panel_t *panel, u
         if (panel->flags.bb_invalidate_cache) {
             // We don't need the bytes we copied from the psram anymore
             // Make sure that if anything happened to have changed (because the line already was in cache) we write the data back.
-            Cache_WriteBack_Addr((uint32_t)&panel->fbs[panel->bb_fb_index][panel->bounce_pos_px * bytes_per_pixel], panel->bb_size);
-            // Invalidate the data.
-            // Note: possible race: perhaps something on the other core can squeeze a write between this and the writeback,
-            // in which case that data gets discarded.
-            Cache_Invalidate_Addr((uint32_t)&panel->fbs[panel->bb_fb_index][panel->bounce_pos_px * bytes_per_pixel], panel->bb_size);
+            esp_cache_msync(&panel->fbs[panel->bb_fb_index][panel->bounce_pos_px * bytes_per_pixel], (size_t)panel->bb_size, ESP_CACHE_MSYNC_FLAG_INVALIDATE);
         }
     }
     panel->bounce_pos_px += panel->bb_size / bytes_per_pixel;

@@ -874,10 +874,8 @@ static void i2s_test_common_sample_rate(i2s_port_t id)
     esp_rom_gpio_connect_out_signal(MASTER_WS_IO, i2s_periph_signal[0].m_tx_ws_sig, 0, 0);
     esp_rom_gpio_connect_in_signal(MASTER_WS_IO, pcnt_periph_signals.groups[0].units[0].channels[0].pulse_sig, 0);
 
-    /* Test common sample rate
-     * Workaround: set 12000 as 12001 to bypass the unknown failure, TODO: IDF-6705 */
     const uint32_t test_freq[] = {
-        8000,  10000,  11025, 12001, 16000, 22050,
+        8000,  10000,  11025, 12000, 16000, 22050,
         24000, 32000,  44100, 48000, 64000, 88200,
         96000, 128000, 144000,196000};
     int real_pulse = 0;
@@ -886,6 +884,11 @@ static void i2s_test_common_sample_rate(i2s_port_t id)
     int case_cnt = 10;
 #else
     int case_cnt = sizeof(test_freq) / sizeof(uint32_t);
+#endif
+
+#if SOC_I2S_SUPPORTS_PLL_F96M
+    // 196000 Hz sample rate doesn't support on PLL_96M target
+    case_cnt = 15;
 #endif
 
     // Acquire the PM lock incase Dynamic Frequency Scaling(DFS) lower the frequency

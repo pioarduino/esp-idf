@@ -19,7 +19,6 @@
 #include "soc/efuse_reg.h"
 #include "soc/chip_revision.h"
 #include "hal/efuse_hal.h"
-#include "hal/efuse_ll.h"
 #include "hal/gpio_ll.h"
 #include "esp_image_format.h"
 #include "bootloader_sha.h"
@@ -80,7 +79,7 @@ esp_err_t bootloader_common_check_chip_validity(const esp_image_header_t* img_hd
         }
         if (type == ESP_IMAGE_APPLICATION) {
             unsigned max_rev = img_hdr->max_chip_rev_full;
-            if ((IS_MAX_REV_SET(max_rev) && (revision > max_rev) && !efuse_ll_get_disable_wafer_version_major())) {
+            if ((IS_MAX_REV_SET(max_rev) && (revision > max_rev) && !efuse_hal_get_disable_wafer_version_major())) {
                 ESP_LOGE(TAG, "Image requires chip rev <= v%d.%d, but chip is v%d.%d",
                          max_rev / 100, max_rev % 100,
                          major_rev, minor_rev);
@@ -119,7 +118,7 @@ int bootloader_common_select_otadata(const esp_ota_select_entry_t *two_otadata, 
     return active_otadata;
 }
 
-#if defined( CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP ) || defined( CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC )
+#if CONFIG_BOOTLOADER_RESERVE_RTC_MEM
 
 #define RTC_RETAIN_MEM_ADDR (SOC_RTC_DRAM_HIGH - sizeof(rtc_retain_mem_t))
 
@@ -148,7 +147,7 @@ static uint32_t rtc_retain_mem_size(void) {
 #endif
 }
 
-static bool check_rtc_retain_mem(void)
+static bool is_retain_mem_valid(void)
 {
     return esp_rom_crc32_le(UINT32_MAX, (uint8_t*)rtc_retain_mem, rtc_retain_mem_size()) == rtc_retain_mem->crc && rtc_retain_mem->crc != UINT32_MAX;
 }
@@ -165,15 +164,37 @@ NOINLINE_ATTR void bootloader_common_reset_rtc_retain_mem(void)
 
 uint16_t bootloader_common_get_rtc_retain_mem_reboot_counter(void)
 {
-    if (check_rtc_retain_mem()) {
+    if (is_retain_mem_valid()) {
         return rtc_retain_mem->reboot_counter;
     }
     return 0;
 }
 
+void bootloader_common_set_rtc_retain_mem_factory_reset_state(void)
+{
+    if (!is_retain_mem_valid()) {
+        bootloader_common_reset_rtc_retain_mem();
+    }
+    rtc_retain_mem->flags.factory_reset_state = true;
+    update_rtc_retain_mem_crc();
+}
+
+bool bootloader_common_get_rtc_retain_mem_factory_reset_state(void)
+{
+    if (is_retain_mem_valid()) {
+        bool factory_reset_state = rtc_retain_mem->flags.factory_reset_state;
+        if (factory_reset_state == true) {
+            rtc_retain_mem->flags.factory_reset_state = false;
+            update_rtc_retain_mem_crc();
+        }
+        return factory_reset_state;
+    }
+    return false;
+}
+
 esp_partition_pos_t* bootloader_common_get_rtc_retain_mem_partition(void)
 {
-    if (check_rtc_retain_mem()) {
+    if (is_retain_mem_valid()) {
         return &rtc_retain_mem->partition;
     }
     return NULL;
@@ -182,7 +203,7 @@ esp_partition_pos_t* bootloader_common_get_rtc_retain_mem_partition(void)
 void bootloader_common_update_rtc_retain_mem(esp_partition_pos_t* partition, bool reboot_counter)
 {
     if (reboot_counter) {
-        if (!check_rtc_retain_mem()) {
+        if (!is_retain_mem_valid()) {
             bootloader_common_reset_rtc_retain_mem();
         }
         if (++rtc_retain_mem->reboot_counter == 0) {
@@ -204,4 +225,5 @@ rtc_retain_mem_t* bootloader_common_get_rtc_retain_mem(void)
 {
     return rtc_retain_mem;
 }
-#endif // defined( CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP ) || defined( CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC )
+
+#endif // CONFIG_BOOTLOADER_RESERVE_RTC_MEM

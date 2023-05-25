@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,8 +30,6 @@ extern "C" {
 
 #define UART_LL_FSM_IDLE                       (0x0)
 #define UART_LL_FSM_TX_WAIT_SEND               (0xf)
-
-#define UART_LL_PLL_DIV_FREQ      (80000000)  // 80 MHz
 
 #define UART_LL_PCR_REG_U32_SET(hw, reg_suffix, field_suffix, val)  \
     if ((hw) == &UART0) { \
@@ -76,7 +74,7 @@ typedef enum {
     UART_INTR_RS485_FRM_ERR    = (0x1 << 16),
     UART_INTR_RS485_CLASH      = (0x1 << 17),
     UART_INTR_CMD_CHAR_DET     = (0x1 << 18),
-    // UART_INTR_WAKEUP           = (0x1 << 19),  // TODO: Test UART wakeup while supporting sleep
+    UART_INTR_WAKEUP           = (0x1 << 19),
 } uart_intr_t;
 
 /**
@@ -88,7 +86,6 @@ typedef enum {
  */
 static inline void uart_ll_update(uart_dev_t *hw)
 {
-    // TODO: set a timeout ??
     hw->reg_update.reg_update = 1;
     while (hw->reg_update.reg_update);
 }
@@ -103,7 +100,7 @@ static inline void uart_ll_update(uart_dev_t *hw)
  */
 static inline void uart_ll_set_reset_core(uart_dev_t *hw, bool core_rst_en)
 {
-    hw->clk_conf.rst_core = core_rst_en;
+    UART_LL_PCR_REG_SET(hw, conf, rst_en, core_rst_en);
 }
 
 /**
@@ -134,8 +131,8 @@ static inline void uart_ll_sclk_disable(uart_dev_t *hw)
  * @brief  Set the UART source clock.
  *
  * @param  hw Beginning address of the peripheral registers.
- * @param  source_clk The UART source clock. The source clock can be APB clock, RTC clock or XTAL clock.
- *                    If the source clock is RTC/XTAL, the UART can still work when the APB changes.
+ * @param  source_clk The UART source clock. The source clock can be PLL_F80M clock, RTC clock or XTAL clock.
+ *                    All clock sources can remain at their original frequencies during DFS.
  *
  * @return None.
  */
@@ -198,7 +195,7 @@ static inline void uart_ll_set_baudrate(uart_dev_t *hw, uint32_t baud, uint32_t 
     // The baud rate configuration register is divided into
     // an integer part and a fractional part.
     hw->clkdiv_sync.clkdiv_int = clk_div >> 4;
-    hw->clkdiv_sync.clkdiv_frag = clk_div &  0xf;
+    hw->clkdiv_sync.clkdiv_frag = clk_div & 0xf;
     UART_LL_PCR_REG_U32_SET(hw, sclk_conf, sclk_div_num, sclk_div - 1);
 #undef DIV_UP
     uart_ll_update(hw);
@@ -243,6 +240,18 @@ static inline void uart_ll_ena_intr_mask(uart_dev_t *hw, uint32_t mask)
 static inline void uart_ll_disable_intr_mask(uart_dev_t *hw, uint32_t mask)
 {
     hw->int_ena.val &= (~mask);
+}
+
+/**
+ * @brief  Get the UART raw interrupt status.
+ *
+ * @param  hw Beginning address of the peripheral registers.
+ *
+ * @return The UART interrupt status.
+ */
+static inline uint32_t uart_ll_get_intraw_mask(uart_dev_t *hw)
+{
+    return hw->int_raw.val;
 }
 
 /**
@@ -303,7 +312,7 @@ static inline void uart_ll_read_rxfifo(uart_dev_t *hw, uint8_t *buf, uint32_t rd
  *
  * @param  hw Beginning address of the peripheral registers.
  * @param  buf The data buffer.
- * @param  wr_len The data length needs to be writen.
+ * @param  wr_len The data length needs to be written.
  *
  * @return None
  */
@@ -1058,6 +1067,19 @@ static inline void uart_ll_force_xon(uart_port_t uart_num)
 static inline uint32_t uart_ll_get_fsm_status(uart_port_t uart_num)
 {
     return REG_GET_FIELD(UART_FSM_STATUS_REG(uart_num), UART_ST_UTX_OUT);
+}
+
+/**
+ * @brief  Configure UART whether to discard when receiving wrong data
+ *
+ * @param  hw Beginning address of the peripheral registers.
+ * @param  discard true: Receiver stops storing data into FIFO when data is wrong
+ *                false: Receiver continue storing data into FIFO when data is wrong
+ */
+static inline void uart_ll_discard_error_data(uart_dev_t *hw, bool discard)
+{
+    hw->conf0_sync.err_wr_mask = discard ? 1 : 0;
+    uart_ll_update(hw);
 }
 
 #ifdef __cplusplus

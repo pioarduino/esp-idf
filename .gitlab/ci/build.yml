@@ -3,6 +3,8 @@
   image: $ESP_ENV_IMAGE
   tags:
     - build
+    # build only on shiny servers since shiny storage server is at the same location
+    - shiny
   variables:
     # Enable ccache for all build jobs. See configure_ci_environment.sh for more ccache related settings.
     IDF_CCACHE_ENABLE: "1"
@@ -19,10 +21,6 @@
   needs:
     - job: fast_template_app
       artifacts: false
-  tags:
-    - build
-    # build only on shiny servers since shiny storage server is at the same location
-    - shiny
   artifacts:
     paths:
       - "**/build*/size.json"
@@ -217,14 +215,6 @@ build_pytest_examples_esp32c2:
     IDF_TARGET: esp32c2
     TEST_DIR: examples
 
-build_pytest_examples_esp32h4:
-  extends:
-    - .build_pytest_no_jtag_template
-    - .rules:build:example_test-esp32h4
-  variables:
-    IDF_TARGET: esp32h4
-    TEST_DIR: examples
-
 build_pytest_examples_jtag:  # for all targets
   extends:
     - .build_pytest_jtag_template
@@ -232,14 +222,6 @@ build_pytest_examples_jtag:  # for all targets
   variables:
     IDF_TARGET: all
     TEST_DIR: examples
-
-build_pytest_components_esp32h4:
-  extends:
-    - .build_pytest_template
-    - .rules:build:component_ut-esp32h4
-  variables:
-    IDF_TARGET: esp32h4
-    TEST_DIR: components
 
 build_pytest_examples_esp32c6:
   extends:
@@ -316,11 +298,12 @@ build_pytest_components_esp32h2:
   extends:
     - .build_pytest_template
     - .rules:build:component_ut-esp32h2
+  parallel: 4
   variables:
     IDF_TARGET: esp32h2
     TEST_DIR: components
 
-build_non_test_components_apps:
+build_only_components_apps:
   extends:
     - .build_cmake_template
     - .rules:build:component_ut
@@ -415,6 +398,20 @@ build_pytest_test_apps_esp32h2:
     IDF_TARGET: esp32h2
     TEST_DIR: tools/test_apps
 
+build_only_tools_test_apps:
+  extends:
+    - .build_cmake_template
+    - .rules:build:custom_test
+  parallel: 9
+  script:
+    # CI specific options start from "--collect-size-info xxx". could ignore when running locally
+    - run_cmd python tools/ci/ci_build_apps.py tools/test_apps -v
+      -t all
+      --collect-size-info size_info.txt
+      --collect-app-info list_job_${CI_NODE_INDEX:-1}.json
+      --parallel-count ${CI_NODE_TOTAL:-1}
+      --parallel-index ${CI_NODE_INDEX:-1}
+
 .build_template_app_template:
   extends:
     - .build_template
@@ -422,7 +419,7 @@ build_pytest_test_apps_esp32h2:
   variables:
     LOG_PATH: "${CI_PROJECT_DIR}/log_template_app"
     BUILD_PATH: "${CI_PROJECT_DIR}/build_template_app"
-    BUILD_DIR: "@t/@w"
+    BUILD_DIR: "${BUILD_PATH}/@t/@w"
     BUILD_LOG_CMAKE: "${LOG_PATH}/cmake_@t_@w.txt"
     BUILD_COMMAND_ARGS: ""
   artifacts:
@@ -506,6 +503,12 @@ build_ssc_esp32c6:
   parallel: 3
   variables:
     TARGET_NAME: "ESP32C6"
+
+build_ssc_esp32h2:
+  extends: .build_ssc_template
+  parallel: 2
+  variables:
+    TARGET_NAME: "ESP32H2"
 
 .build_esp_idf_tests_cmake_template:
   extends:
@@ -638,14 +641,6 @@ build_examples_cmake_esp32c3:
     IDF_TARGET: esp32c3
     TEST_DIR: examples
 
-build_examples_cmake_esp32h4:
-  extends:
-    - .build_cmake_template
-    - .rules:build:example_test-esp32h4
-  variables:
-    IDF_TARGET: esp32h4
-    TEST_DIR: examples
-
 build_examples_cmake_esp32c6:
   extends:
     - .build_cmake_template
@@ -663,67 +658,6 @@ build_examples_cmake_esp32h2:
   variables:
     IDF_TARGET: esp32h2
     TEST_DIR: examples
-
-
-build_test_apps_esp32:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32
-  parallel: 2
-  variables:
-    IDF_TARGET: esp32
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32s2:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32s2
-  parallel: 2
-  variables:
-    IDF_TARGET: esp32s2
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32s3:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32s3
-  parallel: 2
-  variables:
-    IDF_TARGET: esp32s3
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32c3:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32c3
-  parallel: 2
-  variables:
-    IDF_TARGET: esp32c3
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32c2:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32c2
-  variables:
-    IDF_TARGET: esp32c2
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32c6:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32c6
-  variables:
-    IDF_TARGET: esp32c6
-    TEST_DIR: tools/test_apps
-
-build_test_apps_esp32h2:
-  extends:
-    - .build_cmake_template
-    - .rules:build:custom_test-esp32h2
-  variables:
-    IDF_TARGET: esp32h2
-    TEST_DIR: tools/test_apps
 
 build_clang_test_apps_esp32:
   extends:
@@ -779,13 +713,6 @@ build_clang_test_apps_esp32c6:
   variables:
     IDF_TARGET: esp32c6
 
-build_clang_test_apps_esp32h4:
-  extends:
-    - .build_clang_test_apps_riscv
-    - .rules:build:custom_test-esp32h4
-  variables:
-    IDF_TARGET: esp32h4
-
 .test_build_system_template:
   stage: host_test
   extends:
@@ -823,6 +750,7 @@ test_build_system_spaces:
 
 pytest_build_system:
   extends: .test_build_system_template
+  parallel: 3
   artifacts:
     paths:
       - XUNIT_RESULT.xml
@@ -834,7 +762,8 @@ pytest_build_system:
   script:
     - ${IDF_PATH}/tools/ci/test_configure_ci_environment.sh
     - cd ${IDF_PATH}/tools/test_build_system
-    - pytest --work-dir ${CI_PROJECT_DIR}/test_build_system --junitxml=${CI_PROJECT_DIR}/XUNIT_RESULT.xml
+    - pytest --parallel-count ${CI_NODE_TOTAL:-1} --parallel-index ${CI_NODE_INDEX:-1}
+      --work-dir ${CI_PROJECT_DIR}/test_build_system --junitxml=${CI_PROJECT_DIR}/XUNIT_RESULT.xml
 
 build_docker:
   extends:

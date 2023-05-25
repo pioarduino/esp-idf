@@ -162,7 +162,7 @@ TEST_CASE("ULP FSM light-sleep wakeup test", "[ulp]")
     const ulp_insn_t program[] = {
         I_MOVI(R1, 1024),   // r1 = 1024
         M_LABEL(1),         // define label 1
-        I_DELAY(32000),     // add a delay (NOP for 32000 cycles)
+        I_DELAY(64000),     // add a delay (NOP for 64000 cycles)
         I_SUBI(R1, R1, 1),  // r1 = r1 - 1
         M_BXZ(3),           // branch to label 3 if ALU value is 0. (r1 = 0)
         I_RSHI(R3, R1, 5),  // r3 = r1 / 32
@@ -204,7 +204,7 @@ TEST_CASE("ULP FSM deep-sleep wakeup test", "[ulp][ulp_deep_sleep_wakeup]")
     const ulp_insn_t program[] = {
         I_MOVI(R1, 1024),   // r1 = 1024
         M_LABEL(1),         // define label 1
-        I_DELAY(32000),     // add a delay (NOP for 32000 cycles)
+        I_DELAY(64000),     // add a delay (NOP for 64000 cycles)
         I_SUBI(R1, R1, 1),  // r1 = r1 - 1
         M_BXZ(3),           // branch to label 3 if ALU value is 0. (r1 = 0)
         I_RSHI(R3, R1, 5),  // r3 = r1 / 32
@@ -675,4 +675,50 @@ TEST_CASE("ULP FSM can use ADC in deep sleep", "[ulp][ulp_deep_sleep_wakeup]")
     /* Enter Deep Sleep */
     esp_deep_sleep_start();
     UNITY_TEST_FAIL(__LINE__, "Should not get here!");
+}
+
+static void ulp_isr(void *arg)
+{
+    BaseType_t yield = 0;
+    SemaphoreHandle_t sem = (SemaphoreHandle_t)arg;
+    xSemaphoreGiveFromISR(sem, &yield);
+    if (yield) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+TEST_CASE("ULP FSM interrupt signal can be handled via ISRs on the main core", "[ulp]")
+{
+    assert(CONFIG_ULP_COPROC_RESERVE_MEM >= 260 && "this test needs ULP_COPROC_RESERVE_MEM option set in menuconfig");
+
+    /* Clear the RTC_SLOW_MEM region for the ULP co-processor binary to be loaded */
+    hal_memset(RTC_SLOW_MEM, 0, CONFIG_ULP_COPROC_RESERVE_MEM);
+
+    /* ULP co-processor program to send a wakeup to the main CPU */
+    const ulp_insn_t program[] = {
+        I_WAKE(),           // send wakeup signal to main CPU
+        I_END(),            // stop ULP timer
+        I_HALT()            // halt
+    };
+
+    /* Create test semaphore */
+    SemaphoreHandle_t ulp_isr_sem = xSemaphoreCreateBinary();
+    TEST_ASSERT_NOT_NULL(ulp_isr_sem);
+
+    /* Register ULP wakeup signal ISR */
+    TEST_ASSERT_EQUAL(ESP_OK, ulp_isr_register(ulp_isr, (void *)ulp_isr_sem));
+
+    /* Calculate the size of the ULP co-processor binary, load it and run the ULP coprocessor */
+    size_t size = sizeof(program)/sizeof(ulp_insn_t);
+    TEST_ASSERT_EQUAL(ESP_OK, ulp_process_macros_and_load(0, program, &size));
+    TEST_ASSERT_EQUAL(ESP_OK, ulp_run(0));
+
+    /* Wait from ISR to be called */
+    TEST_ASSERT_EQUAL(pdTRUE, xSemaphoreTake(ulp_isr_sem, portMAX_DELAY));
+
+    /* Deregister the ISR */
+    TEST_ASSERT_EQUAL(ESP_OK, ulp_isr_deregister(ulp_isr, (void *)ulp_isr_sem ));
+
+    /* Delete test semaphore */
+    vSemaphoreDelete(ulp_isr_sem);
 }

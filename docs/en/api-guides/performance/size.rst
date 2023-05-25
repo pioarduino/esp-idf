@@ -191,9 +191,9 @@ Comparing Two Binaries
 
 If making some changes that affect binary size, it's possible to use an ESP-IDF tool to break down the exact differences in size.
 
-This operation isn't part of ``idf.py``, it's necessary to run the ``idf_size.py`` Python tool directly.
+This operation isn't part of ``idf.py``, it's necessary to run the `esp_idf_size <https://github.com/espressif/esp-idf-size>`_ Python tool directly.
 
-To do so, first locate the linker map file in the build directory. It will have the name ``PROJECTNAME.map``. The ``idf_size.py`` tool performs its analysis based on the output of the linker map file.
+To do so, first locate the linker map file in the build directory. It will have the name ``PROJECTNAME.map``. The ``esp_idf_size`` tool performs its analysis based on the output of the linker map file.
 
 To compare with another binary, you will also need its corresponding ``.map`` file saved from the build directory.
 
@@ -201,7 +201,7 @@ For example, to compare two builds: one with the default :ref:`CONFIG_COMPILER_O
 
 .. code-block:: bash
 
-    $ $IDF_PATH/tools/idf_size.py --diff build_Og/https_request.map build_Os/https_request.map
+    $ python -m esp_idf_size --diff build_Og/https_request.map build_Os/https_request.map
     <CURRENT> MAP file: build_Os/https_request.map
     <REFERENCE> MAP file: build_Og/https_request.map
     Difference is counted as <CURRENT> - <REFERENCE>, i.e. a positive number means that <CURRENT> is larger.
@@ -219,17 +219,17 @@ We can see from the "Difference" column that changing this one setting caused th
 It's also possible to use the "diff" mode to output a table of component-level (static library archive) differences:
 
 .. note::
-    To get the output in JSON or CSV format using ``idf_size.py`` it is possible to use the ``--format`` option.
+    To get the output in JSON or CSV format using ``esp_idf_size`` it is possible to use the ``--format`` option.
 
 .. code-block:: bash
 
-    $IDF_PATH/tools/idf_size.py --archives --diff build_Og/https_request.map build_Oshttps_request.map
+    python -m esp_idf_size --archives --diff build_Og/https_request.map build_Oshttps_request.map
 
 Also at the individual source file level:
 
 .. code-block:: bash
 
-    $IDF_PATH/tools/idf_size.py --files --diff build_Og/https_request.map build_Oshttps_request.map
+    python -m esp_idf_size --files --diff build_Og/https_request.map build_Oshttps_request.map
 
 Other options (like writing the output to a file) are available, pass ``--help`` to see the full list.
 
@@ -240,20 +240,20 @@ Showing Size When Linker Fails
 
 If too much static memory is used, then the linker will fail with an error such as ``DRAM segment data does not fit``, ``region `iram0_0_seg' overflowed by 44 bytes``, or similar.
 
-In these cases, ``idf.py size`` will not succeed either. However it is possible to run ``idf_size.py`` manually in order to view the *partial static memory usage* (the memory usage will miss the variables which could not be linked, so there still appears to be some free space.)
+In these cases, ``idf.py size`` will not succeed either. However it is possible to run ``esp_idf_size`` manually in order to view the *partial static memory usage* (the memory usage will miss the variables which could not be linked, so there still appears to be some free space.)
 
 The map file argument is ``<projectname>.map`` in the build directory
 
 .. code-block:: bash
 
-    $IDF_PATH/tools/idf_size.py build/project_name.map
+    python -m esp_idf_size build/project_name.map
 
 It is also possible to view the equivalent of ``size-components`` or ``size-files`` output:
 
 .. code-block:: bash
 
-    $IDF_PATH/tools/idf_size.py --archives build/project_name.map
-    $IDF_PATH/tools/idf_size.py --files build/project_name.map
+    python -m esp_idf_size --archives build/project_name.map
+    python -m esp_idf_size --files build/project_name.map
 
 .. _linker-map-file:
 
@@ -316,11 +316,13 @@ Targeted Optimizations
 
 The following binary size optimizations apply to a particular component or a function:
 
-Wi-Fi
-@@@@@
+.. only:: SOC_WIFI_SUPPORTED
 
-- Disabling :ref:`CONFIG_ESP32_WIFI_ENABLE_WPA3_SAE` will save some Wi-Fi binary size if WPA3 support is not needed. (Note that WPA3 is mandatory for new Wi-Fi device certifications.)
-- Disabling :ref:`CONFIG_ESP_WIFI_SOFTAP_SUPPORT` will save some Wi-Fi binary size if soft-AP support is not needed.
+    Wi-Fi
+    @@@@@
+
+    - Disabling :ref:`CONFIG_ESP_WIFI_ENABLE_WPA3_SAE` will save some Wi-Fi binary size if WPA3 support is not needed. (Note that WPA3 is mandatory for new Wi-Fi device certifications.)
+    - Disabling :ref:`CONFIG_ESP_WIFI_SOFTAP_SUPPORT` will save some Wi-Fi binary size if soft-AP support is not needed.
 
 .. only:: esp32
 
@@ -352,6 +354,15 @@ lwIP IPv6
 
       IPv6 is required by some components such as ``coap`` and :doc:`/api-reference/protocols/asio`, These components will not be available if IPV6 is disabled.
 
+lwIP IPv4
+@@@@@@@@@
+
+- If IPv4 connectivity is not required, setting :ref:`CONFIG_LWIP_IPV4` to false will reduce the size of the lwIP, supporting IPv6 only TCP/IP stack.
+
+  .. note::
+
+      Before disabling IPv4 support, please note that IPv6 only network environments are not ubiquitous and must be supported in the local network, e.g. by your internet service provider or using constrained local network settings.
+
 .. _newlib-nano-formatting:
 
 Newlib nano formatting
@@ -359,11 +370,17 @@ Newlib nano formatting
 
 By default, ESP-IDF uses newlib "full" formating for I/O (printf, scanf, etc.)
 
-Enabling the config option :ref:`CONFIG_NEWLIB_NANO_FORMAT` will switch newlib to the "nano" formatting mode. This both smaller in code size and a large part of the implementation is compiled into the {IDF_TARGET_NAME} ROM, so it doesn't need to be included in the binary at all.
+.. only:: CONFIG_ESP_ROM_HAS_NEWLIB_NANO_FORMAT
 
-The exact difference in binary size depends on which features the firmware uses, but 25 KB ~ 50 KB is typical.
+    Enabling the config option :ref:`CONFIG_NEWLIB_NANO_FORMAT` will switch newlib to the "nano" formatting mode. This both smaller in code size and a large part of the implementation is compiled into the {IDF_TARGET_NAME} ROM, so it doesn't need to be included in the binary at all.
 
-Enabling Nano formatting also reduces the stack usage of each function that calls printf() or another string formatting function, see :ref:`optimize-stack-sizes`.
+    The exact difference in binary size depends on which features the firmware uses, but 25 KB ~ 50 KB is typical.
+
+.. only:: CONFIG_ESP_ROM_HAS_NEWLIB_NORMAL_FORMAT
+
+    Disabling the config option :ref:`CONFIG_NEWLIB_NANO_FORMAT` will switch newlib to the "full" formatting mode. This will reduce the binary size, as {IDF_TARGET_NAME} has the full formatting version of the functions in ROM,  so it doesn't need to be included in the binary at all.
+
+Enabling Nano formatting reduces the stack usage of each function that calls printf() or another string formatting function, see :ref:`optimize-stack-sizes`.
 
 "Nano" formatting doesn't support 64-bit integers, or C99 formatting features. For a full list of restrictions, search for ``--enable-newlib-nano-formatted-io`` in the `Newlib README file`_.
 
@@ -435,13 +452,11 @@ VFS
         :CONFIG_ESP_ROM_HAS_HAL_SYSTIMER: * Enabling :ref:`CONFIG_HAL_SYSTIMER_USE_ROM_IMPL` can reduce the IRAM usage and binary size by linking in the systimer HAL driver of ROM implementation.
         :CONFIG_ESP_ROM_HAS_HAL_WDT: * Enabling :ref:`CONFIG_HAL_WDT_USE_ROM_IMPL` can reduce the IRAM usage and binary size by linking in the watchdog HAL driver of ROM implementation.
 
-.. only:: CONFIG_ESP_ROM_HAS_HEAP_TLSF
-
     Heap
     @@@@
 
     .. list::
-
+        * Enabling :ref:`CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH` can reduce the IRAM usage and binary size by placing the entirety of the heap functionalities in flash memory.
         :CONFIG_ESP_ROM_HAS_HEAP_TLSF: * Enabling :ref:`CONFIG_HEAP_TLSF_USE_ROM_IMPL` can reduce the IRAM usage and binary size by linking in the TLSF library of ROM implementation.
 
 Bootloader Size

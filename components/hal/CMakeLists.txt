@@ -1,3 +1,4 @@
+
 idf_build_get_property(target IDF_TARGET)
 
 # On Linux, there is currently no HAL, hence this simple component registration
@@ -8,8 +9,8 @@ endif()
 
 set(srcs "mpu_hal.c"
          "efuse_hal.c"
-         "${target}/efuse_hal.c"
-         "mmu_hal.c")
+         "${target}/efuse_hal.c")
+
 
 set(includes "${target}/include" "include" "platform_port/include")
 
@@ -17,16 +18,16 @@ if(NOT CONFIG_HAL_WDT_USE_ROM_IMPL)
     list(APPEND srcs "wdt_hal_iram.c")
 endif()
 
-if(NOT ${target} STREQUAL "esp32")
+if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
+    list(APPEND srcs "mmu_hal.c")
+endif()
+
+if(NOT ${target} STREQUAL "esp32" AND NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
     list(APPEND srcs "cache_hal.c")
 endif()
 
-if(${target} STREQUAL "esp32h4")
-    if(CONFIG_IDF_TARGET_ESP32H4_BETA_VERSION_1)
-        list(APPEND includes "${target}/include/rev1")
-    elseif(CONFIG_IDF_TARGET_ESP32H4_BETA_VERSION_2)
-        list(APPEND includes "${target}/include/rev2")
-    endif()
+if(${target} STREQUAL "esp32c6")
+    list(APPEND srcs "esp32c6/lp_timer_hal.c")
 endif()
 
 if(NOT BOOTLOADER_BUILD)
@@ -35,12 +36,19 @@ if(NOT BOOTLOADER_BUILD)
         "gpio_hal.c"
         "uart_hal.c"
         "uart_hal_iram.c"
-        "spi_flash_hal.c"
-        "spi_flash_hal_iram.c"
-        "spi_flash_encrypt_hal_iram.c"
         "adc_hal_common.c"
         "adc_oneshot_hal.c"
         "${target}/clk_tree_hal.c")
+
+    if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
+        list(APPEND srcs
+            "spi_flash_hal.c"
+            "spi_flash_hal_iram.c"
+        )
+        if(CONFIG_SOC_FLASH_ENC_SUPPORTED)
+            list(APPEND srcs "spi_flash_encrypt_hal_iram.c")
+        endif()
+    endif()
 
     if(CONFIG_SOC_SYSTIMER_SUPPORTED AND NOT CONFIG_HAL_SYSTIMER_USE_ROM_IMPL)
         list(APPEND srcs "systimer_hal.c")
@@ -94,6 +102,10 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "etm_hal.c")
     endif()
 
+    if(CONFIG_SOC_PARLIO_SUPPORTED)
+        list(APPEND srcs "parlio_hal.c")
+    endif()
+
     if(CONFIG_SOC_ADC_DMA_SUPPORTED)
         list(APPEND srcs "adc_hal.c")
     endif()
@@ -106,6 +118,14 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "ecc_hal.c")
     endif()
 
+    if(CONFIG_SOC_ECDSA_SUPPORTED)
+        list(APPEND srcs "ecdsa_hal.c")
+    endif()
+
+    if(CONFIG_SOC_MPI_SUPPORTED)
+        list(APPEND srcs "mpi_hal.c")
+    endif()
+
     if(CONFIG_SOC_SHA_SUPPORTED)
         list(APPEND srcs "sha_hal.c")
     endif()
@@ -116,6 +136,14 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_MODEM_CLOCK_IS_INDEPENDENT)
         list(APPEND srcs "${target}/modem_clock_hal.c")
+    endif()
+
+    if(CONFIG_SOC_LP_TIMER_SUPPORTED)
+        list(APPEND srcs "${target}/lp_timer_hal.c")
+    endif()
+
+    if(CONFIG_SOC_PAU_SUPPORTED)
+        list(APPEND srcs "${target}/pau_hal.c")
     endif()
 
     if(CONFIG_SOC_BOD_SUPPORTED)
@@ -136,6 +164,24 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_SDIO_SLAVE_SUPPORTED)
         list(APPEND srcs "sdio_slave_hal.c")
+    endif()
+
+    if(CONFIG_SOC_PMU_SUPPORTED)
+        list(APPEND srcs "${target}/pmu_hal.c")
+    endif()
+
+    if(CONFIG_SOC_APM_SUPPORTED)
+        list(APPEND srcs "apm_hal.c")
+    endif()
+
+    if(CONFIG_SOC_HMAC_SUPPORTED AND NOT CONFIG_IDF_TARGET_ESP32S2)
+        # For ESP32-S2 we do not have HMAC HAL layer implementation yet
+        list(APPEND srcs "hmac_hal.c")
+    endif()
+
+    if(CONFIG_SOC_DIG_SIGN_SUPPORTED AND NOT CONFIG_IDF_TARGET_ESP32S2)
+        # For ESP32-S2 we do not have DS HAL layer implementation yet
+        list(APPEND srcs "ds_hal.c")
     endif()
 
     if(${target} STREQUAL "esp32")
@@ -159,13 +205,11 @@ if(NOT BOOTLOADER_BUILD)
 
     if(${target} STREQUAL "esp32s3")
         list(APPEND srcs
-            "ds_hal.c"
             "spi_flash_hal_gpspi.c"
             "touch_sensor_hal.c"
             "usb_hal.c"
             "usb_phy_hal.c"
             "xt_wdt_hal.c"
-            "hmac_hal.c"
             "esp32s3/touch_sensor_hal.c"
             "esp32s3/rtc_cntl_hal.c"
             "usb_dwc_hal.c")
@@ -173,20 +217,9 @@ if(NOT BOOTLOADER_BUILD)
 
     if(${target} STREQUAL "esp32c3")
         list(APPEND srcs
-              "ds_hal.c"
               "spi_flash_hal_gpspi.c"
               "xt_wdt_hal.c"
-              "hmac_hal.c"
               "esp32c3/rtc_cntl_hal.c")
-    endif()
-
-    if(${target} STREQUAL "esp32h4")
-        list(APPEND srcs
-            "ds_hal.c"
-            "spi_flash_hal_gpspi.c"
-            "aes_hal.c"
-            "hmac_hal.c"
-            "esp32h4/rtc_cntl_hal.c")
     endif()
 
     if(${target} STREQUAL "esp32c2")
@@ -197,10 +230,7 @@ if(NOT BOOTLOADER_BUILD)
 
     if(${target} STREQUAL "esp32c6")
         list(APPEND srcs
-              "spi_flash_hal_gpspi.c"
-              "esp32c6/rtc_cntl_hal.c"
-              "hmac_hal.c"
-              "ds_hal.c")
+              "spi_flash_hal_gpspi.c")
 
     endif()
 
@@ -210,10 +240,8 @@ if(NOT BOOTLOADER_BUILD)
             )
 
         list(REMOVE_ITEM srcs
-                "adc_oneshot_hal.c" # TODO: IDF-6214
-                "adc_hal_common.c" # TODO: IDF-6215
                 "esp32h2/rtc_cntl_hal.c"
-                "esp32h2/clk_tree_hal.c"
+                "esp32h2/pmu_hal.c" # TODO: IDF-6267
                 )
     endif()
 endif()

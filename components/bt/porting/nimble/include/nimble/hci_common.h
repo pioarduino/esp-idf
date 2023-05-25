@@ -28,12 +28,13 @@
 #define H_BLE_HCI_COMMON_
 
 #include "ble.h"
+#include "nimble/transport.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define BLE_HCI_MAX_DATA_LEN (MYNEWT_VAL(BLE_HCI_EVT_BUF_SIZE) - \
+#define BLE_HCI_MAX_DATA_LEN (MYNEWT_VAL(BLE_TRANSPORT_EVT_SIZE) - \
                               sizeof(struct ble_hci_ev))
 
 /* Generic command header */
@@ -1074,7 +1075,6 @@ struct ble_hci_le_enh_read_transmit_power_level_cp {
     uint8_t phy;
 } __attribute__((packed));
 struct ble_hci_le_enh_read_transmit_power_level_rp {
-    uint8_t status;
     uint16_t conn_handle;
     uint8_t phy;
     uint8_t curr_tx_power_level;
@@ -1967,8 +1967,7 @@ struct ble_hci_ev_le_subev_subrate_change {
 #define BLE_HCI_DATA_PB(handle_pb_bc)       (((handle_pb_bc) & 0x3000) >> 12)
 #define BLE_HCI_DATA_BC(handle_pb_bc)       (((handle_pb_bc) & 0xc000) >> 14)
 
-struct hci_data_hdr
-{
+struct hci_data_hdr {
     uint16_t hdh_handle_pb_bc;
     uint16_t hdh_len;
 };

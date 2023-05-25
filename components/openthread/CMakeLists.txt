@@ -1,4 +1,6 @@
 if(CONFIG_OPENTHREAD_ENABLED)
+    idf_build_get_property(idf_target IDF_TARGET)
+
     set(public_include_dirs
         "include"
         "openthread/include")
@@ -57,6 +59,7 @@ if(CONFIG_OPENTHREAD_ENABLED)
         list(APPEND exclude_srcs
             "openthread/examples/apps/ncp/main.c"
             "openthread/src/core/api/backbone_router_api.cpp"
+            "openthread/src/core/api/child_supervision_api.cpp"
             "openthread/src/core/api/dataset_api.cpp"
             "openthread/src/core/api/dns_api.cpp"
             "openthread/src/core/api/entropy_api.cpp"
@@ -64,6 +67,7 @@ if(CONFIG_OPENTHREAD_ENABLED)
             "openthread/src/core/api/icmp6_api.cpp"
             "openthread/src/core/api/ip6_api.cpp"
             "openthread/src/core/api/link_api.cpp"
+            "openthread/src/core/api/link_metrics_api.cpp"
             "openthread/src/core/api/message_api.cpp"
             "openthread/src/core/api/nat64_api.cpp"
             "openthread/src/core/api/netdata_api.cpp"
@@ -84,9 +88,11 @@ if(CONFIG_OPENTHREAD_ENABLED)
             "openthread/src/core/thread/announce_begin_server.cpp"
             "openthread/src/core/thread/announce_sender.cpp"
             "openthread/src/core/thread/address_resolver.cpp"
+            "openthread/src/core/thread/child_supervision.cpp"
             "openthread/src/core/thread/discover_scanner.cpp"
             "openthread/src/core/thread/energy_scan_server.cpp"
             "openthread/src/core/thread/key_manager.cpp"
+            "openthread/src/core/thread/link_metrics.cpp"
             "openthread/src/core/thread/lowpan.cpp"
             "openthread/src/core/thread/mesh_forwarder.cpp"
             "openthread/src/core/thread/mesh_forwarder_ftd.cpp"
@@ -107,9 +113,11 @@ if(CONFIG_OPENTHREAD_ENABLED)
 
     if(CONFIG_OPENTHREAD_RADIO_NATIVE)
         list(APPEND exclude_srcs
-            "port/esp_openthread_radio_uart.cpp"
-            "port/esp_uart_spinel_interface.cpp")
-    elseif(CONFIG_OPENTHREAD_RADIO_SPINEL_UART)
+            "port/esp_openthread_radio_spinel.cpp"
+            "port/esp_spi_spinel_interface.cpp"
+            "port/esp_uart_spinel_interface.cpp"
+            )
+    elseif(CONFIG_OPENTHREAD_RADIO_SPINEL_UART OR CONFIG_OPENTHREAD_RADIO_SPINEL_SPI)
         list(APPEND exclude_srcs
             "port/esp_openthread_radio.c")
     endif()
@@ -123,6 +131,11 @@ if(CONFIG_OPENTHREAD_ENABLED)
         set_source_files_properties("openthread/src/core/net/srp_server.cpp"
             PROPERTIES COMPILE_FLAGS
             -Wno-maybe-uninitialized)
+    endif()
+
+    if(NOT CONFIG_OPENTHREAD_DNS64_CLIENT)
+        list(APPEND exclude_srcs
+            "port/esp_openthread_dns64.c")
     endif()
 
     if(CONFIG_OPENTHREAD_FTD)
@@ -157,8 +170,9 @@ idf_component_register(SRC_DIRS "${src_dirs}"
                        EXCLUDE_SRCS "${exclude_srcs}"
                        INCLUDE_DIRS "${public_include_dirs}"
                        PRIV_INCLUDE_DIRS "${private_include_dirs}"
-                       REQUIRES esp_netif lwip
-                       PRIV_REQUIRES console driver esp_event esp_partition esp_timer
+                       REQUIRES esp_netif lwip driver
+                       LDFRAGMENTS linker.lf
+                       PRIV_REQUIRES console esp_event esp_partition esp_timer
                                      ieee802154 mbedtls spi_flash)
 
 if(CONFIG_OPENTHREAD_ENABLED)

@@ -25,7 +25,7 @@ MEMORY
   */
   iram_seg (RWX) :                  org = 0x40080400, len = 0xfc00
   /* 64k at the end of DRAM, after ROM bootloader stack */
-  dram_seg (RW) :                  	org = 0x3FFF0000, len = 0x10000
+  dram_seg (RW) :                  	org = 0x3FFF0000, len = 0x6000
 }
 
 /*  Default entry point:  */
@@ -109,9 +109,14 @@ SECTIONS
     _bss_end = ABSOLUTE(.);
   } >dram_seg
 
-  .dram0.data :
+  .dram0.bootdesc : ALIGN(0x10)
   {
     _data_start = ABSOLUTE(.);
+    *(.data_bootloader_desc .data_bootloader_desc.*)               /* Should be the first.  Bootloader version info.        DO NOT PUT ANYTHING BEFORE IT! */
+  } > dram_seg
+
+  .dram0.data : ALIGN(0x10)
+  {
     *(.data)
     *(.data.*)
     *(.gnu.linkonce.d.*)

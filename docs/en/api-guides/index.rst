@@ -7,7 +7,7 @@ API Guides
 
    app_trace
    startup
-   :SOC_BT_SUPPORTED: blufi
+   :SOC_BLUFI_SUPPORTED: blufi
    bootloader
    build-system
    :SOC_SUPPORT_COEXISTENCE: coexist
@@ -17,9 +17,7 @@ API Guides
    :SOC_USB_OTG_SUPPORTED: dfu
    error-handling
    :SOC_BLE_MESH_SUPPORTED: esp-ble-mesh/ble-mesh-index
-   freertos-smp
    :SOC_WIFI_MESH_SUPPORT: esp-wifi-mesh
-   event-handling
    :SOC_SPIRAM_SUPPORTED: external-ram
    fatal-errors
    ../security/flash-encryption

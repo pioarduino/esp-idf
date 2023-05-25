@@ -36,27 +36,9 @@ test_nvs_coverage:
 
 test_partition_table_on_host:
   extends: .host_test_template
-  tags:
-    - build
   script:
     - cd components/partition_table/test_gen_esp32part_host
     - ./gen_esp32part_tests.py
-
-test_wl_on_host:
-  extends: .host_test_template
-  artifacts:
-    paths:
-      - components/wear_levelling/test_wl_host/coverage_report.zip
-    expire_in: 1 week
-  script:
-    - cd components/wear_levelling/test_wl_host
-    - make test
-
-test_fatfs_on_host:
-  extends: .host_test_template
-  script:
-    - cd components/fatfs/test_fatfs_host/
-    - make test
 
 test_ldgen_on_host:
   extends: .host_test_template
@@ -84,44 +66,6 @@ test_reproducible_build:
       - "**/build*/partition_table/*.bin"
     expire_in: 1 week
 
-.host_fuzzer_test_template:
-  extends:
-    - .host_test_template
-    - .rules:labels:fuzzer_test-weekend_test
-  image: $AFL_FUZZER_TEST_IMAGE
-  artifacts:
-    when: always
-    paths:
-      - ${FUZZER_TEST_DIR}/out/crashes
-      - ${FUZZER_TEST_DIR}/fuzz_output.txt
-    expire_in: 1 week
-  script:
-    - export AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 && export AFL_SKIP_CPUFREQ=1
-    - cd ${FUZZER_TEST_DIR}
-    # run AFL fuzzer for one hour
-    - ( ( make ${FUZZER_PARAMS} fuzz | tee fuzz_output.txt | grep -v '\(Fuzzing test case\|Entering queue cycle\)' ) || pkill sleep ) &
-    - ( sleep 3600 || mkdir -p out/crashes/env_failed ) && pkill afl-fuz
-    # check no crashes found
-    - test -z "$(ls out/crashes/)" || exit 1
-
-test_lwip_dns_fuzzer_on_host:
-  extends: .host_fuzzer_test_template
-  variables:
-    FUZZER_TEST_DIR: components/lwip/test_afl_host
-    FUZZER_PARAMS: MODE=dns
-
-test_lwip_dhcp_fuzzer_on_host:
-  extends: .host_fuzzer_test_template
-  variables:
-    FUZZER_TEST_DIR: components/lwip/test_afl_host
-    FUZZER_PARAMS: MODE=dhcp_client
-
-test_lwip_dhcps_fuzzer_on_host:
-  extends: .host_fuzzer_test_template
-  variables:
-    FUZZER_TEST_DIR: components/lwip/test_afl_host
-    FUZZER_PARAMS: MODE=dhcp_server
-
 test_spiffs_on_host:
   extends: .host_test_template
   script:
@@ -144,36 +88,16 @@ test_multi_heap_on_host:
 
 test_certificate_bundle_on_host:
   extends: .host_test_template
-  tags:
-    - build
   script:
     - cd components/mbedtls/esp_crt_bundle/test_gen_crt_bundle/
     - ./test_gen_crt_bundle.py
 
-test_idf_monitor:
+test_gdbstub_on_host:
   extends: .host_test_template
-  artifacts:
-    # save artifacts always in order to access results which were retried without consequent failure
-    when: always
-    paths:
-      - tools/test_idf_monitor/outputs/*
-    expire_in: 1 week
   script:
-    - eval $($IDF_PATH/tools/idf_tools.py export)
-    - cd ${IDF_PATH}/tools/test_idf_monitor
-    - ./run_test_idf_monitor.py
+    - cd components/esp_gdbstub/test_gdbstub_host
+    - make test
 
-test_idf_size:
-  extends: .host_test_template
-  artifacts:
-    when: on_failure
-    paths:
-      - tools/test_idf_size/output
-      - tools/test_idf_size/.coverage
-    expire_in: 1 week
-  script:
-    - cd ${IDF_PATH}/tools/test_idf_size
-    - ./test.sh
 
 test_idf_py:
   extends: .host_test_template
@@ -219,7 +143,7 @@ test_idf_tools:
   script:
     - cd ${IDF_PATH}/components/efuse/
     - ./efuse_table_gen.py -t "${IDF_TARGET}" ${IDF_PATH}/components/efuse/${IDF_TARGET}/esp_efuse_table.csv
-    - git diff --exit-code -- ${IDF_TARGET}/esp_efuse_table.c || { echo 'Differences found for ${IDF_TARGET} target. Please run make efuse_common_table or idf.py efuse-common-table and commit the changes.'; exit 1; }
+    - git diff --exit-code -- ${IDF_TARGET}/esp_efuse_table.c || { echo 'Differences found for ${IDF_TARGET} target. Please run idf.py efuse-common-table and commit the changes.'; exit 1; }
     - cd ${IDF_PATH}/components/efuse/test_efuse_host
     - ./efuse_tests.py
 
@@ -241,29 +165,15 @@ test_efuse_table_on_host_esp32c3:
   variables:
     IDF_TARGET: esp32c3
 
-test_efuse_table_on_host_esp32h4:
+test_efuse_table_on_host_esp32h2:
   extends: .test_efuse_table_on_host_template
   variables:
-    IDF_TARGET: esp32h4
+    IDF_TARGET: esp32h2
 
-test_espcoredump:
-  extends: .host_test_template
-  artifacts:
-    when: always
-    paths:
-      - components/espcoredump/test/**/.coverage
-      - components/espcoredump/test/**/output
-    expire_in: 1 week
+test_efuse_table_on_host_esp32c6:
+  extends: .test_efuse_table_on_host_template
   variables:
-    IDF_COREDUMP_ELF_REPO: "https://gitlab-ci-token:${BOT_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/idf/idf-coredump-elf.git"
-    IDF_COREDUMP_ELF_TAG: idf-20220928
-    # install CMake version specified in tools.json
-    SETUP_TOOLS_LIST: "all"
-  script:
-    - eval $($IDF_PATH/tools/idf_tools.py export)
-    - retry_failed git clone ${IDF_COREDUMP_ELF_REPO} -b $IDF_COREDUMP_ELF_TAG
-    - cd ${IDF_PATH}/components/espcoredump/test/
-    - ./test_espcoredump.sh ${CI_PROJECT_DIR}/idf-coredump-elf
+    IDF_TARGET: esp32c6
 
 test_logtrace_proc:
   extends: .host_test_template
@@ -340,6 +250,31 @@ test_mqtt_on_host:
     - idf.py build
     - LSAN_OPTIONS=verbosity=1:log_threads=1 build/host_mqtt_client_test.elf
 
+test_transport_on_host:
+  extends: .host_test_template
+  script:
+    - cd ${IDF_PATH}/components/tcp_transport/host_test
+    - idf.py build
+    - LSAN_OPTIONS=verbosity=1:log_threads=1 build/host_tcp_transport_test.elf
+
+test_sockets_on_host:
+  extends: .host_test_template
+  script:
+    # test the tcp-client example with system sockets
+    - cd ${IDF_PATH}/examples/protocols/sockets/tcp_client
+    - echo 'CONFIG_EXAMPLE_IPV4_ADDR="127.0.0.1"' >> sdkconfig.defaults
+    - idf.py --preview set-target linux
+    - idf.py build
+    - timeout 5 ./build/tcp_client.elf >test.log || true
+    - grep "Socket unable to connect" test.log
+    # test the udp-client example with lwip sockets
+    - cd ${IDF_PATH}/examples/protocols/sockets/udp_client
+    - idf.py --preview set-target linux
+    - cat sdkconfig.ci.linux > sdkconfig
+    - idf.py build
+    - timeout 5 ./build/udp_client.elf >test.log || true
+    - grep "Message sent" test.log
+
 test_eh_frame_parser:
   extends: .host_test_template
   script:
@@ -396,4 +331,6 @@ test_pytest_linux:
       --target linux
       --pytest-apps
       -m host_test
+    - retry_failed git clone $KNOWN_FAILURE_CASES_REPO known_failure_cases
     - run_cmd pytest --target linux -m host_test --junitxml=XUNIT_RESULT.xml
+      --known-failure-cases-file known_failure_cases/known_failure_cases.txt

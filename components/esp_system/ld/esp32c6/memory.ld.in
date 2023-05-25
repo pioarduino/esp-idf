@@ -15,13 +15,15 @@
 #include "sdkconfig.h"
 #include "ld.common"
 
+#if CONFIG_BOOTLOADER_RESERVE_RTC_MEM
 #ifdef CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC
 #define ESP_BOOTLOADER_RESERVE_RTC (CONFIG_BOOTLOADER_RESERVE_RTC_SIZE + CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE)
-#elif defined(CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP)
+#else
 #define ESP_BOOTLOADER_RESERVE_RTC (CONFIG_BOOTLOADER_RESERVE_RTC_SIZE)
+#endif // not CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC
 #else
 #define ESP_BOOTLOADER_RESERVE_RTC 0
-#endif
+#endif // not CONFIG_BOOTLOADER_RESERVE_RTC_MEM
 
 /**
  * physical memory is mapped twice to the vritual address (IRAM and DRAM).
@@ -31,7 +33,7 @@
 #define SRAM_DRAM_START     0x40800000
 
 #define I_D_SRAM_OFFSET     (SRAM_IRAM_START - SRAM_DRAM_START)
-#define SRAM_DRAM_END       0x40880000 - I_D_SRAM_OFFSET  /* 2nd stage bootloader iram_loader_seg start address */
+#define SRAM_DRAM_END       0x4086E610 - I_D_SRAM_OFFSET  /* 2nd stage bootloader iram_loader_seg start address */
 
 #define SRAM_IRAM_ORG       (SRAM_IRAM_START)
 #define SRAM_DRAM_ORG       (SRAM_DRAM_START)
@@ -45,12 +47,8 @@
 #define IDRAM0_2_SEG_SIZE   (CONFIG_MMU_PAGE_SIZE << 8)
 #endif
 
-#if CONFIG_ESP32C6_USE_FIXED_STATIC_RAM_SIZE
-ASSERT((CONFIG_ESP32C6_FIXED_STATIC_RAM_SIZE <= I_D_SRAM_SIZE), "Fixed static ram data does not fit.")
-#define DRAM0_0_SEG_LEN CONFIG_ESP3C6_FIXED_STATIC_RAM_SIZE
-#else
 #define DRAM0_0_SEG_LEN I_D_SRAM_SIZE
-#endif // CONFIG_ESP32C6_USE_FIXED_STATIC_RAM_SIZE
+
 MEMORY
 {
   /**
@@ -93,19 +91,12 @@ MEMORY
    */
 #if CONFIG_ULP_COPROC_ENABLED
   lp_ram_seg(RW)  :                 org = 0x50000000 + CONFIG_ULP_COPROC_RESERVE_MEM,
-                                    len = 0x4000 - CONFIG_ULP_COPROC_RESERVE_MEM
+                                    len = 0x4000 - CONFIG_ULP_COPROC_RESERVE_MEM - ESP_BOOTLOADER_RESERVE_RTC
 #else
-  lp_ram_seg(RW)  :                 org = 0x50000000 , len = 0x4000
+  lp_ram_seg(RW)  :                 org = 0x50000000 , len = 0x4000 - ESP_BOOTLOADER_RESERVE_RTC
 #endif // CONFIG_ULP_COPROC_ENABLED
 
 }
-
-#if CONFIG_ESP32C6_USE_FIXED_STATIC_RAM_SIZE
-/* static data ends at defined address */
-_static_data_end = 0x40820000 + DRAM0_0_SEG_LEN;
-#else
-_static_data_end = _bss_end;
-#endif // CONFIG_ESP32C6_USE_FIXED_STATIC_RAM_SIZE
 
 /* Heap ends at top of dram0_0_seg */
 _heap_end = 0x40000000;

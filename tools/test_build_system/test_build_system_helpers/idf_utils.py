@@ -1,12 +1,14 @@
-# SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import typing
 from pathlib import Path
+from typing import Pattern, Union
 
 try:
     EXT_IDF_PATH = os.environ['IDF_PATH']  # type: str
@@ -57,13 +59,17 @@ def get_idf_build_env(idf_path: str) -> EnvDict:
 def run_idf_py(*args: str,
                env: typing.Optional[EnvDict] = None,
                idf_path: typing.Optional[typing.Union[str,Path]] = None,
-               workdir: typing.Optional[str] = None) -> subprocess.CompletedProcess:
+               workdir: typing.Optional[str] = None,
+               check: bool = True,
+               python: typing.Optional[str] = None) -> subprocess.CompletedProcess:
     """
     Run idf.py command with given arguments, raise an exception on failure
     :param args: arguments to pass to idf.py
     :param env: environment variables to run the build with; if not set, the default environment is used
     :param idf_path: path to the IDF copy to use; if not set, IDF_PATH from the 'env' argument is used
     :param workdir: directory where to run the build; if not set, the current directory is used
+    :param check: check process exits with a zero exit code, if false all retvals are accepted without failing the test
+    :param python: absolute path to python interpreter
     """
     env_dict = dict(**os.environ)
     if env is not None:
@@ -75,8 +81,8 @@ def run_idf_py(*args: str,
         idf_path = env_dict.get('IDF_PATH')
         if not idf_path:
             raise ValueError('IDF_PATH must be set in the env array if idf_path argument is not set')
-
-    python = find_python(env_dict['PATH'])
+    if python is None:
+        python = find_python(env_dict['PATH'])
 
     cmd = [
         python,
@@ -86,5 +92,50 @@ def run_idf_py(*args: str,
     logging.debug('running {} in {}'.format(' '.join(cmd), workdir))
     return subprocess.run(
         cmd, env=env_dict, cwd=workdir,
-        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=check, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding='utf-8', errors='backslashreplace')
+
+
+def run_cmake(*cmake_args: str, env: typing.Optional[EnvDict] = None,
+              check: bool = True) -> subprocess.CompletedProcess:
+    """
+    Run cmake command with given arguments, raise an exception on failure
+    :param cmake_args: arguments to pass cmake
+    :param env: environment variables to run the cmake with; if not set, the default environment is used
+    """
+    if not env:
+        env = dict(**os.environ)
+    workdir = (Path(os.getcwd()) / 'build')
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    cmd = ['cmake'] + list(cmake_args)
+
+    logging.debug('running {} in {}'.format(' '.join(cmd), workdir))
+    return subprocess.run(
+        cmd, env=env, cwd=workdir,
+        check=check, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding='utf-8', errors='backslashreplace')
+
+
+def run_cmake_and_build(*cmake_args: str, env: typing.Optional[EnvDict] = None) -> None:
+    """
+    Run cmake command with given arguments and build afterwards, raise an exception on failure
+    :param cmake_args: arguments to pass cmake
+    :param env: environment variables to run the cmake with; if not set, the default environment is used
+    """
+    run_cmake(*cmake_args, env=env)
+    run_cmake('--build', '.')
+
+
+def file_contains(filename: Union[str, Path], what: Union[str, Pattern]) -> bool:
+    """
+    Returns true if file contains required object
+    :param filename: path to file where lookup is executed
+    :param what: searched substring or regex object
+    """
+    with open(filename, 'r', encoding='utf-8') as f:
+        data = f.read()
+        if isinstance(what, str):
+            return what in data
+        else:
+            return re.search(what, data) is not None

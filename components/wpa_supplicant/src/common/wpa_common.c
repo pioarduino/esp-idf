@@ -270,7 +270,7 @@ static int rsn_selector_to_bitfield(const u8 *s)
 		return WPA_CIPHER_CCMP;
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_WEP104)
 		return WPA_CIPHER_WEP104;
-#ifdef COFIG_GCMP
+#ifdef CONFIG_GCMP
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_GCMP)
 		return WPA_CIPHER_GCMP;
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_GCMP_256)
@@ -279,7 +279,7 @@ static int rsn_selector_to_bitfield(const u8 *s)
 #ifdef CONFIG_IEEE80211W
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_AES_128_CMAC)
 		return WPA_CIPHER_AES_128_CMAC;
-#ifdef COFIG_GMAC
+#ifdef CONFIG_GMAC
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_BIP_GMAC_128)
 		return WPA_CIPHER_BIP_GMAC_128;
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_BIP_GMAC_256)
@@ -369,7 +369,7 @@ int wpa_parse_wpa_ie_rsnxe(const u8 *rsnxe_ie, size_t rsnxe_ie_len,
              struct wpa_ie_data *data)
 {
 	uint8_t rsnxe_capa = 0;
-	uint8_t sae_pwe = esp_wifi_sta_get_config_sae_pwe_h2e_internal();
+	uint8_t sae_pwe = esp_wifi_get_config_sae_pwe_h2e_internal(WIFI_IF_STA);
 	memset(data, 0, sizeof(*data));
 
 	if (rsnxe_ie_len < 1) {
@@ -493,17 +493,17 @@ int wpa_parse_wpa_ie_rsn(const u8 *rsn_ie, size_t rsn_ie_len,
 	}
 
 	if (left >= 2) {
-		data->num_pmkid = WPA_GET_LE16(pos);
+		u16 num_pmkid = WPA_GET_LE16(pos);
 		pos += 2;
 		left -= 2;
-		if (left < (int) data->num_pmkid * PMKID_LEN) {
+		if (num_pmkid > (unsigned int) left / PMKID_LEN) {
 			wpa_printf(MSG_DEBUG, "%s: PMKID underflow "
-				   "(num_pmkid=%lu left=%d)",
-				   __func__, (unsigned long) data->num_pmkid,
-				   left);
+				   "(num_pmkid=%u left=%d)",
+				   __func__, num_pmkid, left);
 			data->num_pmkid = 0;
 			return -9;
 		} else {
+			data->num_pmkid = num_pmkid;
 			data->pmkid = pos;
 			pos += data->num_pmkid * PMKID_LEN;
 			left -= data->num_pmkid * PMKID_LEN;
@@ -829,6 +829,28 @@ int wpa_pmk_r1_to_ptk(const u8 *pmk_r1, const u8 *snonce, const u8 *anonce,
 
 
 /**
+* wpa_use_akm_defined - Is AKM-defined Key Descriptor Version used
+* @akmp: WPA_KEY_MGMT_* used in key derivation
+* Returns: 1 if AKM-defined Key Descriptor Version is used; 0 otherwise
+*/
+
+int wpa_use_akm_defined(int akmp){
+	int ret = 0;
+	if(wpa_key_mgmt_sae(akmp))
+		ret = 1;
+	return ret;
+}
+
+int wpa_use_aes_key_wrap(int akmp)
+{
+	return akmp == WPA_KEY_MGMT_OSEN ||
+		wpa_key_mgmt_ft(akmp) ||
+		wpa_key_mgmt_sha256(akmp) ||
+		wpa_key_mgmt_sae(akmp) ||
+		wpa_key_mgmt_suite_b(akmp);
+}
+
+/**
  * wpa_eapol_key_mic - Calculate EAPOL-Key MIC
  * @key: EAPOL-Key Key Confirmation Key (KCK)
  * @key_len: KCK length in octets
@@ -1149,26 +1171,28 @@ int wpa_pmk_to_ptk(const u8 *pmk, size_t pmk_len, const char *label,
  * PMKID = HMAC-SHA1-128(PMK, "PMK Name" || AA || SPA)
  */
 void rsn_pmkid(const u8 *pmk, size_t pmk_len, const u8 *aa, const u8 *spa,
-	       u8 *pmkid, int use_sha256)
+	       u8 *pmkid, int akmp)
 {
-	char title[9];
+	char *title = "PMK Name";
 	const u8 *addr[3];
 	const size_t len[3] = { 8, ETH_ALEN, ETH_ALEN };
 	unsigned char hash[SHA256_MAC_LEN];
 
-    os_memcpy(title, "PMK Name", sizeof("PMK Name"));
 	addr[0] = (u8 *) title;
 	addr[1] = aa;
 	addr[2] = spa;
 
 #ifdef CONFIG_IEEE80211W
-	if (use_sha256) {
+	if (wpa_key_mgmt_sha256(akmp)) {
+		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using HMAC-SHA-256");
 		hmac_sha256_vector(pmk, pmk_len, 3, addr, len, hash);
-	}
-	else
+	} else
 #endif /* CONFIG_IEEE80211W */
-	hmac_sha1_vector(pmk, pmk_len, 3, addr, len, hash);
-	memcpy(pmkid, hash, PMKID_LEN);
+	{
+		wpa_printf(MSG_DEBUG, "RSN: Derive PMKID using HMAC-SHA-1");
+		hmac_sha1_vector(pmk, pmk_len, 3, addr, len, hash);
+	}
+	os_memcpy(pmkid, hash, PMKID_LEN);
 }
 
 

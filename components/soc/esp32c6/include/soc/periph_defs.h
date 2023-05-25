@@ -37,9 +37,13 @@ typedef enum {
     PERIPH_GDMA_MODULE,
     PERIPH_MCPWM0_MODULE,
     PERIPH_ETM_MODULE,
+    PERIPH_PARLIO_MODULE,
     PERIPH_SYSTIMER_MODULE,
     PERIPH_SARADC_MODULE,
     PERIPH_TEMPSENSOR_MODULE,
+    PERIPH_REGDMA_MODULE,
+    PERIPH_LP_I2C0_MODULE,
+/* Peripherals clock managed by the modem_clock driver must be listed last in the enumeration */
     PERIPH_WIFI_MODULE,
     PERIPH_BT_MODULE,
     PERIPH_IEEE802154_MODULE,

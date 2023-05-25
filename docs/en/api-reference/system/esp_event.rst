@@ -4,11 +4,17 @@ Event Loop Library
 Overview
 --------
 
-The event loop library allows components to declare events to which other components can register handlers -- code which will
-execute when those events occur. This allows loosely coupled components to attach desired behavior to changes in state of other components
-without application involvement. For instance, a high level connection handling library may subscribe to events produced
-by the Wi-Fi subsystem directly and act on those events. This also simplifies event processing by serializing and deferring
-code execution to another context.
+The event loop library allows components to declare events to which other components can register handlers -- code which will execute when those events occur. This allows loosely coupled components to attach desired behavior to state changes of other components without application involvement. This also simplifies event processing by serializing and deferring code execution to another context.
+
+.. only:: SOC_WIFI_SUPPORTED
+
+    One common use case is if a high level library is using the WiFi library: it may subscribe to :ref:`events produced by the Wi-Fi subsystem <wifi-programming-model>` directly and act on those events. 
+
+.. only:: SOC_BT_SUPPORTED
+
+    .. note::
+    
+        Various modules of the Bluetooth stack deliver events to applications via dedicated callback functions instead of via the Event Loop Library.
 
 Using ``esp_event`` APIs
 ------------------------
@@ -22,7 +28,7 @@ These two appear prominently in the event loop library APIs.
 
 Using this library roughly entails the following flow:
 
-1. A user defines a function that should run when an event is posted to a loop. This function is referred to  as the event handler. It should have the same signature as :cpp:type:`esp_event_handler_t`.
+1. A user defines a function that should run when an event is posted to a loop. This function is referred to as the event handler. It should have the same signature as :cpp:type:`esp_event_handler_t`.
 2. An event loop is created using :cpp:func:`esp_event_loop_create`, which outputs a handle to the loop of type :cpp:type:`esp_event_loop_handle_t`. Event loops created using this API are referred to as user event loops. There is, however, a special type of event loop called the default event loop which are discussed :ref:`here <esp-event-default-loops>`.
 3. Components register event handlers to the loop using :cpp:func:`esp_event_handler_register_with`. Handlers can be registered with multiple loops, more on that :ref:`here <esp-event-handler-registration>`.
 4. Event sources post an event to the loop using :cpp:func:`esp_event_post_to`.
@@ -105,8 +111,8 @@ Event base definition:
 .. note::
 
     In IDF, the base identifiers for system events are uppercase and are postfixed with ``_EVENT``. For example, the base for Wi-Fi events is declared and defined
-    as ``WIFI_EVENT``, the ethernet event base ``ETHERNET_EVENT``, and so on. The purpose is to have event bases look like constants (although
-    they are global variables considering the defintions of macros ``ESP_EVENT_DECLARE_BASE`` and ``ESP_EVENT_DEFINE_BASE``).
+    as ``WIFI_EVENT``, the Ethernet event base ``ETHERNET_EVENT``, and so on. The purpose is to have event bases look like constants (although
+    they are global variables considering the definitions of macros ``ESP_EVENT_DECLARE_BASE`` and ``ESP_EVENT_DEFINE_BASE``).
 
 For event ID's, declaring them as enumerations is recommended. Once again, for visibility, these are typically placed in public header files.
 
@@ -185,6 +191,28 @@ and ``run_on_event_3`` would execute.
 If the hypothetical event ``MY_EVENT_BASE``, ``MY_OTHER_EVENT_ID`` is posted, only  ``run_on_event_2`` and ``run_on_event_3`` would execute.
 
 If the hypothetical event ``MY_OTHER_EVENT_BASE``, ``MY_OTHER_EVENT_ID`` is posted, only ``run_on_event_3`` would execute.
+
+Handler Un-registering Itself
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In general, an event handler run by an event loop is *not allowed to do any (un)registering activity on that event loop*. There is one exception, though: un-registering itself is allowed for the handler. E.g., it is possible to do the following:
+
+.. code-block:: c
+
+    void run_on_event(void* handler_arg, esp_event_base_t base, int32_t id, void* event_data)
+    {
+        esp_event_loop_handle_t *loop_handle = (esp_event_loop_handle_t*) handler_arg;
+        esp_event_handler_unregister_with(*loop_handle, MY_EVENT_BASE, MY_EVENT_ID, run_on_event);
+    }
+
+    void app_main(void)
+    {
+        esp_event_loop_handle_t loop_handle;
+        esp_event_loop_create(&loop_args, &loop_handle);
+        esp_event_handler_register_with(loop_handle, MY_EVENT_BASE, MY_EVENT_ID, run_on_event, &loop_handle);
+        // ... post event MY_EVENT_BASE, MY_EVENT_ID and run loop at some point
+    }
+
 
 Handler Registration and Handler Dispatch Order
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

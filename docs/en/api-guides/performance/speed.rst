@@ -2,7 +2,7 @@ Maximizing Execution Speed
 ==========================
 
 {IDF_TARGET_CONTROLLER_CORE_CONFIG:default="CONFIG_BT_CTRL_PINNED_TO_CORE", esp32="CONFIG_BTDM_CTRL_PINNED_TO_CORE_CHOICE", esp32s3="CONFIG_BT_CTRL_PINNED_TO_CORE_CHOICE"}
-{IDF_TARGET_RF_TYPE:default="Wi-Fi/BT", esp32s2="Wi-Fi"}
+{IDF_TARGET_RF_TYPE:default="Wi-Fi/BT", esp32s2="Wi-Fi", esp32c6="Wi-Fi/BT/802.15.4", esp32h2="BT/802.15.4"}
 
 Overview
 --------
@@ -56,7 +56,7 @@ Executing the target multiple times can help average out factors like RTOS conte
 
       The CPU cycles are counted per-core, so only use this method from an interrupt handler, or a task that is pinned to a single core.
 
-- If making "microbenchmarks" (i.e. benchmarking only a very small routine of code that runs in less than 1-2 milliseconds) then flash cache performance can sometimes cause big variations in timing measurements depending on the binary. This happens because binary layout can cause different patterns of cache misses in a particular sequence of execution. If the test code is larger then this effect usually averages out. Executing a small function multiple times when benchmarking can help reduce the impact of flash cache misses. Alternatively, move this code to IRAM (see :ref:`speed-targeted-optimizations`).
+- While performing "microbenchmarks" (i.e. benchmarking only a very small routine of code that runs in less than 1-2 milliseconds), the flash cache performance can sometimes cause big variations in timing measurements depending on the binary. This happens because binary layout can cause different patterns of cache misses in a particular sequence of execution. If the test code is larger then this effect usually averages out. Executing a small function multiple times when benchmarking can help reduce the impact of flash cache misses. Alternatively, move this code to IRAM (see :ref:`speed-targeted-optimizations`).
 
 External Tracing
 ^^^^^^^^^^^^^^^^
@@ -149,7 +149,7 @@ ESP-IDF starts a number of system tasks at fixed priority levels. Some are autom
 
 This may require splitting up a particular task. For example, perform a time-critical operation in a high priority task or an interrupt handler and do the non-time-critical part in a lower priority task.
 
-Header :idf_file:`components/esp_system/include/esp_task.h` contains macros for the priority levels used for built-in ESP-IDF tasks system.
+Header :idf_file:`components/esp_system/include/esp_task.h` contains macros for the priority levels used for built-in ESP-IDF tasks system. See :ref:`freertos_system_tasks` for more details about the system tasks.
 
 Common priorities are:
 
@@ -162,7 +162,7 @@ Common priorities are:
         - :ref:`Main task that executes app_main function <app-main-task>` has minimum priority (1).
         - :doc:`/api-reference/system/esp_timer` system task to manage timer events and execute callbacks has high priority (22, ``ESP_TASK_TIMER_PRIO``)
         - FreeRTOS Timer Task to handle FreeRTOS timer callbacks is created when the scheduler initializes and has minimum task priority (1, :ref:`configurable <CONFIG_FREERTOS_TIMER_TASK_PRIORITY>`).
-        - :doc:`/api-guides/event-handling` system task to manage the default system event loop and execute callbacks has high priority (20, ``ESP_TASK_EVENT_PRIO``). This configuration is only used if the application calls :cpp:func:`esp_event_loop_create_default`, it's possible to call :cpp:func:`esp_event_loop_create` with a custom task configuration instead.
+        - :doc:`/api-reference/system/esp_event` system task to manage the default system event loop and execute callbacks has high priority (20, ``ESP_TASK_EVENT_PRIO``). This configuration is only used if the application calls :cpp:func:`esp_event_loop_create_default`, it's possible to call :cpp:func:`esp_event_loop_create` with a custom task configuration instead.
         - :doc:`/api-guides/lwip` TCP/IP task has high priority (18, ``ESP_TASK_TCPIP_PRIO``).
         :SOC_WIFI_SUPPORTED: - :doc:`Wi-Fi Driver </api-guides/wifi>` task has high priority (23).
         :SOC_WIFI_SUPPORTED: - Wi-Fi wpa_supplicant component may create dedicated tasks while the Wi-Fi Protected Setup (WPS), WPA2 EAP-TLS, Device Provisioning Protocol (DPP) or BSS Transition Management (BTM) features are in use. These tasks all have low priority (2).
@@ -170,7 +170,7 @@ Common priorities are:
         :SOC_BT_SUPPORTED: - :doc:`NimBLE Bluetooth Host </api-reference/bluetooth/nimble/index>` host task has high priority (21).
         - The Ethernet driver creates a task for the MAC to receive Ethernet frames. If using the default config ``ETH_MAC_DEFAULT_CONFIG`` then the priority is medium-high (15). This setting can be changed by passing a custom :cpp:class:`eth_mac_config_t` struct when initializing the Ethernet MAC.
         - If using the :doc:`MQTT </api-reference/protocols/mqtt>` component, it creates a task with default priority 5 (:ref:`configurable<CONFIG_MQTT_TASK_PRIORITY>`, depends on :ref:`CONFIG_MQTT_USE_CUSTOM_CONFIG` (also configurable runtime by ``task_prio`` field in the :cpp:class:`esp_mqtt_client_config_t`)
-        - To see what is the task priority for ``mDNS`` service, please check `Performance Optimization <https://espressif.github.io/esp-protocols/mdns/en/index.html#execution-speed>`__.
+        - To see what is the task priority for ``mDNS`` service, please check `Performance Optimization <https://docs.espressif.com/projects/esp-protocols/mdns/docs/latest/en/index.html#execution-speed>`__.
 
 .. only :: not CONFIG_FREERTOS_UNICORE
 
@@ -179,9 +179,9 @@ Common priorities are:
         - :ref:`Main task that executes app_main function <app-main-task>` has minimum priority (1). This task is pinned to Core 0 by default (:ref:`configurable<CONFIG_ESP_MAIN_TASK_AFFINITY>`).
         - :doc:`/api-reference/system/esp_timer` system task to manage high precision timer events and execute callbacks has high priority (22, ``ESP_TASK_TIMER_PRIO``). This task is pinned to Core 0.
         - FreeRTOS Timer Task to handle FreeRTOS timer callbacks is created when the scheduler initializes and has minimum task priority (1, :ref:`configurable <CONFIG_FREERTOS_TIMER_TASK_PRIORITY>`). This task is pinned to Core 0.
-        - :doc:`/api-guides/event-handling` system task to manage the default system event loop and execute callbacks has high priority (20, ``ESP_TASK_EVENT_PRIO``) and pinned to Core 0. This configuration is only used if the application calls :cpp:func:`esp_event_loop_create_default`, it's possible to call :cpp:func:`esp_event_loop_create` with a custom task configuration instead.
+        - :doc:`/api-reference/system/esp_event` system task to manage the default system event loop and execute callbacks has high priority (20, ``ESP_TASK_EVENT_PRIO``) and pinned to Core 0. This configuration is only used if the application calls :cpp:func:`esp_event_loop_create_default`, it's possible to call :cpp:func:`esp_event_loop_create` with a custom task configuration instead.
         - :doc:`/api-guides/lwip` TCP/IP task has high priority (18, ``ESP_TASK_TCPIP_PRIO``) and is not pinned to any core (:ref:`configurable<CONFIG_LWIP_TCPIP_TASK_AFFINITY>`).
-        :SOC_WIFI_SUPPORTED: - :doc:`Wi-Fi Driver </api-guides/wifi>` task has high priority (23) and is pinned to Core 0 by default (:ref:`configurable<CONFIG_ESP32_WIFI_TASK_CORE_ID>`).
+        :SOC_WIFI_SUPPORTED: - :doc:`Wi-Fi Driver </api-guides/wifi>` task has high priority (23) and is pinned to Core 0 by default (:ref:`configurable<CONFIG_ESP_WIFI_TASK_CORE_ID>`).
         :SOC_WIFI_SUPPORTED: - Wi-Fi wpa_supplicant component may create dedicated tasks while the Wi-Fi Protected Setup (WPS), WPA2 EAP-TLS, Device Provisioning Protocol (DPP) or BSS Transition Management (BTM) features are in use. These tasks all have low priority (2) and are not pinned to any core.
         :SOC_BT_SUPPORTED: - :doc:`Bluetooth Controller </api-reference/bluetooth/index>` task has high priority (23, ``ESP_TASK_BT_CONTROLLER_PRIO``) and is pinned to Core 0 by default (:ref:`configurable <{IDF_TARGET_CONTROLLER_CORE_CONFIG}>`). The Bluetooth Controller needs to respond to requests with low latency, so it should always be close to the highest priority task assigned to a single CPU.
         :SOC_BT_SUPPORTED: - :doc:`NimBLE Bluetooth Host </api-reference/bluetooth/nimble/index>` host task has high priority (21) and is pinned to Core 0 by default (:ref:`configurable <CONFIG_BT_NIMBLE_PINNED_TO_CORE_CHOICE>`).
@@ -240,3 +240,20 @@ Improving Network Speed
     :SOC_WIFI_SUPPORTED: * For Wi-Fi, see :ref:`How-to-improve-Wi-Fi-performance` and :ref:`wifi-buffer-usage`
     * For lwIP TCP/IP (Wi-Fi and Ethernet), see :ref:`lwip-performance`
     :SOC_WIFI_SUPPORTED: * The :example:`wifi/iperf` example contains a configuration that is heavily optimized for Wi-Fi TCP/IP throughput. Append the contents of the files :example_file:`wifi/iperf/sdkconfig.defaults`, :example_file:`wifi/iperf/sdkconfig.defaults.{IDF_TARGET_PATH_NAME}` and :example_file:`wifi/iperf/sdkconfig.ci.99` to your project ``sdkconfig`` file in order to add all of these options. Note that some of these options may have trade-offs in terms of reduced debuggability, increased firmware size, increased memory usage, or reduced performance of other features. To get the best result, read the documentation pages linked above and use this information to determine exactly which options are best suited for your app.
+
+Improving I/O performance
+-------------------------
+
+Using standard C library functions like ``fread`` and ``fwrite`` instead of platform specific unbuffered syscalls such as ``read`` and ``write`` can be slow.
+These functions are designed to be portable, so they are not necessarily optimized for speed, have a certain overhead and are buffered.
+
+:doc:`FatFS </api-reference/storage/fatfs>` specific information and tips:
+
+.. list::
+    
+    - Maximum size of the R/W request == FatFS cluster size (allocation unit size)
+    - Use ``read`` and ``write`` instead of ``fread`` and ``fwrite``
+    - To increase speed of buffered reading functions like ``fread`` and ``fgets``, you can increase a size of the file buffer (Newlib's default is 128 bytes) to a higher number like 4096, 8192 or 16384. This can be done locally via ``setvbuf`` function used on a certain file pointer or globally applied to all files via modifying :ref:`CONFIG_FATFS_VFS_FSTAT_BLKSIZE`.
+        
+        .. note::
+            Setting a bigger buffer size will also increase the heap memory usage.

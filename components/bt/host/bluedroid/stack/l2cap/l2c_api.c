@@ -1297,7 +1297,7 @@ UINT8 L2CA_GetChnlFcrMode (UINT16 lcid)
 
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
 
-#if (BLE_INCLUDED == TRUE)
+#if (BLE_L2CAP_COC_INCLUDED == TRUE)
 /*******************************************************************************
 **
 ** Function         L2CA_RegisterLECoc
@@ -1608,7 +1608,7 @@ BOOLEAN L2CA_GetPeerLECocConfig (UINT16 lcid, tL2CAP_LE_CFG_INFO* peer_cfg)
 
     return TRUE;
 }
-#endif  ///BLE_INCLUDED == TRUE
+#endif // (BLE_L2CAP_COC_INCLUDED == TRUE)
 
 #if (L2CAP_NUM_FIXED_CHNLS > 0)
 /*******************************************************************************
@@ -1948,6 +1948,36 @@ BOOLEAN L2CA_RemoveFixedChnl (UINT16 fixed_cid, BD_ADDR rem_bda)
 
     return (TRUE);
 }
+
+#if BLE_INCLUDED == TRUE
+BOOLEAN L2CA_BleDisconnect (BD_ADDR rem_bda)
+{
+    tL2C_LCB    *p_lcb;
+    tGATT_TCB   *p_tcb;
+
+    p_lcb = l2cu_find_lcb_by_bd_addr (rem_bda, BT_TRANSPORT_LE);
+    if (p_lcb == NULL) {
+        return FALSE;
+    }
+
+    if (p_lcb->link_state != LST_CONNECTED) {
+        return FALSE;
+    }
+
+    p_lcb->disc_reason = HCI_ERR_CONN_CAUSE_LOCAL_HOST;
+    p_lcb->link_state = LST_DISCONNECTING;
+    btsnd_hcic_disconnect (p_lcb->handle, HCI_ERR_PEER_USER);
+
+    p_tcb = gatt_find_tcb_by_addr(rem_bda, BT_TRANSPORT_LE);
+    if (p_tcb == NULL) {
+        return FALSE;
+    }
+
+    gatt_set_ch_state(p_tcb, GATT_CH_CLOSING);
+
+    return TRUE;
+}
+#endif
 
 /*******************************************************************************
 **

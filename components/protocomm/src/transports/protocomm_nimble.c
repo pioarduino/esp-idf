@@ -323,8 +323,8 @@ gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         rc = simple_ble_gatts_get_attr_value(attr_handle, &temp_outlen,
                                              &temp_outbuf);
         if (rc != 0) {
-            ESP_LOGE(TAG, "Failed to read characteristic with attr_handle = %d", attr_handle);
-            return rc;
+            ESP_LOGE(TAG, "Characteristic with attr_handle = %d is not added to the list", attr_handle);
+            return 0;
         }
 
         rc = os_mbuf_append(ctxt->om, temp_outbuf, temp_outlen);
@@ -494,7 +494,11 @@ static int simple_ble_start(const simple_ble_cfg_t *cfg)
     int rc;
     ESP_LOGD(TAG, "Free memory at start of simple_ble_init %" PRIu32, esp_get_free_heap_size());
 
-    nimble_port_init();
+    rc = nimble_port_init();
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init nimble %d ", rc);
+        return rc;
+    }
 
     /* Initialize the NimBLE host configuration. */
     ble_hs_cfg.reset_cb = simple_ble_on_reset;
@@ -578,6 +582,15 @@ static void transport_simple_ble_connect(struct ble_gap_event *event, void *arg)
 {
     esp_err_t ret;
     ESP_LOGD(TAG, "Inside BLE connect w/ conn_id - %d", event->connect.conn_handle);
+
+#ifdef CONFIG_WIFI_PROV_KEEP_BLE_ON_AFTER_PROV
+    /* Ignore BLE events received after protocomm layer is stopped */
+    if (protoble_internal == NULL) {
+        ESP_LOGI(TAG,"Protocomm layer has already stopped");
+        return;
+    }
+#endif
+
     if (protoble_internal->pc_ble->sec &&
             protoble_internal->pc_ble->sec->new_transport_session) {
         ret =
@@ -840,7 +853,7 @@ static void free_gatt_ble_misc_memory(simple_ble_cfg_t *ble_config)
 
 esp_err_t protocomm_ble_start(protocomm_t *pc, const protocomm_ble_config_t *config)
 {
-    if (!pc || !config || !config->device_name || !config->nu_lookup) {
+    if (!pc || !config || !config->nu_lookup) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -986,6 +999,7 @@ esp_err_t protocomm_ble_stop(protocomm_t *pc)
         if (ret == 0) {
             nimble_port_deinit();
         }
+        free_gatt_ble_misc_memory(ble_cfg_p);
 #else
 #ifdef CONFIG_WIFI_PROV_DISCONNECT_AFTER_PROV
 	/* Keep BT stack on, but terminate the connection after provisioning */

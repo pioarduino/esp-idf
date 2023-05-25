@@ -1,4 +1,4 @@
-﻿Wi-Fi 驱动程序
+Wi-Fi 驱动程序
 ==================
 
 :link_to_translation:`en:[English]`
@@ -7,28 +7,13 @@
 ------------------------------------
 {IDF_TARGET_NAME} 支持以下 Wi-Fi 功能：
 
-.. only:: esp32 or esp32s2 or esp32s3
+.. only:: esp32 or esp32s2 or esp32c3 or esp32s3
 
     - 支持 4 个虚拟接口，即 STA、AP、Sniffer 和 reserved。
     - 支持仅 station 模式、仅 AP 模式、station/AP 共存模式
     - 支持使用 IEEE 802.11b、IEEE 802.11g、IEEE 802.11n 和 API 配置协议模式
     - 支持 WPA/WPA2/WPA3/WPA2-企业版/WPA3-企业版/WAPI/WPS 和 DPP
     - 支持 AMSDU、AMPDU、HT40、QoS 以及其它主要功能
-    - 支持 Modem-sleep
-    - 支持乐鑫专属协议，可实现 **1 km** 数据通信量
-    - 空中数据传输最高可达 20 MBit/s TCP 吞吐量和 30 MBit/s UDP 吞吐量
-    - 支持 Sniffer
-    - 支持快速扫描和全信道扫描
-    - 支持多个天线
-    - 支持获取信道状态信息
-
-.. only:: esp32c3
-
-    - 支持 4 个虚拟接口，即 STA、AP、Sniffer 和 reserved。
-    - 支持仅 station 模式、仅 AP 模式、station/AP 共存模式
-    - 支持使用 IEEE 802.11b、IEEE 802.11g、IEEE 802.11n 和 API 配置协议模式
-    - 支持 WPA/WPA2/WPA3/WPA2-企业版/WPA3-企业版/WAPI/WPS 和 DPP
-    - 支持 AMPDU、HT40、QoS 以及其它主要功能
     - 支持 Modem-sleep
     - 支持乐鑫专属协议，可实现 **1 km** 数据通信量
     - 空中数据传输最高可达 20 MBit/s TCP 吞吐量和 30 MBit/s UDP 吞吐量
@@ -74,7 +59,7 @@ Wi-Fi 初始化
 
 事件处理
 ++++++++++++++
-通常，在理想环境下编写代码难度并不大，如 `WIFI_EVENT_STA_START`_、`WIFI_EVENT_STA_CONNECTED`_ 中所述。难度在于如何在现实的困难环境下编写代码，如 `WIFI_EVENT_STA_DISCONNECTED`_ 中所述。能否在后者情况下完美地解决各类事件冲突，是编写一个强健的 Wi-Fi 应用程序的根本。请参阅 `{IDF_TARGET_NAME} Wi-Fi 事件描述`_, `{IDF_TARGET_NAME} Wi-Fi station 一般情况`_, `{IDF_TARGET_NAME} Wi-Fi AP 一般情况`_。另可参阅 ESP-IDF 中的 `事件处理概述 <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/event-handling.html?highlight=event%20handling>`_。
+通常，在理想环境下编写代码难度并不大，如 `WIFI_EVENT_STA_START`_、`WIFI_EVENT_STA_CONNECTED`_ 中所述。难度在于如何在现实的困难环境下编写代码，如 `WIFI_EVENT_STA_DISCONNECTED`_ 中所述。能否在后者情况下完美地解决各类事件冲突，是编写一个强健的 Wi-Fi 应用程序的根本。请参阅 `{IDF_TARGET_NAME} Wi-Fi 事件描述`_, `{IDF_TARGET_NAME} Wi-Fi station 一般情况`_, `{IDF_TARGET_NAME} Wi-Fi AP 一般情况`_。另可参阅 ESP-IDF 中的 :doc:`事件处理概述 <../api-reference/system/esp_event>`。
 
 编写错误恢复程序
 ++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1256,7 +1241,7 @@ API :cpp:func:`esp_wifi_set_config()` 可用于配置 station。配置的参数�
    * - bssid
      - 只有当 bssid_set 为 1 时有效。见字段 “bssid_set”。
    * - channel
-     - 该字段为 0 时，station 扫描信道 1 ~ N 寻找目标 AP；否则，station 首先扫描值与 “channel” 字段相同的信道，再扫描其他信道。如果您不知道目标 AP 在哪个信道，请将该字段设置为 0。
+     - 该字段为 0 时，station 扫描信道 1 ~ N 寻找目标 AP；否则，station 首先扫描值与 “channel” 字段相同的信道，再扫描其他信道。比如，当该字段设置为 3 时，扫描顺序为 3，1，2，...，N 。如果您不知道目标 AP 在哪个信道，请将该字段设置为 0。
    * - sort_method
      - 该字段仅用于 WIFI_ALL_CHANNEL_SCAN 模式。
 
@@ -1635,7 +1620,7 @@ WPA2-Enterprise 是企业无线网络的安全认证机制。在连接到接入�
 
 请参考 IDF 示例程序 :idf_file:`examples/wifi/roaming/README.md` 来设置和使用这些 API。示例代码只演示了如何使用这些 API，应用程序应根据需要定义自己的算法和案例。
 
-.. only:: esp32s2 or esp32c3
+.. only:: SOC_WIFI_FTM_SUPPORT
 
     Wi-Fi Location
     -------------------------------
@@ -2205,12 +2190,16 @@ Wi-Fi 协议中定义了四个 AC （访问类别），每个 AC 有各自的优
  - 避免使用 AMPDU 支持的、两个以上的不同优先级，比如 socket A 使用优先级 0，socket B 使用优先级 1，socket C 使用优先级 2。因为可能需要更多的内存，不是好的设计。具体来说，Wi-Fi 驱动程序可能会为每个优先级生成一个 Block Ack 会话，如果设置了 Block Ack 会话，则需要更多内存。
 
 
+Wi-Fi AMSDU
+-------------------------
+
+.. only:: not SOC_SPIRAM_SUPPORTED
+
+    {IDF_TARGET_NAME} 支持接收 AMSDU。
+
 .. only:: SOC_SPIRAM_SUPPORTED
 
-    Wi-Fi AMSDU
-    -------------------------
-
-    {IDF_TARGET_NAME} 支持接收和发送 AMSDU。开启 AMSDU 发送比较消耗内存，默认不开启 AMSDU 发送。可通过选项 :ref:`CONFIG_ESP32_WIFI_AMSDU_TX_ENABLED` 使能 AMSDU 发送功能， 但是使能 AMSDU 发送依赖于 :ref:`CONFIG_SPIRAM` 。
+    {IDF_TARGET_NAME} 支持接收和发送 AMSDU。开启 AMSDU 发送比较消耗内存，默认不开启 AMSDU 发送。可通过选项 :ref:`CONFIG_ESP_WIFI_AMSDU_TX_ENABLED` 使能 AMSDU 发送功能， 但是使能 AMSDU 发送依赖于 :ref:`CONFIG_SPIRAM` 。
 
 Wi-Fi 分片
 -------------------------
@@ -2303,24 +2292,24 @@ Wi-Fi 使用的堆内存峰值是 Wi-Fi 驱动程序 **理论上消耗的最大�
 
 **接收数据方向：**
 
- - :ref:`CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM`
+ - :ref:`CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM`
     该参数表示硬件层的 DMA 缓冲区数量。提高该参数将增加发送方的一次性接收吞吐量，从而提高 Wi-Fi 协议栈处理突发流量的能力。
 
- - :ref:`CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM`
+ - :ref:`CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM`
     该参数表示 Wi-Fi 层中接收数据缓冲区的数量。提高该参数可以增强数据包的接收性能。该参数需要与 LWIP 层的接收数据缓冲区大小相匹配。
 
- - :ref:`CONFIG_ESP32_WIFI_RX_BA_WIN`
-    该参数表示接收端 AMPDU BA 窗口的大小，应配置为 :ref:`CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM` 和 :ref:`CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM` 的二倍数值中较小的数值。
+ - :ref:`CONFIG_ESP_WIFI_RX_BA_WIN`
+    该参数表示接收端 AMPDU BA 窗口的大小，应配置为 :ref:`CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM` 和 :ref:`CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM` 的二倍数值中较小的数值。
 
  - :ref:`CONFIG_LWIP_TCP_WND_DEFAULT`
     该参数表示 LWIP 层用于每个 TCP 流的的接收数据缓冲区大小，应配置为 WIFI_DYNAMIC_RX_BUFFER_NUM (KB) 的值，从而实现高稳定性能。同时，在有多个流的情况下，应相应降低该参数值。
 
 **发送数据方向：**
 
- - :ref:`CONFIG_ESP32_WIFI_TX_BUFFER`
+ - :ref:`CONFIG_ESP_WIFI_TX_BUFFER`
     该参数表示发送数据缓冲区的类型，建议配置为动态缓冲区，该配置可以充分利用内存。
 
- - :ref:`CONFIG_ESP32_WIFI_DYNAMIC_TX_BUFFER_NUM`
+ - :ref:`CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM`
     该参数表示 Wi-Fi 层发送数据缓冲区数量。提高该参数可以增强数据包发送的性能。该参数值需要与 LWIP 层的发送数据缓冲区大小相匹配。
 
  - :ref:`CONFIG_LWIP_TCP_SND_BUF_DEFAULT`
@@ -2330,10 +2319,10 @@ Wi-Fi 使用的堆内存峰值是 Wi-Fi 驱动程序 **理论上消耗的最大�
 
 .. only:: esp32 or esp32s2
 
-    - :ref:`CONFIG_ESP32_WIFI_IRAM_OPT`
+    - :ref:`CONFIG_ESP_WIFI_IRAM_OPT`
         如果使能该选项，一些 Wi-Fi 功能将被移至 IRAM，从而提高吞吐量，IRAM 使用量将增加 15 kB。
 
-    - :ref:`CONFIG_ESP32_WIFI_RX_IRAM_OPT`
+    - :ref:`CONFIG_ESP_WIFI_RX_IRAM_OPT`
         如果使能该选项，一些 Wi-Fi 接收数据功能将被移至 IRAM，从而提高吞吐量，IRAM 使用量将增加 16 kB。
 
  - :ref:`CONFIG_LWIP_IRAM_OPTIMIZATION`
@@ -2897,7 +2886,7 @@ Wi-Fi 使用的堆内存峰值是 Wi-Fi 驱动程序 **理论上消耗的最大�
     使用 PSRAM
     ++++++++++++++++++++++++++++
 
-    PSRAM 一般在应用程序占用大量内存时使用。在该模式下，:ref:`CONFIG_ESP32_WIFI_TX_BUFFER` 被强制为静态。:ref:`CONFIG_ESP32_WIFI_STATIC_TX_BUFFER_NUM` 表示硬件层 DMA 缓冲区数量，提高这一参数可以增强性能。
+    PSRAM 一般在应用程序占用大量内存时使用。在该模式下，:ref:`CONFIG_ESP_WIFI_TX_BUFFER` 被强制为静态。:ref:`CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM` 表示硬件层 DMA 缓冲区数量，提高这一参数可以增强性能。
     以下是使用 PSRAM 时的推荐等级。
 
     .. only:: esp32

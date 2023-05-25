@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: CC0-1.0
 
 import pytest
@@ -6,6 +6,7 @@ from pytest_embedded import Dut
 
 
 @pytest.mark.supported_targets
+@pytest.mark.temp_skip_ci(targets=['esp32h2'], reason='cannot pass')   # IDF-6809
 @pytest.mark.generic
 def test_base_mac_address(dut: Dut) -> None:
     dut.expect_exact('BASE_MAC: Base MAC Address read from EFUSE BLK0')
@@ -35,7 +36,7 @@ def test_base_mac_address(dut: Dut) -> None:
 
     sdkconfig = dut.app.sdkconfig
 
-    if sdkconfig.get('ESP32_WIFI_ENABLED'):
+    if sdkconfig.get('ESP_WIFI_ENABLED'):
         dut.expect_exact('WIFI_STA MAC: ' + get_expected_mac_string(0, dut.target), timeout=2)
         dut.expect_exact('SoftAP MAC: ' + get_expected_mac_string(1, dut.target))
 

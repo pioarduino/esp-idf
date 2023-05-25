@@ -40,9 +40,6 @@
 #elif CONFIG_IDF_TARGET_ESP32C3
 #include "esp32c3/rtc.h"
 #include "esp32c3/rom/rtc.h"
-#elif CONFIG_IDF_TARGET_ESP32H4
-#include "esp32h4/rtc.h"
-#include "esp32h4/rom/rtc.h"
 #elif CONFIG_IDF_TARGET_ESP32C2
 #include "esp32c2/rtc.h"
 #include "esp32c2/rom/rtc.h"
@@ -349,8 +346,6 @@ TEST_CASE("Test starting 'External 32kHz XTAL' on the board without it.", "[test
 
 #endif // !TEMPORARY_DISABLED_FOR_TARGETS(...)
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C2)
-//IDF-5060
 TEST_CASE("Test rtc clk calibration compensation", "[rtc_clk]")
 {
     int64_t t1 = esp_rtc_get_time_us();
@@ -428,5 +423,3 @@ static void check_time_deepsleep_2(void)
 }
 
 TEST_CASE_MULTIPLE_STAGES("Test rtc clk calibration compensation across deep sleep", "", trigger_deepsleep, check_time_deepsleep_1, check_time_deepsleep_2);
-
-#endif //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32C2)

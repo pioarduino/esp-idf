@@ -98,3 +98,15 @@ def test_examples_protocol_esp_http_client_dynamic_buffer(dut: Dut) -> None:
     dut.expect(r'HTTP Status = 206, content_length = 10')
     dut.expect(r'HTTP Status = 206, content_length = 10')
     dut.expect('Finish http example')
+
+
+@pytest.mark.linux
+@pytest.mark.host_test
+# Currently we are just testing the build for esp_http_client on Linux target. So skipping the test run.
+# Later we will enable the test run for Linux target as well.
+@pytest.mark.skipif('config.getvalue("target") == "linux"', reason='Do not run on Linux')
+@pytest.mark.parametrize('config', [
+    'default', 'ssldyn',
+], indirect=True)
+def test_examples_protocol_esp_http_client_linux(dut: Dut) -> None:
+    dut.expect('Finish http example', timeout=60)

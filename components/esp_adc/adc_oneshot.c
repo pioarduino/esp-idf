@@ -15,13 +15,13 @@
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "esp_adc/adc_oneshot.h"
+#include "esp_clk_tree.h"
 #include "esp_private/adc_private.h"
 #include "esp_private/adc_share_hw_ctrl.h"
 #include "esp_private/sar_periph_ctrl.h"
 #include "hal/adc_types.h"
 #include "hal/adc_oneshot_hal.h"
 #include "hal/adc_ll.h"
-#include "hal/adc_hal_conf.h"
 #include "soc/adc_periph.h"
 
 
@@ -97,9 +97,18 @@ esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, a
     unit->unit_id = init_config->unit_id;
     unit->ulp_mode = init_config->ulp_mode;
 
+    adc_oneshot_clk_src_t clk_src = ADC_DIGI_CLK_SRC_DEFAULT;
+    if (init_config->clk_src) {
+        clk_src = init_config->clk_src;
+    }
+    uint32_t clk_src_freq_hz = 0;
+    ESP_GOTO_ON_ERROR(esp_clk_tree_src_get_freq_hz(clk_src, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &clk_src_freq_hz), err, TAG, "clock source not supported");
+
     adc_oneshot_hal_cfg_t config = {
         .unit = init_config->unit_id,
         .work_mode = (init_config->ulp_mode == ADC_ULP_MODE_FSM) ? ADC_HAL_ULP_FSM_MODE : ADC_HAL_SINGLE_READ_MODE,
+        .clk_src = clk_src,
+        .clk_src_freq_hz = clk_src_freq_hz,
     };
     adc_oneshot_hal_init(&(unit->hal), &config);
 
@@ -112,8 +121,6 @@ esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, a
     }
     _lock_release(&s_ctx.mutex);
 #endif
-
-    sar_periph_ctrl_adc_oneshot_power_acquire();
 
     ESP_LOGD(TAG, "new adc unit%"PRId32" is created", unit->unit_id);
     *ret_unit = unit;
@@ -160,6 +167,7 @@ esp_err_t adc_oneshot_read(adc_oneshot_unit_handle_t handle, adc_channel_t chan,
     }
     portENTER_CRITICAL(&rtc_spinlock);
 
+    sar_periph_ctrl_adc_oneshot_power_acquire();
     adc_oneshot_hal_setup(&(handle->hal), chan);
 #if SOC_ADC_CALIBRATION_V1_SUPPORTED
     adc_atten_t atten = adc_ll_get_atten(handle->unit_id, chan);
@@ -168,6 +176,7 @@ esp_err_t adc_oneshot_read(adc_oneshot_unit_handle_t handle, adc_channel_t chan,
 #endif
     bool valid = false;
     valid = adc_oneshot_hal_convert(&(handle->hal), out_raw);
+    sar_periph_ctrl_adc_oneshot_power_release();
 
     portEXIT_CRITICAL(&rtc_spinlock);
     adc_lock_release(handle->unit_id);
@@ -183,14 +192,15 @@ esp_err_t adc_oneshot_read_isr(adc_oneshot_unit_handle_t handle, adc_channel_t c
 
     portENTER_CRITICAL_SAFE(&rtc_spinlock);
 
+    sar_periph_ctrl_adc_oneshot_power_acquire();
     adc_oneshot_hal_setup(&(handle->hal), chan);
 #if SOC_ADC_CALIBRATION_V1_SUPPORTED
     adc_atten_t atten = adc_ll_get_atten(handle->unit_id, chan);
     adc_hal_calibration_init(handle->unit_id);
     adc_set_hw_calibration_code(handle->unit_id, atten);
 #endif
-
     adc_oneshot_hal_convert(&(handle->hal), out_raw);
+    sar_periph_ctrl_adc_oneshot_power_release();
 
     portEXIT_CRITICAL_SAFE(&rtc_spinlock);
 
@@ -209,8 +219,6 @@ esp_err_t adc_oneshot_del_unit(adc_oneshot_unit_handle_t handle)
 
     ESP_LOGD(TAG, "adc unit%"PRId32" is deleted", handle->unit_id);
     free(handle);
-
-    sar_periph_ctrl_adc_oneshot_power_release();
 
 #if SOC_ADC_DIG_CTRL_SUPPORTED && !SOC_ADC_RTC_CTRL_SUPPORTED
     //To free the APB_SARADC periph if needed
