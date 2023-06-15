@@ -271,6 +271,9 @@ menu "FreeRTOS"
             # Minimal value is 2 because of a check in FreeRTOS.h (search configEXPECTED_IDLE_TIME_BEFORE_SLEEP)
             help
                 FreeRTOS will enter light sleep mode if no tasks need to run for this number of ticks.
+                You can enable PM_PROFILING feature in esp_pm components and dump the sleep status with
+                esp_pm_dump_locks, if the proportion of rejected sleeps is too high, please increase
+                this value to improve scheduling efficiency
 
     endmenu # Kernel
 
@@ -279,7 +282,7 @@ menu "FreeRTOS"
 
         config FREERTOS_TASK_FUNCTION_WRAPPER
             bool "Wrap task functions"
-            depends on COMPILER_OPTIMIZATION_DEFAULT || ESP_COREDUMP_ENABLE || ESP_GDBSTUB_ENABLED
+            depends on COMPILER_OPTIMIZATION_DEBUG || ESP_COREDUMP_ENABLE || ESP_GDBSTUB_ENABLED
             default y
             help
                 If enabled, all FreeRTOS task functions will be enclosed in a wrapper function. If a task function

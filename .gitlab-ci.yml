@@ -20,9 +20,11 @@ workflow:
     - if: $CI_OPEN_MERGE_REQUESTS != null
       variables:
         PIPELINE_COMMIT_SHA: $CI_MERGE_REQUEST_SOURCE_BRANCH_SHA
+        IS_MR_PIPELINE: 1
     - if: $CI_OPEN_MERGE_REQUESTS == null
       variables:
         PIPELINE_COMMIT_SHA: $CI_COMMIT_SHA
+        IS_MR_PIPELINE: 0
     - when: always
 
 variables:
@@ -57,7 +59,6 @@ variables:
   PYTHON_VER: 3.7.10
 
   CLANG_TIDY_RUNNER_PROJ: 2107  # idf/clang-tidy-runner
-  IDF_BUILD_APPS_PROJ: 2818  # espressif/idf-build-apps
 
   # Docker images
   BOT_DOCKER_IMAGE_TAG: ":latest"
@@ -65,7 +66,7 @@ variables:
   ESP_ENV_IMAGE: "$CI_DOCKER_REGISTRY/esp-env-v5.2:1"
   CLANG_STATIC_ANALYSIS_IMAGE: "${CI_DOCKER_REGISTRY}/clang-static-analysis-v5.2:1-1"
   ESP_IDF_DOC_ENV_IMAGE: "$CI_DOCKER_REGISTRY/esp-idf-doc-env-v5.2:1-1"
-  QEMU_IMAGE: "${CI_DOCKER_REGISTRY}/qemu-v5.2:1-20220802"
+  QEMU_IMAGE: "${CI_DOCKER_REGISTRY}/qemu-v5.2:1-20230522"
   TARGET_TEST_ENV_IMAGE: "$CI_DOCKER_REGISTRY/target-test-env-v5.2:1"
 
   SONARQUBE_SCANNER_IMAGE: "${CI_DOCKER_REGISTRY}/sonarqube-scanner:3"
@@ -121,7 +122,7 @@ cache:
     export IDF_MIRROR_PREFIX_MAP=
   fi
 
-  if echo "$CI_MERGE_REQUEST_LABELS" | egrep "^([^,\n\r]+,)*include_nightly_run(,[^,\n\r]+)*$"; then
+  if echo "$CI_MERGE_REQUEST_LABELS" | egrep "(^|,)include_nightly_run(,|$)"; then
     export INCLUDE_NIGHTLY_RUN="1"
   fi
 
@@ -174,6 +175,15 @@ cache:
   fi
 
   source ./export.sh
+
+  # Custom clang
+  if [[ ! -z "$CI_CLANG_DISTRO_URL" ]]; then
+    echo "Using custom clang from ${CI_CLANG_DISTRO_URL}"
+    wget $CI_CLANG_DISTRO_URL
+    ARCH_NAME=$(basename $CI_CLANG_DISTRO_URL)
+    tar -x -f $ARCH_NAME
+    export PATH=$PWD/esp-clang/bin:$PATH
+  fi
 
   # Custom OpenOCD
   if [[ ! -z "$OOCD_DISTRO_URL" && "$CI_JOB_STAGE" == "target_test" ]]; then

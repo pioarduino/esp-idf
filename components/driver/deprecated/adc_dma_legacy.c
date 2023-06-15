@@ -104,7 +104,7 @@ static void adc_dma_intr_handler(void *arg);
 
 static int8_t adc_digi_get_io_num(adc_unit_t adc_unit, uint8_t adc_channel)
 {
-    assert(adc_unit <= SOC_ADC_PERIPH_NUM);
+    assert(adc_unit < SOC_ADC_PERIPH_NUM);
     uint8_t adc_n = (adc_unit == ADC_UNIT_1) ? 0 : 1;
     return adc_channel_io_map[adc_n][adc_channel];
 }
@@ -386,11 +386,6 @@ static IRAM_ATTR bool s_adc_dma_intr(adc_digi_context_t *adc_digi_ctx)
         }
     }
 
-    if (status == ADC_HAL_DMA_DESC_NULL) {
-        //start next turns of dma operation
-        adc_hal_digi_start(&adc_digi_ctx->hal, adc_digi_ctx->rx_dma_buf);
-    }
-
     return (taskAwoken == pdTRUE);
 }
 
@@ -609,6 +604,12 @@ static __attribute__((constructor)) void adc_hw_calibration(void)
              * update this when bringing up the calibration on that chip
              */
             adc_calc_hw_calibration_code(i, j);
+#if SOC_ADC_CALIB_CHAN_COMPENS_SUPPORTED
+            /* Load the channel compensation from efuse */
+            for (int k = 0; k < SOC_ADC_CHANNEL_NUM(i); k++) {
+                adc_load_hw_calibration_chan_compens(i, k, j);
+            }
+#endif
         }
     }
 }
