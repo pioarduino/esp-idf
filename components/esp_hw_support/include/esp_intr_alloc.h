@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include "esp_err.h"
+#include "esp_intr_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -77,15 +79,6 @@ extern "C" {
 
 /** Disable interrupt by interrupt number */
 #define ESP_INTR_DISABLE(inum) esp_intr_disable_source(inum)
-
-/** Function prototype for interrupt handler function */
-typedef void (*intr_handler_t)(void *arg);
-
-/** Interrupt handler associated data structure */
-typedef struct intr_handle_data_t intr_handle_data_t;
-
-/** Handle to an interrupt handler */
-typedef intr_handle_data_t *intr_handle_t ;
 
 /**
  * @brief Mark an interrupt as a shared interrupt
@@ -304,8 +297,24 @@ void esp_intr_disable_source(int inum);
  */
 static inline int esp_intr_flags_to_level(int flags)
 {
-    return __builtin_ffs((flags & ESP_INTR_FLAG_LEVELMASK) >> 1) + 1;
+    return __builtin_ffs((flags & ESP_INTR_FLAG_LEVELMASK) >> 1);
 }
+
+/**
+ * @brief Get the interrupt flags from the supplied level (priority)
+ * @param level The interrupt priority level
+ */
+static inline int esp_intr_level_to_flags(int level)
+{
+    return (level > 0) ? (1 << level) & ESP_INTR_FLAG_LEVELMASK : 0;
+}
+
+/**
+ * @brief Dump the status of allocated interrupts
+ * @param stream  The stream to dump to, if NULL then stdout is used
+ * @return ESP_OK on success
+ */
+esp_err_t esp_intr_dump(FILE *stream);
 
 /**@}*/
 

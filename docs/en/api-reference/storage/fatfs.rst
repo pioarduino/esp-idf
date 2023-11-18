@@ -22,30 +22,29 @@ Most applications use the following workflow when working with ``esp_vfs_fat_`` 
 1. Call :cpp:func:`esp_vfs_fat_register` to specify:
     - Path prefix where to mount the filesystem (e.g., ``"/sdcard"``, ``"/spiflash"``)
     - FatFs drive number
-    - A variable which will receive the pointer to the ``FATFS`` structure
+    - A variable which receives the pointer to the ``FATFS`` structure
 
 2. Call :cpp:func:`ff_diskio_register` to register the disk I/O driver for the drive number used in Step 1.
 
-3. Call the FatFs function ``f_mount``, and optionally ``f_fdisk``, ``f_mkfs``, to mount the filesystem using the same drive number which was passed to :cpp:func:`esp_vfs_fat_register`. For more information, see `FatFs documentation <http://elm-chan.org/fsw/ff/doc/mount.html>`_.
+3. Call the FatFs function :cpp:func:`f_mount`, and optionally :cpp:func:`f_fdisk`, :cpp:func:`f_mkfs`, to mount the filesystem using the same drive number which was passed to :cpp:func:`esp_vfs_fat_register`. For more information, see `FatFs documentation <http://elm-chan.org/fsw/ff/doc/mount.html>`_.
 
 4. Call the C standard library and POSIX API functions to perform such actions on files as open, read, write, erase, copy, etc. Use paths starting with the path prefix passed to :cpp:func:`esp_vfs_register` (for example, ``"/sdcard/hello.txt"``). The filesystem uses `8.3 filenames <https://en.wikipedia.org/wiki/8.3_filename>`_ format (SFN) by default. If you need to use long filenames (LFN), enable the :ref:`CONFIG_FATFS_LONG_FILENAMES` option. More details on the FatFs filenames are available `here <http://elm-chan.org/fsw/ff/doc/filename.html>`_.
 
-5. Optionally, by enabling the option :ref:`CONFIG_FATFS_USE_FASTSEEK`, you can use the POSIX lseek function to perform it faster. The fast seek will not work for files in write mode, so to take advantage of fast seek, you should open (or close and then reopen) the file in read-only mode.
+5. Optionally, by enabling the option :ref:`CONFIG_FATFS_USE_FASTSEEK`, you can use the POSIX lseek function to perform it faster. The fast seek does not work for files in write mode, so to take advantage of fast seek, you should open (or close and then reopen) the file in read-only mode.
 
-6. Optionally, call the FatFs library functions directly. In this case, use paths without a VFS prefix (for example, ``"/hello.txt"``).
+6. Optionally, by enabling the option :ref:`CONFIG_FATFS_IMMEDIATE_FSYNC`, you can enable automatic calling of :cpp:func:`f_sync` to flush recent file changes after each call of :cpp:func:`vfs_fat_write`, :cpp:func:`vfs_fat_pwrite`, :cpp:func:`vfs_fat_link`, :cpp:func:`vfs_fat_truncate` and :cpp:func:`vfs_fat_ftruncate` functions. This feature improves file-consistency and size reporting accuracy for the FatFs, at a price on decreased performance due to frequent disk operations.
 
-7. Close all open files.
+7. Optionally, call the FatFs library functions directly. In this case, use paths without a VFS prefix, for example, ``"/hello.txt"``.
 
-8. Call the FatFs function ``f_mount`` for the same drive number with NULL ``FATFS*`` argument to unmount the filesystem.
+8. Close all open files.
 
-9. Call the FatFs function :cpp:func:`ff_diskio_register` with NULL ``ff_diskio_impl_t*`` argument and the same drive number to unregister the disk I/O driver.
+9. Call the FatFs function :cpp:func:`f_mount` for the same drive number with NULL ``FATFS*`` argument to unmount the filesystem.
 
-10. Call :cpp:func:`esp_vfs_fat_unregister_path` with the path where the file system is mounted to remove FatFs from VFS, and free the ``FATFS`` structure allocated in Step 1.
+10. Call the FatFs function :cpp:func:`ff_diskio_register` with NULL ``ff_diskio_impl_t*`` argument and the same drive number to unregister the disk I/O driver.
 
-The convenience functions ``esp_vfs_fat_sdmmc_mount``, ``esp_vfs_fat_sdspi_mount``, and ``esp_vfs_fat_sdcard_unmount`` wrap the steps described above and also handle SD card initialization. These functions are described in the next section.
+11. Call :cpp:func:`esp_vfs_fat_unregister_path` with the path where the file system is mounted to remove FatFs from VFS, and free the ``FATFS`` structure allocated in Step 1.
 
-.. doxygenfunction:: esp_vfs_fat_register
-.. doxygenfunction:: esp_vfs_fat_unregister_path
+The convenience functions :cpp:func:`esp_vfs_fat_sdmmc_mount`, :cpp:func:`esp_vfs_fat_sdspi_mount`, and :cpp:func:`esp_vfs_fat_sdcard_unmount` wrap the steps described above and also handle SD card initialization. These functions are described in the next section.
 
 
 Using FatFs with VFS and SD Cards
@@ -55,21 +54,11 @@ The header file :component_file:`fatfs/vfs/esp_vfs_fat.h` defines convenience fu
 
 The convenience function :cpp:func:`esp_vfs_fat_sdmmc_unmount` unmounts the filesystem and releases the resources acquired by :cpp:func:`esp_vfs_fat_sdmmc_mount`.
 
-.. doxygenfunction:: esp_vfs_fat_sdmmc_mount
-.. doxygenfunction:: esp_vfs_fat_sdmmc_unmount
-.. doxygenfunction:: esp_vfs_fat_sdspi_mount
-.. doxygenstruct:: esp_vfs_fat_mount_config_t
-    :members:
-.. doxygenfunction:: esp_vfs_fat_sdcard_unmount
-
 
 Using FatFs with VFS in Read-Only Mode
 --------------------------------------
 
-The header file :component_file:`fatfs/vfs/esp_vfs_fat.h` also defines the convenience functions :cpp:func:`esp_vfs_fat_spiflash_mount_ro` and :cpp:func:`esp_vfs_fat_spiflash_unmount_ro`. These functions perform Steps 1-3 and 7-9 respectively for read-only FAT partitions. These are particularly helpful for data partitions written only once during factory provisioning which will not be changed by production application throughout the lifetime of the hardware.
-
-.. doxygenfunction:: esp_vfs_fat_spiflash_mount_ro
-.. doxygenfunction:: esp_vfs_fat_spiflash_unmount_ro
+The header file :component_file:`fatfs/vfs/esp_vfs_fat.h` also defines the convenience functions :cpp:func:`esp_vfs_fat_spiflash_mount_ro` and :cpp:func:`esp_vfs_fat_spiflash_unmount_ro`. These functions perform Steps 1-3 and 7-9 respectively for read-only FAT partitions. These are particularly helpful for data partitions written only once during factory provisioning, which will not be changed by production application throughout the lifetime of the hardware.
 
 
 FatFS Disk IO Layer
@@ -92,11 +81,11 @@ These APIs provide implementation of disk I/O functions for SD/MMC cards and can
 FatFs Partition Generator
 -------------------------
 
-We provide a partition generator for FatFs (:component_file:`wl_fatfsgen.py<fatfs/wl_fatfsgen.py>`) which is integrated into the build system and could be easily used in the user project.
+We provide a partition generator for FatFs (:component_file:`wl_fatfsgen.py <fatfs/wl_fatfsgen.py>`) which is integrated into the build system and could be easily used in the user project.
 
 The tool is used to create filesystem images on a host and populate it with content of the specified host folder.
 
-The script is based on the partition generator (:component_file:`fatfsgen.py<fatfs/fatfsgen.py>`). Apart from generating partition, it can also initialize wear levelling.
+The script is based on the partition generator (:component_file:`fatfsgen.py <fatfs/fatfsgen.py>`). Apart from generating partition, it can also initialize wear levelling.
 
 The latest version supports both short and long file names, FAT12 and FAT16. The long file names are limited to 255 characters and can contain multiple periods (``.``) characters within the filename and additional characters ``+``, ``,``, ``;``, ``=``, ``[`` and ``]``.
 
@@ -120,7 +109,7 @@ If you decide for any reason to use ``fatfs_create_rawflash_image`` (without wea
 
 The arguments of the function are as follows:
 
-1. partition - the name of the partition as defined in the partition table (e.g. :example_file:`storage/fatfsgen/partitions_example.csv`).
+1. partition - the name of the partition as defined in the partition table (e.g., :example_file:`storage/fatfsgen/partitions_example.csv`).
 
 2. base_dir - the directory that will be encoded to FatFs partition and optionally flashed into the device. Beware that you have to specify the suitable size of the partition in the partition table.
 
@@ -141,10 +130,16 @@ For an example, see :example:`storage/fatfsgen`.
 FatFs Partition Analyzer
 ------------------------
 
-(:component_file:`fatfsparse.py<fatfs/fatfsparse.py>`) is a partition analyzing tool for FatFs.
+(:component_file:`fatfsparse.py <fatfs/fatfsparse.py>`) is a partition analyzing tool for FatFs.
 
-It is a reverse tool of (:component_file:`fatfsgen.py<fatfs/fatfsgen.py>`), i.e. it can generate the folder structure on the host based on the FatFs image.
+It is a reverse tool of (:component_file:`fatfsgen.py <fatfs/fatfsgen.py>`), i.e., it can generate the folder structure on the host based on the FatFs image.
 
 Usage::
 
     ./fatfsparse.py [-h] [--wl-layer {detect,enabled,disabled}] fatfs_image.img
+
+
+High-level API Reference
+------------------------
+
+.. include-build-file:: inc/esp_vfs_fat.inc

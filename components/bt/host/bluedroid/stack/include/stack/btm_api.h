@@ -189,12 +189,36 @@ typedef void (tBTM_UPDATE_CONN_PARAM_CBACK) (UINT8 status, BD_ADDR bd_addr, tBTM
 
 typedef void (tBTM_SET_PKT_DATA_LENGTH_CBACK) (UINT8 status, tBTM_LE_SET_PKT_DATA_LENGTH_PARAMS *data_length_params);
 
+typedef void (tBTM_DTM_CMD_CMPL_CBACK) (void *p1);
+
 typedef void (tBTM_SET_RAND_ADDR_CBACK) (UINT8 status);
 
 typedef void (tBTM_UPDATE_WHITELIST_CBACK) (UINT8 status, tBTM_WL_OPERATION wl_opration);
 
 typedef void (tBTM_SET_LOCAL_PRIVACY_CBACK) (UINT8 status);
 
+/*******************************
+**  Device Coexist status
+********************************/
+#if (ESP_COEX_VSC_INCLUDED == TRUE)
+// coexist status for MESH
+#define BTM_COEX_BLE_ST_MESH_CONFIG        0x08
+#define BTM_COEX_BLE_ST_MESH_TRAFFIC       0x10
+#define BTM_COEX_BLE_ST_MESH_STANDBY       0x20
+// coexist status for A2DP
+#define BTM_COEX_BT_ST_A2DP_STREAMING      0x10
+#define BTM_COEX_BT_ST_A2DP_PAUSED         0x20
+
+// coexist operation
+#define BTM_COEX_OP_CLEAR                  0x00
+#define BTM_COEX_OP_SET                    0x01
+typedef UINT8 tBTM_COEX_OPERATION;
+
+typedef enum {
+    BTM_COEX_TYPE_BLE = 1,
+    BTM_COEX_TYPE_BT,
+} tBTM_COEX_TYPE;
+#endif
 
 /*****************************************************************************
 **  DEVICE DISCOVERY - Inquiry, Remote Name, Discovery, Class of Device
@@ -810,6 +834,23 @@ typedef struct {
     UINT8       hci_status;
 } tBTM_SET_AFH_CHANNELS_RESULTS;
 
+/* Structure returned with set page timeout event (in tBTM_CMPL_CB callback function)
+** in response to BTM_WritePageTimeout call.
+*/
+typedef struct {
+    tBTM_STATUS status;
+    UINT8       hci_status;
+} tBTM_SET_PAGE_TIMEOUT_RESULTS;
+
+/* Structure returned with get page timeout event (in tBTM_CMPL_CB callback function)
+** in response to BTM_ReadPageTimeout call.
+*/
+typedef struct {
+    tBTM_STATUS status;
+    UINT8       hci_status;
+    UINT16      page_to;
+} tBTM_GET_PAGE_TIMEOUT_RESULTS;
+
 /* Structure returned with set BLE channels event (in tBTM_CMPL_CB callback function)
 ** in response to BTM_BleSetChannels call.
 */
@@ -1061,6 +1102,17 @@ enum {
     BTM_SCO_DATA_PAR_LOST
 };
 typedef UINT8 tBTM_SCO_DATA_FLAG;
+
+/* Count the number of SCO Data Packet Status */
+typedef struct {
+    UINT32 rx_total;
+    UINT32 rx_correct;
+    UINT32 rx_err;
+    UINT32 rx_none;
+    UINT32 rx_lost;
+    UINT32 tx_total;
+    UINT32 tx_discarded;
+} tBTM_SCO_PKT_STAT_NUMS;
 
 /***************************
 **  SCO Callback Functions
@@ -2122,6 +2174,21 @@ tBTM_STATUS BTM_VendorSpecificCommand(UINT16 opcode,
                                       UINT8 *p_param_buf,
                                       tBTM_VSC_CMPL_CB *p_cb);
 
+/*******************************************************************************
+**
+** Function         BTM_ConfigCoexStatus
+**
+** Description      Config coexist status through vendor specific HCI command.
+**
+** Returns
+**      BTM_SUCCESS         Command sent. Does not expect command complete
+**                              event. (command cmpl callback param is NULL)
+**      BTM_NO_RESOURCES    Command not sent. No resources.
+**
+*******************************************************************************/
+#if (ESP_COEX_VSC_INCLUDED == TRUE)
+tBTM_STATUS BTM_ConfigCoexStatus(tBTM_COEX_OPERATION op, tBTM_COEX_TYPE type, UINT8 status);
+#endif
 
 /*******************************************************************************
 **
@@ -2192,7 +2259,21 @@ UINT8 BTM_SetTraceLevel (UINT8 new_level);
 **
 *******************************************************************************/
 //extern
-tBTM_STATUS BTM_WritePageTimeout(UINT16 timeout);
+tBTM_STATUS BTM_WritePageTimeout(UINT16 timeout, tBTM_CMPL_CB *p_cb);
+
+/*******************************************************************************
+**
+** Function         BTM_ReadPageTimeout
+**
+** Description      Send HCI Read Page Timeout.
+**
+** Returns
+**      BTM_SUCCESS         Command sent.
+**      BTM_NO_RESOURCES    If out of resources to send the command.
+**
+*******************************************************************************/
+//extern
+tBTM_STATUS BTM_ReadPageTimeout(tBTM_CMPL_CB *p_cb);
 
 /*******************************************************************************
 **
@@ -4189,6 +4270,17 @@ tBTM_STATUS BTM_SetAfhChannels (AFH_CHANNELS channels, tBTM_CMPL_CB *p_afh_chann
 **
 *******************************************************************************/
 tBTM_STATUS BTM_BleSetChannels (BLE_CHANNELS channels, tBTM_CMPL_CB *p_ble_channels_cmpl_cback);
+
+/*******************************************************************************
+**
+** Function         BTM_PktStatNumsGet
+**
+** Description      This function is called to get the number of packet status struct
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTM_PktStatNumsGet(UINT16 sync_conn_handle, tBTM_SCO_PKT_STAT_NUMS *pkt_nums);
 
 #ifdef __cplusplus
 }

@@ -419,6 +419,8 @@
 #define HCI_SUBCODE_BLE_DUPLICATE_EXCEPTIONAL_LIST 0x08
 #define HCI_SUBCODE_BLE_SET_ADV_FLOW_CONTROL       0x09
 #define HCI_SUBCODE_BLE_ADV_REPORT_FLOW_CONTROL    0x0A
+#define HCI_SUBCODE_BLE_RD_STATIC_ADDR             0x0B
+#define HCI_SUBCODE_BLE_CLEAR_ADV                  0x0C
 #define HCI_SUBCODE_BLE_MAX                        0x7F
 
 //ESP BT subcode define
@@ -462,6 +464,8 @@
 #define HCI_VENDOR_BLE_UPDATE_DUPLICATE_EXCEPTIONAL_LIST  HCI_ESP_VENDOR_OPCODE_BUILD(HCI_VENDOR_OGF, HCI_ESP_GROUP_BLE, HCI_SUBCODE_BLE_DUPLICATE_EXCEPTIONAL_LIST)
 #define HCI_VENDOR_BLE_SET_ADV_FLOW_CONTROL        HCI_ESP_VENDOR_OPCODE_BUILD(HCI_VENDOR_OGF, HCI_ESP_GROUP_BLE, HCI_SUBCODE_BLE_SET_ADV_FLOW_CONTROL)
 #define HCI_VENDOR_BLE_ADV_REPORT_FLOW_CONTROL     HCI_ESP_VENDOR_OPCODE_BUILD(HCI_VENDOR_OGF, HCI_ESP_GROUP_BLE, HCI_SUBCODE_BLE_ADV_REPORT_FLOW_CONTROL)
+/* BLE clear legacy advertising */
+#define HCI_VENDOR_BLE_CLEAR_ADV          HCI_ESP_VENDOR_OPCODE_BUILD(HCI_VENDOR_OGF, HCI_ESP_GROUP_BLE, HCI_SUBCODE_BLE_CLEAR_ADV)
 //ESP BT HCI CMD
 
 /* subcode for multi adv feature */
@@ -825,7 +829,6 @@
 **  Defentions for HCI Error Codes that are past in the events
 */
 #define HCI_SUCCESS                                     0x00
-#define HCI_PENDING                                     0x00
 #define HCI_ERR_ILLEGAL_COMMAND                         0x01
 #define HCI_ERR_NO_CONNECTION                           0x02
 #define HCI_ERR_HW_FAILURE                              0x03
@@ -1286,6 +1289,7 @@ typedef UINT8 tHCI_STATUS;
 
 /* Page timeout is used in LC only and LC is counting down slots not using OS */
 #define HCI_DEFAULT_PAGE_TOUT           0x2000  /* 5.12 sec (in slots) */
+#define HCI_MIN_PAGE_TOUT               0x0016  /* 13.75 ms (in slots) */
 
 /* Scan enable flags */
 #define HCI_NO_SCAN_ENABLED             0x00

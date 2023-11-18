@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,9 +9,19 @@
 #include <stdint.h>
 #include "soc/soc_caps.h"
 #include "hal/gpio_types.h"
+#include "sdkconfig.h"
+
+#if !CONFIG_IDF_TARGET_ESP32P4  //TODO: IDF-7532
+#if !SOC_LP_TIMER_SUPPORTED
 #include "hal/rtc_cntl_ll.h"
+#endif
+#endif  //#if !CONFIG_IDF_TARGET_ESP32P4
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
 #include "hal/rtc_io_ll.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 typedef struct rtc_cntl_sleep_retent {
@@ -41,15 +51,15 @@ typedef struct rtc_cntl_sleep_retent {
 
 #if SOC_PM_SUPPORT_EXT1_WAKEUP
 
-#define rtc_hal_ext1_get_wakeup_status()                  rtc_cntl_ll_ext1_get_wakeup_status()
+#define rtc_hal_ext1_get_wakeup_status()                    rtc_cntl_ll_ext1_get_wakeup_status()
 
-#define rtc_hal_ext1_clear_wakeup_status()                rtc_cntl_ll_ext1_clear_wakeup_status()
+#define rtc_hal_ext1_clear_wakeup_status()                  rtc_cntl_ll_ext1_clear_wakeup_status()
 
-#define rtc_hal_ext1_set_wakeup_pins(mask, mode)          rtc_cntl_ll_ext1_set_wakeup_pins(mask, mode)
+#define rtc_hal_ext1_set_wakeup_pins(io_mask, mode_mask)    rtc_cntl_ll_ext1_set_wakeup_pins(io_mask, mode_mask)
 
-#define rtc_hal_ext1_clear_wakeup_pins()                  rtc_cntl_ll_ext1_clear_wakeup_pins()
+#define rtc_hal_ext1_clear_wakeup_pins()                    rtc_cntl_ll_ext1_clear_wakeup_pins()
 
-#define rtc_hal_ext1_get_wakeup_pins()                    rtc_cntl_ll_ext1_get_wakeup_pins()
+#define rtc_hal_ext1_get_wakeup_pins()                      rtc_cntl_ll_ext1_get_wakeup_pins()
 
 #endif // SOC_PM_SUPPORT_EXT1_WAKEUP
 
@@ -87,3 +97,7 @@ void rtc_cntl_hal_disable_tagmem_retention(void *addr);
 #define rtc_hal_ulp_wakeup_enable()                       rtc_cntl_ll_ulp_wakeup_enable()
 
 #define rtc_hal_ulp_int_clear()                           rtc_cntl_ll_ulp_int_clear()
+
+#ifdef __cplusplus
+}
+#endif

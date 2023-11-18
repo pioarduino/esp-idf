@@ -18,6 +18,7 @@ import json
 import locale
 import os
 import os.path
+import shlex
 import subprocess
 import sys
 from collections import Counter, OrderedDict, _OrderedDictKeysView
@@ -37,9 +38,15 @@ try:
                                       debug_print_idf_version, get_target, merge_action_lists, print_warning)
     if os.getenv('IDF_COMPONENT_MANAGER') != '0':
         from idf_component_manager import idf_extensions
-except ImportError:
+except ImportError as e:
     # For example, importing click could cause this.
-    print('Please use idf.py only in an ESP-IDF shell environment.', file=sys.stderr)
+    print((f'Cannot import module "{e.name}". This usually means that "idf.py" was not '
+           f'spawned within an ESP-IDF shell environment or the python virtual '
+           f'environment used by "idf.py" is corrupted.\n'
+           f'Please use idf.py only in an ESP-IDF shell environment. If problem persists, '
+           f'please try to install ESP-IDF tools again as described in the Get Started guide.'),
+          file=sys.stderr)
+
     sys.exit(1)
 
 # Use this Python interpreter for any subprocesses we launch
@@ -97,6 +104,15 @@ def check_environment() -> List:
         print_warning(e.output.decode('utf-8', 'ignore'), stream=sys.stderr)
         debug_print_idf_version()
         raise SystemExit(1)
+
+    # Check used Python interpreter
+    checks_output.append('Checking used Python interpreter...')
+    try:
+        python_venv_path = os.environ['IDF_PYTHON_ENV_PATH']
+        if python_venv_path and not sys.executable.startswith(python_venv_path):
+            print_warning(f'WARNING: Python interpreter "{sys.executable}" used to start idf.py is not from installed venv "{python_venv_path}"')
+    except KeyError:
+        print_warning('WARNING: The IDF_PYTHON_ENV_PATH is missing in environmental variables!')
 
     return checks_output
 
@@ -494,7 +510,7 @@ def init_cli(verbose_output: List=None) -> Any:
 
                 if os.path.exists(os.path.join(args.build_dir, 'flash_args')):
                     print(f'or from the "{args.build_dir}" directory')
-                    print(' {}'.format(' '.join(esptool_cmd + ['@flash_args'])))
+                    print(' {}'.format(' '.join(esptool_cmd + ['"@flash_args"'])))
 
             if 'all' in actions or 'build' in actions:
                 print_flashing_message('Project', 'project')
@@ -695,7 +711,7 @@ def init_cli(verbose_output: List=None) -> Any:
     return CLI(help=cli_help, verbose_output=verbose_output, all_actions=all_actions)
 
 
-def main() -> None:
+def main(argv: List[Any] = None) -> None:
     # Check the environment only when idf.py is invoked regularly from command line.
     checks_output = None if SHELL_COMPLETE_RUN else check_environment()
 
@@ -703,7 +719,7 @@ def main() -> None:
     try:
         os.getcwd()
     except FileNotFoundError as e:
-        raise FatalError(f'ERROR: {e}. Working directory cannot be established. Check it\'s existence.')
+        raise FatalError(f'ERROR: {e}. Working directory cannot be established. Check its existence.')
 
     try:
         cli = init_cli(verbose_output=checks_output)
@@ -713,7 +729,54 @@ def main() -> None:
         else:
             raise
     else:
-        cli(sys.argv[1:], prog_name=PROG, complete_var=SHELL_COMPLETE_VAR)
+        argv = expand_file_arguments(argv or sys.argv[1:])
+
+        cli(argv, prog_name=PROG, complete_var=SHELL_COMPLETE_VAR)
+
+
+def expand_file_arguments(argv: List[Any]) -> List[Any]:
+    """
+    Any argument starting with "@" gets replaced with all values read from a text file.
+    Text file arguments can be split by newline or by space.
+    Values are added "as-is", as if they were specified in this order
+    on the command line.
+    """
+    visited = set()
+    expanded = False
+
+    def expand_args(args: List[Any], parent_path: str, file_stack: List[str]) -> List[str]:
+        expanded_args = []
+        for arg in args:
+            if not arg.startswith('@'):
+                expanded_args.append(arg)
+            else:
+                nonlocal expanded, visited
+                expanded = True
+
+                file_name = arg[1:]
+                rel_path = os.path.normpath(os.path.join(parent_path, file_name))
+
+                if rel_path in visited:
+                    file_stack_str = ' -> '.join(['@' + f for f in file_stack + [file_name]])
+                    raise FatalError(f'Circular dependency in file argument expansion: {file_stack_str}')
+                visited.add(rel_path)
+
+                try:
+                    with open(rel_path, 'r') as f:
+                        for line in f:
+                            expanded_args.extend(expand_args(shlex.split(line), os.path.dirname(rel_path), file_stack + [file_name]))
+                except IOError:
+                    file_stack_str = ' -> '.join(['@' + f for f in file_stack + [file_name]])
+                    raise FatalError(f"File '{rel_path}' (expansion of {file_stack_str}) could not be opened. "
+                                     'Please ensure the file exists and you have the necessary permissions to read it.')
+        return expanded_args
+
+    argv = expand_args(argv, os.getcwd(), [])
+
+    if expanded:
+        print(f'Running: idf.py {" ".join(argv)}')
+
+    return argv
 
 
 def _valid_unicode_config() -> Union[codecs.CodecInfo, bool]:

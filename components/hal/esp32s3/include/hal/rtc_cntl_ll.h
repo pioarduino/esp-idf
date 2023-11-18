@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,8 +9,9 @@
 #include "soc/soc.h"
 #include "soc/rtc.h"
 #include "soc/rtc_cntl_reg.h"
-#include "soc/apb_ctrl_reg.h"
+#include "soc/syscon_reg.h"
 #include "esp_attr.h"
+#include "hal/assert.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,11 +39,18 @@ FORCE_INLINE_ATTR uint32_t rtc_cntl_ll_ext1_get_wakeup_status(void)
     return REG_GET_FIELD(RTC_CNTL_EXT_WAKEUP1_STATUS_REG, RTC_CNTL_EXT_WAKEUP1_STATUS);
 }
 
-FORCE_INLINE_ATTR void rtc_cntl_ll_ext1_set_wakeup_pins(uint32_t mask, int mode)
+FORCE_INLINE_ATTR void rtc_cntl_ll_ext1_set_wakeup_pins(uint32_t io_mask, uint32_t mode_mask)
 {
-    REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_SEL, mask);
-    SET_PERI_REG_BITS(RTC_CNTL_EXT_WAKEUP_CONF_REG, 0x1,
-            mode, RTC_CNTL_EXT_WAKEUP1_LV_S);
+    // The target only supports a unified trigger mode among all EXT1 wakeup IOs
+    HAL_ASSERT((io_mask & mode_mask) == io_mask || (io_mask & mode_mask) == 0);
+    REG_SET_FIELD(RTC_CNTL_EXT_WAKEUP1_REG, RTC_CNTL_EXT_WAKEUP1_SEL, io_mask);
+    if ((io_mask & mode_mask) == io_mask) {
+        SET_PERI_REG_BITS(RTC_CNTL_EXT_WAKEUP_CONF_REG, 0x1,
+                1, RTC_CNTL_EXT_WAKEUP1_LV_S);
+    } else {
+        SET_PERI_REG_BITS(RTC_CNTL_EXT_WAKEUP_CONF_REG, 0x1,
+                0, RTC_CNTL_EXT_WAKEUP1_LV_S);
+    }
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_ext1_clear_wakeup_pins(void)
@@ -57,7 +65,7 @@ FORCE_INLINE_ATTR uint32_t rtc_cntl_ll_ext1_get_wakeup_pins(void)
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_set_tagmem_retention_link_addr(uint32_t link_addr)
 {
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL1_REG, APB_CTRL_RETENTION_TAG_LINK_ADDR, link_addr);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL1_REG, SYSCON_RETENTION_TAG_LINK_ADDR, link_addr);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_enable_tagmem_retention(void)
@@ -69,18 +77,18 @@ FORCE_INLINE_ATTR void rtc_cntl_ll_enable_tagmem_retention(void)
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_enable_icache_tagmem_retention(uint32_t start_point, uint32_t vld_size, uint32_t size)
 {
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL2_REG, APB_CTRL_RET_ICACHE_START_POINT, start_point);
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL2_REG, APB_CTRL_RET_ICACHE_VLD_SIZE, vld_size);
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL2_REG, APB_CTRL_RET_ICACHE_SIZE, size);
-    REG_SET_BIT(APB_CTRL_RETENTION_CTRL2_REG, APB_CTRL_RET_ICACHE_ENABLE);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL2_REG, SYSCON_RET_ICACHE_START_POINT, start_point);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL2_REG, SYSCON_RET_ICACHE_VLD_SIZE, vld_size);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL2_REG, SYSCON_RET_ICACHE_SIZE, size);
+    REG_SET_BIT(SYSCON_RETENTION_CTRL2_REG, SYSCON_RET_ICACHE_ENABLE);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_enable_dcache_tagmem_retention(uint32_t start_point, uint32_t vld_size, uint32_t size)
 {
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL3_REG, APB_CTRL_RET_DCACHE_START_POINT, start_point);
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL3_REG, APB_CTRL_RET_DCACHE_VLD_SIZE, vld_size);
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL3_REG, APB_CTRL_RET_DCACHE_SIZE, size);
-    REG_SET_BIT(APB_CTRL_RETENTION_CTRL3_REG, APB_CTRL_RET_DCACHE_ENABLE);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL3_REG, SYSCON_RET_DCACHE_START_POINT, start_point);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL3_REG, SYSCON_RET_DCACHE_VLD_SIZE, vld_size);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL3_REG, SYSCON_RET_DCACHE_SIZE, size);
+    REG_SET_BIT(SYSCON_RETENTION_CTRL3_REG, SYSCON_RET_DCACHE_ENABLE);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_disable_tagmem_retention(void)
@@ -92,17 +100,17 @@ FORCE_INLINE_ATTR void rtc_cntl_ll_disable_tagmem_retention(void)
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_disable_icache_tagmem_retention(void)
 {
-    REG_CLR_BIT(APB_CTRL_RETENTION_CTRL2_REG, APB_CTRL_RET_ICACHE_ENABLE);
+    REG_CLR_BIT(SYSCON_RETENTION_CTRL2_REG, SYSCON_RET_ICACHE_ENABLE);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_disable_dcache_tagmem_retention(void)
 {
-    REG_CLR_BIT(APB_CTRL_RETENTION_CTRL3_REG, APB_CTRL_RET_DCACHE_ENABLE);
+    REG_CLR_BIT(SYSCON_RETENTION_CTRL3_REG, SYSCON_RET_DCACHE_ENABLE);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_set_cpu_retention_link_addr(uint32_t link_addr)
 {
-    REG_SET_FIELD(APB_CTRL_RETENTION_CTRL_REG, APB_CTRL_RETENTION_CPU_LINK_ADDR, link_addr);
+    REG_SET_FIELD(SYSCON_RETENTION_CTRL_REG, SYSCON_RETENTION_CPU_LINK_ADDR, link_addr);
 }
 
 FORCE_INLINE_ATTR void rtc_cntl_ll_enable_cpu_retention_clock(void)

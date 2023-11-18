@@ -511,7 +511,7 @@ blecent_should_connect(const struct ble_gap_disc_desc *disc)
 
     rc = ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data);
     if (rc != 0) {
-        return rc;
+        return 0;
     }
 
     if (strlen(CONFIG_EXAMPLE_PEER_ADDR) && (strncmp(CONFIG_EXAMPLE_PEER_ADDR, "ADDR_ANY", strlen("ADDR_ANY")) != 0)) {
@@ -632,6 +632,11 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
 {
     struct ble_gap_conn_desc desc;
     struct ble_hs_adv_fields fields;
+#if MYNEWT_VAL(BLE_HCI_VS)
+#if MYNEWT_VAL(BLE_POWER_CONTROL)
+    struct ble_gap_set_auto_pcl_params params;
+#endif
+#endif
     int rc;
 
     switch (event->type) {
@@ -669,6 +674,21 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
 
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
             blecent_power_control(event->connect.conn_handle);
+#endif
+
+#if MYNEWT_VAL(BLE_HCI_VS)
+#if MYNEWT_VAL(BLE_POWER_CONTROL)
+	    memset(&params, 0x0, sizeof(struct ble_gap_set_auto_pcl_params));
+	    params.conn_handle = event->connect.conn_handle;
+            rc = ble_gap_set_auto_pcl_param(&params);
+            if (rc != 0) {
+                MODLOG_DFLT(INFO, "Failed to send VSC  %x \n", rc);
+                return 0;
+            }
+            else {
+               MODLOG_DFLT(INFO, "Successfully issued VSC , rc = %d \n", rc);
+	    }
+#endif
 #endif
 
 #if CONFIG_EXAMPLE_ENCRYPTION
@@ -790,7 +810,7 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
 #if MYNEWT_VAL(BLE_POWER_CONTROL)
     case BLE_GAP_EVENT_TRANSMIT_POWER:
 	MODLOG_DFLT(INFO, "Transmit power event : status=%d conn_handle=%d reason=%d "
-                          "phy=%d power_level=%x power_level_flag=%d delta=%d",
+                          "phy=%d power_level=%d power_level_flag=%d delta=%d",
 		    event->transmit_power.status,
 		    event->transmit_power.conn_handle,
 		    event->transmit_power.reason,

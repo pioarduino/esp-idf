@@ -39,6 +39,10 @@
 #include "osi/allocator.h"
 #include "osi/list.h"
 
+#if BT_SDP_BQB_INCLUDED
+extern BOOLEAN l2cap_bqb_ertm_mode_included_flag;
+#endif /* BT_SDP_BQB_INCLUDED */
+
 /*******************************************************************************
 **
 ** Function         l2cu_allocate_lcb
@@ -1558,8 +1562,17 @@ tL2C_CCB *l2cu_allocate_ccb (tL2C_LCB *p_lcb, UINT16 cid)
 #if (CLASSIC_BT_INCLUDED == TRUE)
     l2c_fcr_free_timer (p_ccb);
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
-    p_ccb->ertm_info.preferred_mode  = L2CAP_FCR_BASIC_MODE;        /* Default mode for channel is basic mode */
-    p_ccb->ertm_info.allowed_modes   = L2CAP_FCR_CHAN_OPT_BASIC|L2CAP_FCR_CHAN_OPT_ERTM;
+
+#if BT_SDP_BQB_INCLUDED
+    if (l2cap_bqb_ertm_mode_included_flag) {
+        p_ccb->ertm_info.preferred_mode = L2CAP_FCR_ERTM_MODE;
+        p_ccb->ertm_info.allowed_modes = L2CAP_FCR_CHAN_OPT_ERTM;
+    } else
+#endif /* BT_SDP_BQB_INCLUDED */
+    {
+        p_ccb->ertm_info.preferred_mode = L2CAP_FCR_BASIC_MODE;        /* Default mode for channel is basic mode */
+        p_ccb->ertm_info.allowed_modes = L2CAP_FCR_CHAN_OPT_BASIC|L2CAP_FCR_CHAN_OPT_ERTM;
+    }
     p_ccb->ertm_info.fcr_rx_buf_size = L2CAP_FCR_RX_BUF_SIZE;
     p_ccb->ertm_info.fcr_tx_buf_size = L2CAP_FCR_TX_BUF_SIZE;
     p_ccb->ertm_info.user_rx_buf_size = L2CAP_USER_RX_BUF_SIZE;
@@ -1676,6 +1689,12 @@ void l2cu_release_ccb (tL2C_CCB *p_ccb)
     if (!p_ccb->in_use) {
         return;
     }
+#if BLE_INCLUDED == TRUE
+    if (p_lcb->transport == BT_TRANSPORT_LE) {
+        /* Take samephore to avoid race condition */
+        l2ble_update_att_acl_pkt_num(L2CA_BUFF_FREE, NULL);
+    }
+#endif
 #if (SDP_INCLUDED == TRUE)
     if (p_rcb && (p_rcb->psm != p_rcb->real_psm)) {
         btm_sec_clr_service_by_psm(p_rcb->psm);

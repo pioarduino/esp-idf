@@ -1,18 +1,18 @@
 Copyright Header Guide
 ======================
 
-.. highlight:: c
+:link_to_translation:`zh_CN:[中文]`
 
 ESP-IDF is released under :project_file:`the Apache License 2.0 <LICENSE>` with some additional third-party copyrighted code released under various licenses. For further information please refer to :doc:`the list of copyrights and licenses <../../../COPYRIGHT>`.
 
-This page explains how the source code should be properly marked with a copyright header. ESP-IDF uses `The Software Package Data Exchange (SPDX) <https://spdx.dev>`_ format which is short and can be easily read by humans or processed by automated tools for copyright checks.
+This page explains how the source code should be properly marked with a copyright header. ESP-IDF uses the `Software Package Data Exchange (SPDX) <https://spdx.dev>`_ format which is short and can be easily read by humans or processed by automated tools for copyright checks.
 
 How to Check the Copyright Headers
 ----------------------------------
 
-Please make sure you have installed :doc:`the pre-commit hooks <install-pre-commit-hook>` which contain a copyright header checker as well. The checker can suggest a header if it is not able to detect a properly formatted SPDX header.
+Please make sure you have installed the :doc:`pre-commit hooks <install-pre-commit-hook>` which contain a copyright header checker as well. The checker can suggest a header if it is not able to detect a properly formatted SPDX header.
 
-What if the Checker's Suggestion is Incorrect?
+What If the Checker's Suggestion Is Incorrect?
 ----------------------------------------------
 
 No automated checker (no matter how good is) can replace humans. So the developer's responsibility is to modify the offered header to be in line with the law and the license restrictions of the original code on which the work is based on. Certain licenses are not compatible between each other. Such corner cases will be covered by the following examples.
@@ -22,7 +22,7 @@ The checker can be configured with the ``tools/ci/check_copyright_config.yaml`` 
 Common Examples of Copyright Headers
 ------------------------------------
 
-The simplest case is when the code is not based on any licensed previous work, e.g. it was written completely from scratch. Such code can be decorated with the following copyright header and put under the license of ESP-IDF::
+The simplest case is when the code is not based on any licensed previous work, e.g., it was written completely from scratch. Such code can be decorated with the following copyright header and put under the license of ESP-IDF::
 
     /*
      * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
@@ -30,7 +30,7 @@ The simplest case is when the code is not based on any licensed previous work, e
      * SPDX-License-Identifier: Apache-2.0
      */
 
-Less restrictive parts of ESP-IDF
+Less Restrictive Parts of ESP-IDF
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Some parts of ESP-IDF are deliberately under less restrictive licenses in order to ease their re-use in commercial closed source projects. This is the case for :project:`ESP-IDF examples <examples>` which are in Public domain or under the Creative Commons Zero Universal (CC0) license. The following header can be used in such source files::
@@ -43,7 +43,7 @@ Some parts of ESP-IDF are deliberately under less restrictive licenses in order 
 
 The option allowing multiple licenses joined with the ``OR`` keyword from the above example can be achieved with the definition of multiple allowed licenses in the ``tools/ci/check_copyright_config.yaml`` configuration file. Please use this option with care and only selectively for a limited part of ESP-IDF.
 
-Third party licenses
+Third Party Licenses
 ~~~~~~~~~~~~~~~~~~~~
 
 Code licensed under different licenses, modified by Espressif Systems and included in ESP-IDF cannot be licensed under Apache License 2.0 not even if the checker suggests it. It is advised to keep the original copyright header and add an SPDX before it.

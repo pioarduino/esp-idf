@@ -20,6 +20,7 @@
 #include "driver/gpio.h"
 #include "hal/gpio_hal.h"
 #include "hal/rtc_io_hal.h"
+#include "soc/rtc_io_periph.h"
 
 #if SOC_LP_AON_SUPPORTED
 #include "hal/lp_aon_hal.h"

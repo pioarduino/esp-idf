@@ -1,5 +1,6 @@
 Sleep Modes
 ===========
+
 :link_to_translation:`zh_CN:[中文]`
 
 {IDF_TARGET_SPI_POWER_DOMAIN:default="VDD_SPI", esp32="VDD_SDIO"}
@@ -28,44 +29,157 @@ In Deep-sleep mode, the CPUs, most of the RAM, and all digital peripherals that 
 
         - RTC controller
         :SOC_ULP_SUPPORTED: - ULP coprocessor
-        :SOC_RTC_FAST_MEM_SUPPORTED: - RTC fast memory
-        :SOC_RTC_SLOW_MEM_SUPPORTED: - RTC slow memory
+        :SOC_RTC_FAST_MEM_SUPPORTED: - RTC FAST memory
+        :SOC_RTC_SLOW_MEM_SUPPORTED: - RTC SLOW memory
 
 .. only:: SOC_BT_SUPPORTED
 
     Wi-Fi/Bluetooth and Sleep Modes
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    In Deep-sleep and Light-sleep modes, the wireless peripherals are powered down. Before entering Deep-sleep or Light-sleep modes, the application must disable Wi-Fi and Bluetooth using the appropriate calls (i.e., :cpp:func:`esp_bluedroid_disable`, :cpp:func:`esp_bt_controller_disable`, :cpp:func:`esp_wifi_stop`). Wi-Fi and Bluetooth connections will not be maintained in Deep-sleep or Light-sleep mode, even if these functions are not called.
+    In Deep-sleep and Light-sleep modes, the wireless peripherals are powered down. Before entering Deep-sleep or Light-sleep modes, the application must disable Wi-Fi and Bluetooth using the appropriate calls (i.e., :cpp:func:`esp_bluedroid_disable`, :cpp:func:`esp_bt_controller_disable`, :cpp:func:`esp_wifi_stop`). Wi-Fi and Bluetooth connections are not maintained in Deep-sleep or Light-sleep mode, even if these functions are not called.
+
+    If Wi-Fi/Bluetooth connections need to be maintained, enable Wi-Fi/Bluetooth Modem-sleep mode and automatic Light-sleep feature (see :doc:`Power Management APIs <power_management>`). This allows the system to wake up from sleep automatically when required by the Wi-Fi/Bluetooth driver, thereby maintaining the connection.
 
 .. only:: not SOC_BT_SUPPORTED
 
     Wi-Fi and Sleep Modes
     ^^^^^^^^^^^^^^^^^^^^^^^
 
-    In Deep-sleep and Light-sleep modes, the wireless peripherals are powered down. Before entering Deep-sleep or Light-sleep modes, applications must disable Wi-Fi using the appropriate calls (:cpp:func:`esp_wifi_stop`). Wi-Fi connections will not be maintained in Deep-sleep or Light-sleep mode, even if these functions are not called.
+    In Deep-sleep and Light-sleep modes, the wireless peripherals are powered down. Before entering Deep-sleep or Light-sleep modes, applications must disable Wi-Fi using the appropriate calls (:cpp:func:`esp_wifi_stop`). Wi-Fi connections are not maintained in Deep-sleep or Light-sleep mode, even if these functions are not called.
 
-If Wi-Fi connections need to be maintained, enable Wi-Fi Modem-sleep mode and automatic Light-sleep feature (see :doc:`Power Management APIs <power_management>`). This will allow the system to wake up from sleep automatically when required by the Wi-Fi driver, thereby maintaining a connection to the AP.
+    If Wi-Fi connections need to be maintained, enable Wi-Fi Modem-sleep mode and automatic Light-sleep feature (see :doc:`Power Management APIs <power_management>`). This will allow the system to wake up from sleep automatically when required by the Wi-Fi driver, thereby maintaining a connection to the AP.
+
+.. only:: esp32s2 or esp32s3 or esp32c2 or esp32c3
+
+    Sub Sleep Modes
+    ^^^^^^^^^^^^^^^
+
+    Tables below list the sub sleep modes in the first row and the features they support in the first column. Modes that support more features may consume more power during sleep mode. The sleep system automatically selects the mode that satisfies all the features required by the user while consuming least power.
+
+    Deep-sleep:
+
+    .. list-table::
+       :widths: auto
+       :header-rows: 2
+
+       * -
+         - DSLP_ULTRA_LOW
+         - DSLP_DEFAULT
+         - DSLP_8MD256/
+       * -
+         -
+         -
+         - DSLP_ADC_TSENS
+       * - ULP/Touch sensor (ESP32-S2 and ESP32-S3 only)
+         - Y
+         - Y
+         - Y
+       * - RTC IO input/RTC memory at high temperature
+         -
+         - Y
+         - Y
+       * - ADC_TSEN_MONITOR
+         -
+         -
+         - Y
+       * - 8MD256 as the clock source for RTC_SLOW_CLK
+         -
+         -
+         - Y
+
+    Features:
+
+    1. RTC IO input/RTC memory at high temperature (experimental): Use RTC IO as input pins, or use RTC memory at high temperature. The chip can go into ultra low power mode when these features are disabled. Controlled by API :cpp:func:`rtc_sleep_enable_ultra_low`.
+
+    2. ADC_TSEN_MONITOR: Use ADC/Temperature Sensor in monitor mode (controlled by ULP). Enabled by API :cpp:func:`ulp_adc_init` or its higher level APIs. Only available for ESP32-S2 and ESP32-S3 chips with monitor mode.
+
+    3. 8MD256 as the clock source for RTC_SLOW_CLK: When 8MD256 is selected as the clock source for RTC_SLOW_CLK using the Kconfig option ``CONFIG_RTC_CLK_SRC_INT_8MD256``, the chip will automatically enter this sub sleep mode during Deep-sleep mode.
+
+    Light-sleep:
+
+    .. list-table::
+       :widths: auto
+       :header-rows: 2
+
+       * -
+         - LSLP_DEFAULT
+         - LSLP_ADC_TSENS
+         - LSLP_8MD256
+         - LSLP_LEDC8M/
+       * -
+         -
+         -
+         -
+         - LSLP_XTAL_FPU
+       * - ULP/Touch sensor (ESP32-S2 and ESP32-S3 only)
+         - Y
+         - Y
+         - Y
+         - Y
+       * - RTC IO input/RTC memory at high temperature
+         - Y
+         - Y
+         - Y
+         - Y
+       * - ADC_TSEN_MONITOR
+         -
+         - Y
+         - Y
+         - Y
+       * - 8MD256 as the clock source for RTC_SLOW_CLK
+         -
+         -
+         - Y
+         - Y
+       * - 8 MHz RC clock source used by digital peripherals
+         -
+         -
+         -
+         - Y
+       * - Keep the XTAL clock on
+         -
+         -
+         -
+         - Y
+
+    Features: (Also see 8MD256 and ADC_TSEN_MONITOR features for Deep-sleep mode above)
+
+    1. 8 MHz RC clock source used by digital peripherals: Currently, only LEDC uses this clock source during Light-sleep mode. When LEDC selects this clock source, this feature is automatically enabled.
+
+    2. Keep the XTAL clock on: Keep the XTAL clock on during Light-sleep mode. Controlled by ``ESP_PD_DOMAIN_XTAL`` power domain.
+
+    .. only:: esp32s2
+
+        {IDF_TARGET_NAME} uses the same power mode for LSLP_8MD256, LSLP_LEDC8M, and LSLP_XTAL_FPU features.
+
+    .. only:: esp32s3
+
+        Default mode of {IDF_TARGET_NAME} already supports ADC_TSEN_MONITOR feature.
+
+    .. only:: esp32c2 or esp32c3
+
+        {IDF_TARGET_NAME} does not have ADC_TSEN_MONITOR or LSLP_ADC_TSENS feature.
 
 .. _api-reference-wakeup-source:
 
 Wakeup Sources
 --------------
 
-Wakeup sources can be enabled using ``esp_sleep_enable_X_wakeup`` APIs. Wakeup sources are not disabled after wakeup, you can disable them using :cpp:func:`esp_sleep_disable_wakeup_source` API if you don't need them any more. See :ref:`disable_sleep_wakeup_source`.
+Wakeup sources can be enabled using ``esp_sleep_enable_X_wakeup`` APIs. Wakeup sources are not disabled after wakeup, you can disable them using :cpp:func:`esp_sleep_disable_wakeup_source` API if you do not need them any more. See :ref:`disable_sleep_wakeup_source`.
 
 Following are the wakeup sources supported on {IDF_TARGET_NAME}.
 
 Timer
 ^^^^^
 
-The RTC controller has a built-in timer which can be used to wake up the chip after a predefined amount of time. Time is specified at microsecond precision, but the actual resolution depends on the clock source selected for RTC SLOW_CLK.
+The RTC controller has a built-in timer which can be used to wake up the chip after a predefined amount of time. Time is specified at microsecond precision, but the actual resolution depends on the clock source selected for RTC_SLOW_CLK.
 
 .. only:: SOC_ULP_SUPPORTED
 
-    For details on RTC clock options, see *{IDF_TARGET_NAME} Technical Reference Manual* > *ULP Coprocessor* [`PDF <{IDF_TARGET_TRM_EN_URL}#ulp>`__].
+    For details on RTC clock options, see **{IDF_TARGET_NAME} Technical Reference Manual** > **ULP Coprocessor** [`PDF <{IDF_TARGET_TRM_EN_URL}#ulp>`__].
 
-RTC peripherals or RTC memories don't need to be powered on during sleep in this wakeup mode.
+RTC peripherals or RTC memories do not need to be powered on during sleep in this wakeup mode.
 
 :cpp:func:`esp_sleep_enable_timer_wakeup` function can be used to enable sleep wakeup using a timer.
 
@@ -82,10 +196,10 @@ RTC peripherals or RTC memories don't need to be powered on during sleep in this
 
     :cpp:func:`esp_sleep_enable_touchpad_wakeup` function can be used to enable this wakeup source.
 
-.. only:: SOC_PM_SUPPORT_EXT0_WAKEUP or SOC_PM_SUPPORT_EXT1_WAKEUP
+.. only:: SOC_PM_SUPPORT_EXT0_WAKEUP
 
-    External Wakeup (ext0)
-    ^^^^^^^^^^^^^^^^^^^^^^
+    External Wakeup (``ext0``)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     The RTC IO module contains the logic to trigger wakeup when one of RTC GPIOs is set to a predefined logic level. RTC IO is part of the RTC peripherals power domain, so RTC peripherals will be kept powered on during Deep-sleep if this wakeup source is requested.
 
@@ -97,35 +211,61 @@ RTC peripherals or RTC memories don't need to be powered on during sleep in this
 
     :cpp:func:`esp_sleep_enable_ext0_wakeup` function can be used to enable this wakeup source.
 
-    .. warning:: After waking up from sleep, the IO pad used for wakeup will be configured as RTC IO. Therefore, before using this pad as digital GPIO, users need to reconfigure it using :cpp:func:`rtc_gpio_deinit` function.
+    .. warning::
 
-    External Wakeup (ext1)
-    ^^^^^^^^^^^^^^^^^^^^^^
+        After waking up from sleep, the IO pad used for wakeup will be configured as RTC IO. Therefore, before using this pad as digital GPIO, users need to reconfigure it using :cpp:func:`rtc_gpio_deinit` function.
 
-    The RTC controller contains the logic to trigger wakeup using multiple RTC GPIOs. One of the following two logic functions can be used to trigger wakeup:
+.. only:: SOC_PM_SUPPORT_EXT1_WAKEUP
+
+    External Wakeup (``ext1``)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    The RTC controller contains the logic to trigger wakeup using multiple RTC GPIOs. One of the following two logic functions can be used to trigger general ext1 wakeup:
+
+    .. only:: esp32
 
         - wake up if any of the selected pins is high (``ESP_EXT1_WAKEUP_ANY_HIGH``)
         - wake up if all the selected pins are low (``ESP_EXT1_WAKEUP_ALL_LOW``)
 
-    This wakeup source is implemented by the RTC controller. As such, RTC peripherals and RTC memories can be powered down in this mode. However, if RTC peripherals are powered down, internal pullup and pulldown resistors will be disabled. To use internal pullup or pulldown resistors, request the RTC peripherals power domain to be kept on during sleep, and configure pullup/pulldown resistors using ``rtc_gpio_`` functions before entering sleep::
+    .. only:: esp32s2 or esp32s3 or esp32c6 or esp32h2
+
+        - wake up if any of the selected pins is high (``ESP_EXT1_WAKEUP_ANY_HIGH``)
+        - wake up if any of the selected pins is low (``ESP_EXT1_WAKEUP_ANY_LOW``)
+
+    This wakeup source is controlled by the RTC controller. Unlike ``ext0``, this wakeup source supports wakeup even when the RTC peripheral is powered down. Although the power domain of the RTC peripheral, where RTC IOs are located, is powered down during sleep modes, ESP-IDF will automatically lock the state of the wakeup pin before the system enters sleep modes and unlock upon exiting sleep modes. Therefore, the internal pull-up or pull-down resistors can still be configured for the wakeup pin::
 
         esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
         rtc_gpio_pullup_dis(gpio_num);
         rtc_gpio_pulldown_en(gpio_num);
 
+    If we turn off the ``RTC_PERIPH`` domain, we will use the HOLD feature to maintain the pull-up and pull-down on the pins during sleep. HOLD feature will be acted on the pin internally before the system enters sleep modes, and this can further reduce power consumption::
+
+        rtc_gpio_pullup_dis(gpio_num);
+        rtc_gpio_pulldown_en(gpio_num);
+
+    If certain chips lack the ``RTC_PERIPH`` domain, we can only use the HOLD feature to maintain the pull-up and pull-down on the pins during sleep modes::
+
+        gpio_pullup_dis(gpio_num);
+        gpio_pulldown_en(gpio_num);
+
+    :cpp:func:`esp_sleep_enable_ext1_wakeup` function can be used to enable this wakeup source for general ext1 wakeup.
+
+    .. only:: SOC_PM_SUPPORT_EXT1_WAKEUP_MODE_PER_PIN
+
+        Besides the above mentioned general ext1 wakeup, the RTC controller also contains a more powerful logic to trigger wakeup using multiple RTC GPIOs with a customized RTC IO wakeup level bitmap. This can be configured with :cpp:func`esp_sleep_enable_ext1_wakeup_with_level_mask`.
+
     .. warning::
+
         - To use the EXT1 wakeup, the IO pad(s) are configured as RTC IO. Therefore, before using these pads as digital GPIOs, users need to reconfigure them by calling the :cpp:func:`rtc_gpio_deinit` function.
 
-        - If the RTC peripherals are configured to be powered down (which is by default), the wakeup IOs will be set to the holding state before entering sleep. Therefore, after the chip wakes up from Light-sleep, please call `rtc_gpio_hold_dis` to disable the hold function to perform any pin re-configuration. For Deep-sleep wakeup, this is already being handled at the application startup stage.
-
-    :cpp:func:`esp_sleep_enable_ext1_wakeup` function can be used to enable this wakeup source.
+        - If the RTC peripherals are configured to be powered down (which is by default), the wakeup IOs will be set to the holding state before entering sleep. Therefore, after the chip wakes up from Light-sleep, please call ``rtc_gpio_hold_dis`` to disable the hold function to perform any pin re-configuration. For Deep-sleep wakeup, this is already being handled at the application startup stage.
 
 .. only:: SOC_ULP_SUPPORTED
 
     ULP Coprocessor Wakeup
     ^^^^^^^^^^^^^^^^^^^^^^
 
-    ULP coprocessor can run while the chip is in sleep mode, and may be used to poll sensors, monitor ADC or touch sensor values, and wake up the chip when a specific event is detected. ULP coprocessor is part of the RTC peripherals power domain, and it runs the program stored in RTC slow memory. RTC slow memory will be powered on during sleep if this wakeup mode is requested. RTC peripherals will be automatically powered on before ULP coprocessor starts running the program; once the program stops running, RTC peripherals are automatically powered down again.
+    ULP coprocessor can run while the chip is in sleep mode, and may be used to poll sensors, monitor ADC or touch sensor values, and wake up the chip when a specific event is detected. ULP coprocessor is part of the RTC peripherals power domain, and it runs the program stored in RTC SLOW memory. RTC SLOW memory will be powered on during sleep if this wakeup mode is requested. RTC peripherals will be automatically powered on before ULP coprocessor starts running the program; once the program stops running, RTC peripherals are automatically powered down again.
 
     .. only:: esp32
 
@@ -149,6 +289,7 @@ RTC peripherals or RTC memories don't need to be powered on during sleep in this
     :cpp:func:`esp_sleep_enable_gpio_wakeup` function can be used to enable this wakeup source.
 
     .. warning::
+
         Before entering Light-sleep mode, check if any GPIO pin to be driven is part of the {IDF_TARGET_SPI_POWER_DOMAIN} power domain. If so, this power domain must be configured to remain ON during sleep.
 
         For example, on ESP32-WROOM-32 board, GPIO16 and GPIO17 are linked to {IDF_TARGET_SPI_POWER_DOMAIN} power domain. If they are configured to remain high during Light-sleep, the power domain should be configured to remain powered ON. This can be done with :cpp:func:`esp_sleep_pd_config()`::
@@ -188,31 +329,32 @@ The application can force specific powerdown modes for RTC peripherals and RTC m
 Power-down of RTC Peripherals and Memories
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-By default, :cpp:func:`esp_deep_sleep_start` and :cpp:func:`esp_light_sleep_start` functions will power down all RTC power domains which are not needed by the enabled wakeup sources. To override this behaviour, :cpp:func:`esp_sleep_pd_config` function is provided.
+By default, :cpp:func:`esp_deep_sleep_start` and :cpp:func:`esp_light_sleep_start` functions power down all RTC power domains which are not needed by the enabled wakeup sources. To override this behaviour, :cpp:func:`esp_sleep_pd_config` function is provided.
 
 .. only:: esp32
 
-    Note: in revision 0 of ESP32, RTC fast memory will always be kept enabled in Deep-sleep, so that the Deep-sleep stub can run after reset. This can be overridden, if the application doesn't need clean reset behaviour after Deep-sleep.
+    Note: in revision 0 of ESP32, RTC FAST memory is always kept enabled in Deep-sleep, so that the Deep-sleep stub can run after reset. This can be overridden, if the application does not need clean reset behaviour after Deep-sleep.
 
 .. only:: SOC_RTC_SLOW_MEM_SUPPORTED
 
-    If some variables in the program are placed into RTC slow memory (for example, using ``RTC_DATA_ATTR`` attribute), RTC slow memory will be kept powered on by default. This can be overridden using :cpp:func:`esp_sleep_pd_config` function, if desired.
+    If some variables in the program are placed into RTC SLOW memory (for example, using ``RTC_DATA_ATTR`` attribute), RTC SLOW memory will be kept powered on by default. This can be overridden using :cpp:func:`esp_sleep_pd_config` function, if desired.
 
 .. only:: not SOC_RTC_SLOW_MEM_SUPPORTED and SOC_RTC_FAST_MEM_SUPPORTED
 
-    In {IDF_TARGET_NAME}, there is only RTC fast memory, so if some variables in the program are marked by ``RTC_DATA_ATTR``, ``RTC_SLOW_ATTR`` or ``RTC_FAST_ATTR`` attributes, all of them go to RTC fast memory. It will be kept powered on by default. This can be overridden using :cpp:func:`esp_sleep_pd_config` function, if desired.
+    In {IDF_TARGET_NAME}, there is only RTC FAST memory, so if some variables in the program are marked by ``RTC_DATA_ATTR``, ``RTC_SLOW_ATTR`` or ``RTC_FAST_ATTR`` attributes, all of them go to RTC FAST memory. It will be kept powered on by default. This can be overridden using :cpp:func:`esp_sleep_pd_config` function, if desired.
 
 Power-down of Flash
 ^^^^^^^^^^^^^^^^^^^
 
-By default, to avoid potential issues, :cpp:func:`esp_light_sleep_start` function will **not** power down flash. To be more specific, it takes time to power down the flash and during this period the system may be woken up, which then actually powers up the flash before this flash could be powered down completely. As a result, there is a chance that the flash may not work properly.
+By default, to avoid potential issues, :cpp:func:`esp_light_sleep_start` function does **not** power down flash. To be more specific, it takes time to power down the flash and during this period the system may be woken up, which then actually powers up the flash before this flash could be powered down completely. As a result, there is a chance that the flash may not work properly.
 
-So, in theory, it's ok if you only wake up the system after the flash is completely powered down. However, in reality, the flash power-down period can be hard to predict (for example, this period can be much longer when you add filter capacitors to the flash's power supply circuit) and uncontrollable (for example, the asynchronous wake-up signals make the actual sleep time uncontrollable).
+So, in theory, it is ok if you only wake up the system after the flash is completely powered down. However, in reality, the flash power-down period can be hard to predict (for example, this period can be much longer when you add filter capacitors to the flash's power supply circuit) and uncontrollable (for example, the asynchronous wake-up signals make the actual sleep time uncontrollable).
 
 .. warning::
+
     If a filter capacitor is added to your flash power supply circuit, please do everything possible to avoid powering down flash.
 
-Therefore, it's recommended not to power down flash when using ESP-IDF. For power-sensitive applications, it's recommended to use Kconfig option :ref:`CONFIG_ESP_SLEEP_FLASH_LEAKAGE_WORKAROUND` to reduce the power consumption of the flash during light sleep, instead of powering down the flash.
+Therefore, it is recommended not to power down flash when using ESP-IDF. For power-sensitive applications, it is recommended to use Kconfig option :ref:`CONFIG_ESP_SLEEP_FLASH_LEAKAGE_WORKAROUND` to reduce the power consumption of the flash during Light-sleep, instead of powering down the flash.
 
 .. only:: SOC_SPIRAM_SUPPORTED
 
@@ -229,19 +371,19 @@ However, for those who have fully understood the risk and are still willing to p
 
     .. list::
 
-        - ESP-IDF does not provide any mechanism that can power down the flash in all conditions when light sleep.
-        - :cpp:func:`esp_deep_sleep_start` function will force power down flash regardless of user configuration.
+        - ESP-IDF does not provide any mechanism that can power down the flash in all conditions when Light-sleep.
+        - :cpp:func:`esp_deep_sleep_start` function forces power down flash regardless of user configuration.
 
-Configuring IOs (Deep-sleep only)
+Configuring IOs (Deep-sleep Only)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Some {IDF_TARGET_NAME} IOs have internal pullups or pulldowns, which are enabled by default. If an external circuit drives this pin in Deep-sleep mode, current consumption may increase due to current flowing through these pullups and pulldowns.
 
-.. only:: SOC_RTCIO_HOLD_SUPPORTED
+.. only:: SOC_RTCIO_HOLD_SUPPORTED and SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
 
     To isolate a pin to prevent extra current draw, call :cpp:func:`rtc_gpio_isolate` function.
 
-    For example, on ESP32-WROVER module, GPIO12 is pulled up externally, and it also has an internal pulldown in the ESP32 chip. This means that in Deep-sleep, some current will flow through these external and internal resistors, increasing Deep-sleep current above the minimal possible value.
+    For example, on ESP32-WROVER module, GPIO12 is pulled up externally, and it also has an internal pulldown in the ESP32 chip. This means that in Deep-sleep, some current flows through these external and internal resistors, increasing Deep-sleep current above the minimal possible value.
 
     Add the following code before :cpp:func:`esp_deep_sleep_start` to remove such extra current::
 
@@ -260,7 +402,7 @@ Some {IDF_TARGET_NAME} IOs have internal pullups or pulldowns, which are enabled
 Entering Sleep
 --------------
 
-:cpp:func:`esp_light_sleep_start` or :cpp:func:`esp_deep_sleep_start` functions can be used to enter Light-sleep or Deep-sleep modes correspondingly. After that, the system will configure the parameters of RTC controller according to the requested wakeup sources and power-down options.
+:cpp:func:`esp_light_sleep_start` or :cpp:func:`esp_deep_sleep_start` functions can be used to enter Light-sleep or Deep-sleep modes correspondingly. After that, the system configures the parameters of RTC controller according to the requested wakeup sources and power-down options.
 
 It is also possible to enter sleep modes with no wakeup sources configured. In this case, the chip will be in sleep modes indefinitely until external reset is applied.
 
@@ -290,7 +432,11 @@ Application Example
 -------------------
 
 - :example:`protocols/sntp`: the implementation of basic functionality of Deep-sleep, where ESP module is periodically waken up to retrieve time from NTP server.
-- :example:`wifi/power_save`: the implementation of modem sleep example.
+- :example:`wifi/power_save`: the usage of Wi-Fi Modem-sleep mode and automatic Light-sleep feature to maintain Wi-Fi connections.
+
+.. only:: SOC_BT_SUPPORTED
+
+    - :example:`bluetooth/nimble/power_save`: the usage of Bluetooth Modem-sleep mode and automatic Light-sleep feature to maintain Bluetooth connections.
 
 .. only:: SOC_ULP_SUPPORTED
 

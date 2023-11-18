@@ -18,8 +18,8 @@ The ESP Thread Border Router SDK provides extra components and examples for putt
 #### **Wi-Fi based Thread Border Router**
 By default, two SoCs are required to run this example:
 * An ESP32 series Wi-Fi SoC (ESP32, ESP32-C, ESP32-S, etc) loaded with this ot_br example.
-* An ESP32-H2 802.15.4 SoC loaded with [ot_rcp](../ot_rcp) example.
-* Another ESP32-H2 SoC loaded with [ot_cli](../ot_cli) example.
+* An IEEE 802.15.4 SoC (ESP32-H2) loaded with [ot_rcp](../ot_rcp) example.
+* Another IEEE 802.15.4 SoC (ESP32-H2) loaded with [ot_cli](../ot_cli) example.
 
 Connect the two SoCs via UART, below is an example setup with ESP32 DevKitC and ESP32-H2 DevKitC:
 ![thread_br](image/thread-border-router-esp32-esp32h2.jpg)
@@ -40,6 +40,12 @@ Similar to the previous Wi-Fi based Thread Border Route setup, but a device with
 ```
 idf.py menuconfig
 ```
+OpenThread Command Line is enabled with UART as the default interface. Additionally, USB JTAG is also supported and can be activated through the menuconfig:
+
+```
+Component config → ESP System Settings → Channel for console output → USB Serial/JTAG Controller
+```
+
 In order to run the example on single SoC which supports both Wi-Fi and Thread, the option `CONFIG_ESP_COEX_SW_COEXIST_ENABLE` and option `CONFIG_OPENTHREAD_RADIO_NATIVE` should be enabled. The two options are enabled by default for ESP32-C6 target.
 
 Two ways are provided to setup the Thread Border Router in this example:

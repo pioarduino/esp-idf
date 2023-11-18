@@ -9,13 +9,8 @@
 #include "sdkconfig.h"
 #include "unity.h"
 #include "driver/rmt_encoder.h"
+#include "esp_heap_caps.h"
 #include "esp_attr.h"
-
-#if CONFIG_RMT_ISR_IRAM_SAFE
-#define TEST_RMT_ENCODER_ATTR IRAM_ATTR
-#else
-#define TEST_RMT_ENCODER_ATTR
-#endif
 
 typedef struct {
     rmt_encoder_t base;
@@ -25,8 +20,7 @@ typedef struct {
     rmt_symbol_word_t reset_code;
 } rmt_led_strip_encoder_t;
 
-TEST_RMT_ENCODER_ATTR
-static size_t rmt_encode_led_strip(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state)
+IRAM_ATTR static size_t rmt_encode_led_strip(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state)
 {
     rmt_led_strip_encoder_t *led_encoder = __containerof(encoder, rmt_led_strip_encoder_t, base);
     rmt_encode_state_t session_state = RMT_ENCODING_RESET;
@@ -79,7 +73,7 @@ static esp_err_t rmt_led_strip_encoder_reset(rmt_encoder_t *encoder)
 
 esp_err_t test_rmt_new_led_strip_encoder(rmt_encoder_handle_t *ret_encoder)
 {
-    rmt_led_strip_encoder_t *led_encoder = calloc(1, sizeof(rmt_led_strip_encoder_t));
+    rmt_led_strip_encoder_t *led_encoder = heap_caps_calloc(1, sizeof(rmt_led_strip_encoder_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     led_encoder->base.encode = rmt_encode_led_strip;
     led_encoder->base.del = rmt_del_led_strip_encoder;
     led_encoder->base.reset = rmt_led_strip_encoder_reset;
@@ -119,7 +113,7 @@ typedef struct {
     int state;
 } rmt_nec_protocol_encoder_t;
 
-static size_t rmt_encode_nec_protocol(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state)
+IRAM_ATTR static size_t rmt_encode_nec_protocol(rmt_encoder_t *encoder, rmt_channel_handle_t channel, const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state)
 {
     rmt_nec_protocol_encoder_t *nec_encoder = __containerof(encoder, rmt_nec_protocol_encoder_t, base);
     rmt_encode_state_t session_state = RMT_ENCODING_RESET;
@@ -194,7 +188,7 @@ static esp_err_t rmt_nec_protocol_encoder_reset(rmt_encoder_t *encoder)
 
 esp_err_t test_rmt_new_nec_protocol_encoder(rmt_encoder_handle_t *ret_encoder)
 {
-    rmt_nec_protocol_encoder_t *nec_encoder = calloc(1, sizeof(rmt_nec_protocol_encoder_t));
+    rmt_nec_protocol_encoder_t *nec_encoder = heap_caps_calloc(1, sizeof(rmt_nec_protocol_encoder_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     nec_encoder->base.encode = rmt_encode_nec_protocol;
     nec_encoder->base.del = rmt_del_nec_protocol_encoder;
     nec_encoder->base.reset = rmt_nec_protocol_encoder_reset;

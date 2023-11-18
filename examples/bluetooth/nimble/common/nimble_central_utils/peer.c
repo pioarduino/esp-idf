@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -619,6 +619,36 @@ peer_svc_disced(uint16_t conn_handle, const struct ble_gatt_error *error,
     return rc;
 }
 
+int
+peer_disc_svc_by_uuid(uint16_t conn_handle, const ble_uuid_t *uuid, peer_disc_fn *disc_cb,
+                      void *disc_cb_arg)
+{
+    struct peer_svc *svc;
+    struct peer *peer;
+    int rc;
+
+    peer = peer_find(conn_handle);
+    if (peer == NULL) {
+        return BLE_HS_ENOTCONN;
+    }
+
+    /* Undiscover everything first. */
+    while ((svc = SLIST_FIRST(&peer->svcs)) != NULL) {
+        SLIST_REMOVE_HEAD(&peer->svcs, next);
+        peer_svc_delete(svc);
+    }
+
+    peer->disc_prev_chr_val = 1;
+    peer->disc_cb = disc_cb;
+    peer->disc_cb_arg = disc_cb_arg;
+
+    rc = ble_gattc_disc_svc_by_uuid(conn_handle, uuid, peer_svc_disced, peer);
+    if (rc != 0) {
+        return rc;
+    }
+
+    return 0;
+}
 
 int
 peer_disc_all(uint16_t conn_handle, peer_disc_fn *disc_cb, void *disc_cb_arg)
@@ -701,6 +731,38 @@ peer_add(uint16_t conn_handle)
 
     return 0;
 }
+
+void
+peer_traverse_all(peer_traverse_fn *trav_cb, void *arg)
+{
+    struct peer *peer;
+
+    if (!trav_cb) {
+        return;
+    }
+
+    SLIST_FOREACH(peer, &peers, next) {
+        if (trav_cb(peer, arg)) {
+            return;
+        }
+    }
+}
+
+#if MYNEWT_VAL(ENC_ADV_DATA)
+int
+peer_set_addr(uint16_t conn_handle, uint8_t *peer_addr)
+{
+    struct peer *peer;
+
+    peer = peer_find(conn_handle);
+    if (peer == NULL) {
+        return BLE_HS_ENOTCONN;
+    }
+
+    memcpy(&peer->peer_addr, peer_addr, PEER_ADDR_VAL_SIZE);
+    return 0;
+}
+#endif
 
 static void
 peer_free_mem(void)

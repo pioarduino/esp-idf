@@ -86,10 +86,11 @@ esp_err_t mcpwm_new_generator(mcpwm_oper_handle_t oper, const mcpwm_generator_co
     // GPIO configuration
     gpio_config_t gpio_conf = {
         .intr_type = GPIO_INTR_DISABLE,
-        .mode = GPIO_MODE_OUTPUT | (config->flags.io_loop_back ? GPIO_MODE_INPUT : 0), // also enable the input path if `io_loop_back` is enabled
+        // also enable the input path if `io_loop_back` is enabled
+        .mode = (config->flags.io_od_mode ? GPIO_MODE_OUTPUT_OD : GPIO_MODE_OUTPUT) | (config->flags.io_loop_back ? GPIO_MODE_INPUT : 0),
         .pin_bit_mask = (1ULL << config->gen_gpio_num),
-        .pull_down_en = false,
-        .pull_up_en = true,
+        .pull_down_en = config->flags.pull_down,
+        .pull_up_en = config->flags.pull_up,
     };
     ESP_GOTO_ON_ERROR(gpio_config(&gpio_conf), err, TAG, "config gen GPIO failed");
     esp_rom_gpio_connect_out_signal(config->gen_gpio_num,
@@ -254,6 +255,60 @@ esp_err_t mcpwm_generator_set_actions_on_brake_event(mcpwm_gen_handle_t gen, mcp
         ev_act_itor = va_arg(it, mcpwm_gen_brake_event_action_t);
     }
     va_end(it);
+    return ESP_OK;
+}
+
+esp_err_t mcpwm_generator_set_action_on_fault_event(mcpwm_gen_handle_t gen, mcpwm_gen_fault_event_action_t ev_act)
+{
+    ESP_RETURN_ON_FALSE(gen, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    mcpwm_fault_t *fault = ev_act.fault;
+    ESP_RETURN_ON_FALSE(fault->type == MCPWM_FAULT_TYPE_GPIO, ESP_ERR_NOT_SUPPORTED, TAG, "not supported fault type");
+    mcpwm_oper_t *oper = gen->oper;
+    mcpwm_group_t *group = oper->group;
+    // check the remained triggers
+    int trigger_id = -1;
+    portENTER_CRITICAL(&oper->spinlock);
+    for (int i = 0; i < SOC_MCPWM_TRIGGERS_PER_OPERATOR; i++) {
+        if (oper->triggers[i] == MCPWM_TRIGGER_NO_ASSIGN) {
+            trigger_id = i;
+            oper->triggers[i] = MCPWM_TRIGGER_GPIO_FAULT;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&oper->spinlock);
+    ESP_RETURN_ON_FALSE(trigger_id >= 0, ESP_ERR_NOT_FOUND, TAG, "no free trigger in operator (%d,%d)", group->group_id, oper->oper_id);
+    mcpwm_gpio_fault_t *gpio_fault = __containerof(fault, mcpwm_gpio_fault_t, base);
+    mcpwm_ll_operator_set_trigger_from_gpio_fault(group->hal.dev, oper->oper_id, trigger_id, gpio_fault->fault_id);
+    mcpwm_ll_generator_set_action_on_trigger_event(group->hal.dev, oper->oper_id, gen->gen_id,
+            ev_act.direction, trigger_id, ev_act.action);
+    return ESP_OK;
+}
+
+esp_err_t mcpwm_generator_set_action_on_sync_event(mcpwm_gen_handle_t gen, mcpwm_gen_sync_event_action_t ev_act)
+{
+    ESP_RETURN_ON_FALSE(gen, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    mcpwm_oper_t *oper = gen->oper;
+    mcpwm_group_t *group = oper->group;
+    // check the remained triggers
+    int trigger_id = -1;
+    int trigger_sync_used = 0;
+    portENTER_CRITICAL(&oper->spinlock);
+    for (int i = 0; i < SOC_MCPWM_TRIGGERS_PER_OPERATOR; i++) {
+        if (oper->triggers[i] == MCPWM_TRIGGER_SYNC_EVENT) {
+            trigger_sync_used = 1;
+            break;
+        } else if (oper->triggers[i] == MCPWM_TRIGGER_NO_ASSIGN) {
+            trigger_id = i;
+            oper->triggers[i] = MCPWM_TRIGGER_SYNC_EVENT;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&oper->spinlock);
+    ESP_RETURN_ON_FALSE(!trigger_sync_used, ESP_ERR_INVALID_STATE, TAG, "only one sync supported");
+    ESP_RETURN_ON_FALSE(trigger_id >= 0, ESP_ERR_NOT_FOUND, TAG, "no free trigger in operator (%d,%d)", group->group_id, oper->oper_id);
+    mcpwm_ll_operator_set_trigger_from_sync(group->hal.dev, oper->oper_id, trigger_id);
+    mcpwm_ll_generator_set_action_on_trigger_event(group->hal.dev, oper->oper_id, gen->gen_id,
+            ev_act.direction, trigger_id, ev_act.action);
     return ESP_OK;
 }
 

@@ -20,7 +20,7 @@ ESP-BLE-MESH 的实现和认证基于最新的 `Mesh Profile v1.0.1 <https://www
 
     .. note::
 
-      如果您在寻找 ESP32 基于 Wi-Fi 的 mesh 方案，请查阅乐鑫的另一款产品 ESP-WIFI-MESH。更多相关信息及文档，请参见 :doc:`ESP-WIFI-MESH <../../api-reference/network/esp-wifi-mesh>`。
+      如果你在寻找 ESP32 基于 Wi-Fi 的 mesh 方案，请查阅乐鑫的另一款产品 ESP-WIFI-MESH。更多相关信息及文档，请参见 :doc:`ESP-WIFI-MESH <../../api-reference/network/esp-wifi-mesh>`。
 
 
 .. _getting-started-with-ble-mesh:
@@ -28,11 +28,11 @@ ESP-BLE-MESH 的实现和认证基于最新的 `Mesh Profile v1.0.1 <https://www
 ESP-BLE-MESH 快速入门
 =====================
 
-该章节旨在帮助您基于乐鑫的 ESP32 开发板搭建 ESP-BLE-MESH 网络。
+该章节旨在帮助你基于乐鑫的 ESP32 开发板搭建 ESP-BLE-MESH 网络。
 
 我们将会展示如何搭建并运行一个包含 3 个节点的小型 ESP-BLE-MESH 网络，其中包含设备配网、节点配置，以及向特定节点上的 Generic OnOff Server Model 发送开关灯命令。
 
-如果您是第一次接触 ESP-IDF，请参见 esp-idf :doc:`../../get-started/index` 来设置开发环境，编译、烧写和运行示例应用程序。
+如果你是第一次接触 ESP-IDF，请参见 esp-idf :doc:`../../get-started/index` 来设置开发环境，编译、烧写和运行示例应用程序。
 
 
 硬件及软件准备
@@ -47,7 +47,7 @@ ESP-BLE-MESH 快速入门
 
 软件：
 
-* 下载至 ESP32 开发板的示例应用 :example:`bluetooth/esp_ble_mesh/ble_mesh_node`。
+* 下载至 ESP32 开发板的示例应用 :example:`bluetooth/esp_ble_mesh/onoff_models`。
 * 手机 App: **nRF Mesh** Android 或 iOS 版本。除 nRF Mesh 的 App，以下 App 也支持 ESP-BLE-MESH：
 
     - `EspBleMesh <https://github.com/EspressifApp/EspBLEMeshForAndroid/releases/tag/v1.0.0>`_ Android App
@@ -56,7 +56,7 @@ ESP-BLE-MESH 快速入门
 安装
 ----
 
-以下详细步骤可指导您完成安装过程。
+以下详细步骤可指导你完成安装过程。
 
 
 .. _get-started-ble-mesh-check-hardware:
@@ -64,22 +64,22 @@ ESP-BLE-MESH 快速入门
 步骤 1. 检查硬件
 """""""""""""""""
 
-`ESP32-DevKitC`_ 和 `ESP-WROVER-KIT`_ 开发板均支持 ESP-BLE-MESH。您可以通过 menuconfig: :code:`idf.py menuconfig` > ``Example Configuration`` > ``Board selection for ESP-BLE-MESH`` 选择特定的开发板。
+`ESP32-DevKitC`_ 和 `ESP-WROVER-KIT`_ 开发板均支持 ESP-BLE-MESH。你可以通过 menuconfig: :code:`idf.py menuconfig` > ``Example Configuration`` > ``Board selection for ESP-BLE-MESH`` 选择特定的开发板。
 
 .. note::
 
-  如果您打算使用 `ESP32-DevKitC`_ 开发板，请将 RGB 灯焊接至 GPIO 管脚 25、26 和 27。
+  如果你打算使用 `ESP32-DevKitC`_ 开发板，请将 RGB 灯焊接至 GPIO 管脚 25、26 和 27。
 
 
 步骤 2. 配置软件
 """"""""""""""""
 
-进入 :example:`bluetooth/esp_ble_mesh/ble_mesh_node` 示例文件夹，运行 :code:`idf.py menuconfig` 选择所使用的开发板，然后运行 :code:`idf.py build` 编译示例。
+进入 :example:`bluetooth/esp_ble_mesh/onoff_models` 示例文件夹，运行 :code:`idf.py menuconfig` 选择所使用的开发板，然后运行 :code:`idf.py build` 编译示例。
 
 步骤 3. 下载应用
 """""""""""""""""
 
- :example:`bluetooth/esp_ble_mesh/ble_mesh_node` 示例编译成功后，用户可以运行 :code:`idf.py flash` 将编译生成的二进制文件下载至 3 块开发板中。
+ :example:`bluetooth/esp_ble_mesh/onoff_models` 示例编译成功后，用户可以运行 :code:`idf.py flash` 将编译生成的二进制文件下载至 3 块开发板中。
 
 当开发板上电后，RGB 灯会变为 **绿色**。
 
@@ -189,7 +189,7 @@ Step 5. 运行网络
 
 当 3 个元素中的 Generic OnOff Server Models 均成功绑定 AppKey 后，用户可以使用 App 开关 RBG 灯。
 
-在 :example:`bluetooth/esp_ble_mesh/ble_mesh_node` 示例中，第一个 Generic OnOff Server Model 用来控制 **红色**，第二个用来控制 **绿色**，同时第三个用来控制 **蓝色**.
+在 :example:`bluetooth/esp_ble_mesh/onoff_models` 示例中，第一个 Generic OnOff Server Model 用来控制 **红色**，第二个用来控制 **绿色**，同时第三个用来控制 **蓝色**.
 
 .. figure:: ../../../_static/ble-mesh-generic-onoff.png
     :align: center
@@ -213,17 +213,19 @@ Step 5. 运行网络
 ESP-BLE-MESH 示例
 ===================
 
-* :example_file:`ESP-BLE-MESH 节点 <bluetooth/esp_ble_mesh/ble_mesh_node/onoff_server/tutorial/BLE_Mesh_Node_OnOff_Server_Example_Walkthrough.md>` - 展示了将 ESP-BLE-MESH 作为拥有 Configuration Server model 和 Generic OnOff Server model 的节点设备的用法。然后，ESP-BLE-MESH Provisioner 可以配网设备，控制表示开/关状态的 RGB 灯，示例请见 :example:`example code <bluetooth/esp_ble_mesh/ble_mesh_node/onoff_server>`。
+* :example_file:`开关节点 <bluetooth/esp_ble_mesh/onoff_models/onoff_server/tutorial/BLE_Mesh_Node_OnOff_Server_Example_Walkthrough.md>` - 展示了将 ESP-BLE-MESH 作为拥有 Configuration Server model 和 Generic OnOff Server model 的节点设备的用法。然后，ESP-BLE-MESH Provisioner 可以配网设备，控制表示开/关状态的 RGB 灯，示例请见 :example:`example code <bluetooth/esp_ble_mesh/onoff_models/onoff_server>`。
 
-* :example_file:`ESP-BLE-MESH 客户端模型 <bluetooth/esp_ble_mesh/ble_mesh_node/onoff_client/tutorial/BLE_Mesh_Node_OnOff_Client_Example_Walkthrough.md>` - 展示了 Generic OnOff Client model 如何在节点内工作。节点拥有 Configuration Server model、Generic OnOff Server model 和 Generic OnOff Client model，示例请见：:example:`example code <bluetooth/esp_ble_mesh/ble_mesh_node/onoff_client>`。
+* :example_file:`客户端模型 <bluetooth/esp_ble_mesh/onoff_models/onoff_client/tutorial/BLE_Mesh_Node_OnOff_Client_Example_Walkthrough.md>` - 展示了 Generic OnOff Client model 如何在节点内工作。节点拥有 Configuration Server model、Generic OnOff Server model 和 Generic OnOff Client model，示例请见：:example:`example code <bluetooth/esp_ble_mesh/onoff_models/onoff_client>`。
 
-* :example_file:`ESP-BLE-MESH Provisioner <bluetooth/esp_ble_mesh/ble_mesh_provisioner/tutorial/BLE_Mesh_Provisioner_Example_Walkthrough.md>` - 展示了设备如何充当 ESP-BLE-MESH Provisioner 以配网设备。Provisioner 拥有 Configuration Server model、Configuration Client model 和 Generic OnOff Client model，示例请见 :example:`example code <bluetooth/esp_ble_mesh/ble_mesh_provisioner>`。
+* :example_file:`配网器 <bluetooth/esp_ble_mesh/provisioner/tutorial/BLE_Mesh_Provisioner_Example_Walkthrough.md>` - 展示了设备如何充当 ESP-BLE-MESH Provisioner 以配网设备。Provisioner 拥有 Configuration Server model、Configuration Client model 和 Generic OnOff Client model，示例请见 :example:`example code <bluetooth/esp_ble_mesh/provisioner>`。
 
-* ESP-BLE-MESH 快速配网 - :example_file:`Client <bluetooth/esp_ble_mesh/ble_mesh_fast_provision/fast_prov_client/tutorial/BLE_Mesh_Fast_Prov_Client_Example_Walkthrough.md>` 和 :example_file:`Server <bluetooth/esp_ble_mesh/ble_mesh_fast_provision/fast_prov_server/tutorial/BLE_Mesh_Fast_Prov_Server_Example_Walkthrough.md>` - 该示例用于演示快速配网。配网 100 个设备费时不超过 60 秒，示例请见：:example:`example client code <bluetooth/esp_ble_mesh/ble_mesh_fast_provision/fast_prov_client>` 和 :example:`example server code <bluetooth/esp_ble_mesh/ble_mesh_fast_provision/fast_prov_server>`。
+* 快速配网 - :example_file:`Client <bluetooth/esp_ble_mesh/fast_provisioning/fast_prov_client/tutorial/BLE_Mesh_Fast_Prov_Client_Example_Walkthrough.md>` 和 :example_file:`Server <bluetooth/esp_ble_mesh/fast_provisioning/fast_prov_server/tutorial/BLE_Mesh_Fast_Prov_Server_Example_Walkthrough.md>` - 该示例用于演示快速配网。配网 100 个设备费时不超过 60 秒，示例请见：:example:`example client code <bluetooth/esp_ble_mesh/fast_provisioning/fast_prov_client>` 和 :example:`example server code <bluetooth/esp_ble_mesh/fast_provisioning/fast_prov_server>`。
 
-* :example_file:`Wi-Fi 和 ESP-BLE-MESH 共存 <bluetooth/esp_ble_mesh/ble_mesh_wifi_coexist/tutorial/BLE_Mesh_WiFi_Coexist_Example_Walkthrough.md>` - 该示例用于演示 Wi-Fi 和 ESP-BLE-MESH 共存的功能。简而言之，用户可在运行 ESP-BLE-MESH 时使用 Wi-Fi，示例请见 :example:`example code <bluetooth/esp_ble_mesh/ble_mesh_wifi_coexist>`。
+* :example_file:`Wi-Fi 和 BLE-Mesh 共存 <bluetooth/esp_ble_mesh/wifi_coexist/tutorial/BLE_Mesh_WiFi_Coexist_Example_Walkthrough.md>` - 该示例用于演示 Wi-Fi 和 ESP-BLE-MESH 共存的功能。简而言之，用户可在运行 ESP-BLE-MESH 时使用 Wi-Fi，示例请见 :example:`example code <bluetooth/esp_ble_mesh/wifi_coexist>`。
 
-* ESP-BLE-MESH 节点控制台 - 该演示实现 ESP-BLE-MESH 节点的基本功能。在演示中，Provisioner and Node 可以扫描、验证节点，节点可以回复 Provisioner 的获取/设置消息，示例请见：:example:`example code <bluetooth/esp_ble_mesh/ble_mesh_console>`。
+* 远程配网（v1.1 新增）- :example_file:`Client, Server and device <bluetooth/esp_ble_mesh/remote_provisioning/tutorial/BLE_Mesh_Remote_Provisioning_Example_Walkthrough.md>` - 该示例用于演示 mesh 协议 v1.1 中新增的远程配网功能, 示例请见： :example:`example client code <bluetooth/esp_ble_mesh/remote_provisioning/rpr_client>`, :example:`example server code <bluetooth/esp_ble_mesh/remote_provisioning/rpr_server>` and :example:`example device code <bluetooth/esp_ble_mesh/remote_provisioning/unprov_dev>`.
+
+* 定向转发（v1.1 新增）- :example_file:`Client and Server <bluetooth/esp_ble_mesh/directed_forwarding/tutorial/BLE_Mesh_Directed_Forwarding_Example_Walkthrough.md>` - 该示例用于演示 mesh 协议 v1.1 中新增的定向转发功能。只有路径上的节点才会对定向消息进行转发，而其他节点不参与转发, 示例请见 :example:`example client code <bluetooth/esp_ble_mesh/remote_provisioning/rpr_client>` and :example:`example server code <bluetooth/esp_ble_mesh/remote_provisioning/rpr_server>`.
 
 
 .. _esp-ble-mesh-demo-videos:
@@ -264,7 +266,9 @@ ESP-BLE-MESH 常见问题手册
 -------------
 
 - `BLE Mesh Core Specification <https://www.bluetooth.org/docman/handlers/downloaddoc.ashx?doc_id=429633>`_
+- `BLE Mesh Protocol v1.1 Specification(draft) <https://www.bluetooth.org/DocMan/handlers/DownloadDoc.ashx?doc_id=554899>`_
 - `BLE Mesh Model Specification <https://www.bluetooth.org/docman/handlers/downloaddoc.ashx?doc_id=429634>`_
+- `BLE Mesh Model v1.1 Specification(draft) <https://www.bluetooth.org/DocMan/handlers/DownloadDoc.ashx?doc_id=557081>`_
 - `An Intro to Bluetooth Mesh Part 1 <https://www.bluetooth.com/blog/an-intro-to-bluetooth-mesh-part1>`_ / `Part 2 <https://www.bluetooth.com/blog/an-intro-to-bluetooth-mesh-part2>`__
 - `The Fundamental Concepts of Bluetooth Mesh Networking, Part 1 <https://www.bluetooth.com/blog/the-fundamental-concepts-of-bluetooth-mesh-networking-part-1>`_ / `Part 2 <https://www.bluetooth.com/blog/the-fundamental-concepts-of-bluetooth-mesh-networking-part-2>`__
 - `Bluetooth Mesh Networking: Friendship <https://www.bluetooth.com/blog/bluetooth-mesh-networking-series-friendship>`_

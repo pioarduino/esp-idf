@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document presents a walkthrough of the GATT Server Service Table example code for the ESP32. This example implements a Bluetooth Low Energy (BLE) Generic Attribute (GATT) Server using a table-like data structure to define the server services and characteristics such as the one shown in the figure below Therefore, it demonstrates a practical way to define the server functionality in one place instead of adding services and characteristics one by one. 
+This document presents a walkthrough of the GATT Server Service Table example code for the ESP32. This example implements a Bluetooth Low Energy (BLE) Generic Attribute (GATT) Server using a table-like data structure to define the server services and characteristics such as the one shown in the figure below Therefore, it demonstrates a practical way to define the server functionality in one place instead of adding services and characteristics one by one.
 
 This example implements the *Heart Rate Profile* as defined by the [Traditional Profile Specifications](https://www.bluetooth.com/specifications/profiles-overview).
 
@@ -90,25 +90,26 @@ void app_main()
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed\n", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed", __func__);
         return;
     }
 
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed\n", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed", __func__);
         return;
     }
 
-    ESP_LOGI(GATTS_TABLE_TAG, "%s init bluetooth\n", __func__);
-    ret = esp_bluedroid_init();
+    ESP_LOGI(GATTS_TABLE_TAG, "%s init bluetooth", __func__);
+    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+    ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed\n", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed", __func__);
         return;
     }
     ret = esp_bluedroid_enable();
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed\n", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed", __func__);
         return;
     }
 
@@ -132,7 +133,7 @@ See this section in [GATT Server Example Walkthrough](../../gatt_server/tutorial
 
 ## Application Profiles
 
-This example implements one Application Profile for the Heart Rate Service. An Application Profile is a way to group functionality which is designed to be used by one client application, for example one smartphone mobile app. In this way, different types of profiles can be accommodated in one server. The Application Profile ID, which is an user-assigned number to identify each profile, is used to register the profile in the stack, in this example the ID is 0x55. 
+This example implements one Application Profile for the Heart Rate Service. An Application Profile is a way to group functionality which is designed to be used by one client application, for example one smartphone mobile app. In this way, different types of profiles can be accommodated in one server. The Application Profile ID, which is an user-assigned number to identify each profile, is used to register the profile in the stack, in this example the ID is 0x55.
 
 ```c
 #define HEART_PROFILE_NUM                       1
@@ -211,17 +212,17 @@ The minimum and maximum slave preferred connection intervals are set in units of
 An advertising payload can be up to 31 bytes of data. It is possible that some of the parameters surpass the 31-byte advertisement packet limit which causes the stack to cut the message and leave some of the parameters out. To solve this, usually the longer parameters are stored in the scan response, which can be configured using the same ``esp_ble_gap_config_adv_data()`` function and an additional esp_ble_adv_data_t type structure with the .set_scan_rsp parameter is set to true. Finally, to set the device name the ``esp_ble_gap_set_device_name()`` function is used. The registering event handler is shown as follows:
 
 ```c
-static void gatts_profile_event_handler(esp_gatts_cb_event_t event, 
+static void gatts_profile_event_handler(esp_gatts_cb_event_t event,
 esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGE(GATTS_TABLE_TAG, "event = %x\n",event);
+    ESP_LOGE(GATTS_TABLE_TAG, "event = %x",event);
     switch (event) {
         case ESP_GATTS_REG_EVT:
-            ESP_LOGI(GATTS_TABLE_TAG, "%s %d\n", __func__, __LINE__);
+            ESP_LOGI(GATTS_TABLE_TAG, "%s %d", __func__, __LINE__);
             esp_ble_gap_set_device_name(SAMPLE_DEVICE_NAME);
-            ESP_LOGI(GATTS_TABLE_TAG, "%s %d\n", __func__, __LINE__);
+            ESP_LOGI(GATTS_TABLE_TAG, "%s %d", __func__, __LINE__);
             esp_ble_gap_config_adv_data(&heart_rate_adv_config);
-            ESP_LOGI(GATTS_TABLE_TAG, "%s %d\n", __func__, __LINE__);
+            ESP_LOGI(GATTS_TABLE_TAG, "%s %d", __func__, __LINE__);
 …
 ```
 
@@ -231,9 +232,9 @@ Once the advertising data have been set, the ``ESP_GAP_BLE_ADV_DATA_SET_COMPLETE
 
 ```c
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
-{   
-    ESP_LOGE(GATTS_TABLE_TAG, "GAP_EVT, event %d\n", event);
-    
+{
+    ESP_LOGE(GATTS_TABLE_TAG, "GAP_EVT, event %d", event);
+
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
         esp_ble_gap_start_advertising(&heart_rate_adv_params);
@@ -241,7 +242,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         //advertising start complete event to indicate advertising start successfully or failed
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGE(GATTS_TABLE_TAG, "Advertising start failed\n");
+            ESP_LOGE(GATTS_TABLE_TAG, "Advertising start failed");
         }
         break;
     default:
@@ -300,7 +301,7 @@ If the advertising started successfully, an ``ESP_GAP_BLE_ADV_START_COMPLETE_EVT
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
         //advertising start complete event to indicate advertising start successfully or failed
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
-            ESP_LOGE(GATTS_TABLE_TAG, "Advertising start failed\n");
+            ESP_LOGE(GATTS_TABLE_TAG, "Advertising start failed");
         }
         break;
 …
@@ -320,14 +321,14 @@ In addition to the previous parameters, the event also contains the GATT interfa
 ```c
 static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGI(GATTS_TABLE_TAG, "EVT %d, gatts if %d\n", event, gatts_if);
+    ESP_LOGI(GATTS_TABLE_TAG, "EVT %d, gatts if %d", event, gatts_if);
 
     /* If event is register event, store the gatts_if for each profile */
     if (event == ESP_GATTS_REG_EVT) {
         if (param->reg.status == ESP_GATT_OK) {
             heart_rate_profile_tab[HEART_PROFILE_APP_IDX].gatts_if = gatts_if;
         } else {
-            ESP_LOGI(GATTS_TABLE_TAG, "Reg app failed, app_id %04x, status %d\n",
+            ESP_LOGI(GATTS_TABLE_TAG, "Reg app failed, app_id %04x, status %d",
                     param->reg.app_id,
                     param->reg.status);
             return;
@@ -364,12 +365,12 @@ The attr_control is the auto-respond parameter which can be set as ``ESP_GATT_AU
 The ``att_desc`` is the attribute description which is made of:
 
 ```c
-uint16_t uuid_length;      /*!< UUID length */  
-uint8_t  *uuid_p;          /*!< UUID value */  
-uint16_t perm;             /*!< Attribute permission */        
-uint16_t max_length;       /*!< Maximum length of the element*/    
-uint16_t length;           /*!< Current length of the element*/    
-uint8_t  *value;           /*!< Element value array*/ 
+uint16_t uuid_length;      /*!< UUID length */
+uint8_t  *uuid_p;          /*!< UUID value */
+uint16_t perm;             /*!< Attribute permission */
+uint16_t max_length;       /*!< Maximum length of the element*/
+uint16_t length;           /*!< Current length of the element*/
+uint8_t  *value;           /*!< Element value array*/
 ```
 
 For example, the first element of the table in this example is the service attribute:
@@ -453,7 +454,7 @@ This example uses this event to print information and to check that the size of 
 
 ```c
 case ESP_GATTS_CREAT_ATTR_TAB_EVT:{
-        ESP_LOGI(GATTS_TABLE_TAG, "The number handle =%x\n",param->add_attr_tab.num_handle);
+        ESP_LOGI(GATTS_TABLE_TAG, "The number handle =%x",param->add_attr_tab.num_handle);
         if (param->add_attr_tab.status != ESP_GATT_OK){
             ESP_LOGE(GATTS_TABLE_TAG, "Create attribute table failed, error code=0x%x", param->add_attr_tab.status);
         }
@@ -468,7 +469,7 @@ case ESP_GATTS_CREAT_ATTR_TAB_EVT:{
         break;
 ```
 
-The handles stored in the handles pointer of the event parameters are numbers that identify each attribute. The handles can be used to know which characteristic is being read or written to, therefore they can be passed around and to upper layers of the application to handle different actions. 
+The handles stored in the handles pointer of the event parameters are numbers that identify each attribute. The handles can be used to know which characteristic is being read or written to, therefore they can be passed around and to upper layers of the application to handle different actions.
 
 Finally, the heart_rate_handle_table contains the Application Profile in the form of a structure with information about the attribute parameters as well as GATT interface, connection ID, permissions and application ID. The profile structure is shown as follows, note that not all members are used in this example:
 

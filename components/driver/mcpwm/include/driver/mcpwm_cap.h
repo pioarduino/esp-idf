@@ -21,6 +21,7 @@ extern "C" {
 typedef struct {
     int group_id;                         /*!< Specify from which group to allocate the capture timer */
     mcpwm_capture_clock_source_t clk_src; /*!< MCPWM capture timer clock source */
+    uint32_t resolution_hz;               /*!< Resolution of capture timer */
 } mcpwm_capture_timer_config_t;
 
 /**
@@ -132,6 +133,8 @@ esp_err_t mcpwm_capture_timer_set_phase_on_sync(mcpwm_cap_timer_handle_t cap_tim
  */
 typedef struct {
     int gpio_num;                    /*!< GPIO used capturing input signal */
+    int intr_priority;               /*!< MCPWM capture interrupt priority,
+                                          if set to 0, the driver will try to allocate an interrupt with a relative low priority (1,2,3) */
     uint32_t prescale;               /*!< Prescale of input signal, effective frequency = cap_input_clk/prescale */
     struct {
         uint32_t pos_edge: 1;          /*!< Whether to capture on positive edge */

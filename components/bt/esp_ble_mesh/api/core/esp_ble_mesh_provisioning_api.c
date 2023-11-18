@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,13 +31,14 @@ static bool prov_bearers_valid(esp_ble_mesh_prov_bearer_t bearers)
 {
     if ((!(bearers & (ESP_BLE_MESH_PROV_ADV | ESP_BLE_MESH_PROV_GATT))) ||
         (IS_ENABLED(CONFIG_BLE_MESH_PB_ADV) &&
-            !IS_ENABLED(CONFIG_BLE_MESH_PB_GATT) &&
-            !(bearers & ESP_BLE_MESH_PROV_ADV)) ||
+         !IS_ENABLED(CONFIG_BLE_MESH_PB_GATT) &&
+         !(bearers & ESP_BLE_MESH_PROV_ADV)) ||
         (!IS_ENABLED(CONFIG_BLE_MESH_PB_ADV) &&
-            IS_ENABLED(CONFIG_BLE_MESH_PB_GATT) &&
-            !(bearers & ESP_BLE_MESH_PROV_GATT))) {
+         IS_ENABLED(CONFIG_BLE_MESH_PB_GATT) &&
+         !(bearers & ESP_BLE_MESH_PROV_GATT))) {
         return false;
     }
+
     return true;
 }
 
@@ -139,9 +140,9 @@ esp_err_t esp_ble_mesh_node_input_string(const char *string)
     msg.sig = BTC_SIG_API_CALL;
     msg.pid = BTC_PID_PROV;
     msg.act = BTC_BLE_MESH_ACT_INPUT_STRING;
-    memset(arg.input_string.string, 0, sizeof(arg.input_string.string));
-    strncpy(arg.input_string.string, string,
-        MIN(strlen(string), sizeof(arg.input_string.string)));
+
+    arg.input_string.string[sizeof(arg.input_string.string) - 1] = 0;
+    strncpy(arg.input_string.string, string, sizeof(arg.input_string.string) - 1);
 
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
@@ -162,14 +163,14 @@ esp_err_t esp_ble_mesh_set_unprovisioned_device_name(const char *name)
     msg.pid = BTC_PID_PROV;
     msg.act = BTC_BLE_MESH_ACT_SET_DEVICE_NAME;
 
-    memset(arg.set_device_name.name, 0, sizeof(arg.set_device_name.name));
-    strncpy(arg.set_device_name.name, name, ESP_BLE_MESH_DEVICE_NAME_MAX_LEN);
+    arg.set_device_name.name[sizeof(arg.set_device_name.name) - 1] = 0;
+    strncpy(arg.set_device_name.name, name, sizeof(arg.set_device_name.name) - 1);
 
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
 
-#if (CONFIG_BLE_MESH_PROVISIONER)
+#if CONFIG_BLE_MESH_PROVISIONER
 esp_err_t esp_ble_mesh_provisioner_read_oob_pub_key(uint8_t link_idx, uint8_t pub_key_x[32],
                                                     uint8_t pub_key_y[32])
 {
@@ -210,9 +211,8 @@ esp_err_t esp_ble_mesh_provisioner_input_string(const char *string, uint8_t link
     msg.pid = BTC_PID_PROV;
     msg.act = BTC_BLE_MESH_ACT_PROVISIONER_INPUT_STR;
 
-    memset(arg.provisioner_input_str.string, 0, sizeof(arg.provisioner_input_str.string));
-    strncpy(arg.provisioner_input_str.string, string,
-        MIN(strlen(string), sizeof(arg.provisioner_input_str.string)));
+    arg.provisioner_input_str.string[sizeof(arg.provisioner_input_str.string) - 1] = 0;
+    strncpy(arg.provisioner_input_str.string, string, sizeof(arg.provisioner_input_str.string) - 1);
     arg.provisioner_input_str.link_idx = link_idx;
 
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
@@ -305,6 +305,7 @@ esp_err_t esp_ble_mesh_provisioner_add_unprov_dev(esp_ble_mesh_unprov_dev_add_t 
     memcpy(arg.provisioner_dev_add.add_dev.addr, add_dev->addr, sizeof(esp_ble_mesh_bd_addr_t));
     memcpy(arg.provisioner_dev_add.add_dev.uuid, add_dev->uuid, 16);
     arg.provisioner_dev_add.flags = flags;
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -339,6 +340,7 @@ esp_err_t esp_ble_mesh_provisioner_prov_device_with_addr(const uint8_t uuid[16],
     arg.provisioner_prov_dev_with_addr.bearer = bearer;
     arg.provisioner_prov_dev_with_addr.oob_info = oob_info;
     arg.provisioner_prov_dev_with_addr.unicast_addr = unicast_addr;
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -366,6 +368,7 @@ esp_err_t esp_ble_mesh_provisioner_delete_dev(esp_ble_mesh_device_delete_t *del_
     } else if (del_dev->flag & DEL_DEV_UUID_FLAG) {
         memcpy(arg.provisioner_dev_del.del_dev.uuid, del_dev->uuid, 16);
     }
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -392,6 +395,7 @@ esp_err_t esp_ble_mesh_provisioner_set_dev_uuid_match(const uint8_t *match_val, 
     arg.set_dev_uuid_match.match_len = match_len;
     arg.set_dev_uuid_match.offset = offset;
     arg.set_dev_uuid_match.prov_after_match = prov_after_match;
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -420,6 +424,7 @@ esp_err_t esp_ble_mesh_provisioner_set_prov_data_info(esp_ble_mesh_prov_data_inf
     } else if (prov_data_info->flag & PROV_DATA_IV_INDEX_FLAG) {
         arg.set_prov_data_info.prov_data.iv_index = prov_data_info->iv_index;
     }
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -441,6 +446,7 @@ esp_err_t esp_ble_mesh_provisioner_set_static_oob_value(const uint8_t *value, ui
 
     arg.set_static_oob_val.length = length;
     memcpy(arg.set_static_oob_val.value, value, length);
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -461,23 +467,22 @@ esp_err_t esp_ble_mesh_provisioner_set_primary_elem_addr(uint16_t addr)
     msg.act = BTC_BLE_MESH_ACT_PROVISIONER_SET_PRIMARY_ELEM_ADDR;
 
     arg.set_primary_elem_addr.addr = addr;
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
-
 #endif /* CONFIG_BLE_MESH_PROVISIONER */
 
 /* The following APIs are for fast provisioning */
 
-#if (CONFIG_BLE_MESH_FAST_PROV)
-
+#if CONFIG_BLE_MESH_FAST_PROV
 esp_err_t esp_ble_mesh_set_fast_prov_info(esp_ble_mesh_fast_prov_info_t *fast_prov_info)
 {
     btc_ble_mesh_prov_args_t arg = {0};
     btc_msg_t msg = {0};
 
     if (fast_prov_info == NULL || (fast_prov_info->offset +
-            fast_prov_info->match_len > ESP_BLE_MESH_OCTET16_LEN)) {
+        fast_prov_info->match_len > ESP_BLE_MESH_OCTET16_LEN)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -497,6 +502,7 @@ esp_err_t esp_ble_mesh_set_fast_prov_info(esp_ble_mesh_fast_prov_info_t *fast_pr
     if (fast_prov_info->match_len) {
         memcpy(arg.set_fast_prov_info.match_val, fast_prov_info->match_val, fast_prov_info->match_len);
     }
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
@@ -517,8 +523,8 @@ esp_err_t esp_ble_mesh_set_fast_prov_action(esp_ble_mesh_fast_prov_action_t acti
     msg.act = BTC_BLE_MESH_ACT_SET_FAST_PROV_ACTION;
 
     arg.set_fast_prov_action.action = action;
+
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_mesh_prov_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
 }
-
 #endif /* CONFIG_BLE_MESH_FAST_PROV */

@@ -23,6 +23,26 @@ class thread_parameter:
         self.channel = channel
         self.exaddr = exaddr
         self.bbr = bbr
+        self.networkname = ''
+        self.panid = ''
+        self.extpanid = ''
+        self.networkkey = ''
+        self.pskc = ''
+
+    def setnetworkname(self, networkname:str) -> None:
+        self.networkname = networkname
+
+    def setpanid(self, panid:str) -> None:
+        self.panid = panid
+
+    def setextpanid(self, extpanid:str) -> None:
+        self.extpanid = extpanid
+
+    def setnetworkkey(self, networkkey:str) -> None:
+        self.networkkey = networkkey
+
+    def setpskc(self, pskc:str) -> None:
+        self.pskc = pskc
 
 
 class wifi_parameter:
@@ -34,23 +54,43 @@ class wifi_parameter:
 
 
 def joinThreadNetwork(dut:IdfDut, thread:thread_parameter) -> None:
-    if thread.dataset != '':
+    if thread.dataset:
         command = 'dataset set active ' + thread.dataset
         execute_command(dut, command)
         dut.expect('Done', timeout=5)
     else:
         execute_command(dut, 'dataset init new')
         dut.expect('Done', timeout=5)
-        execute_command(dut, 'dataset commit active')
-        dut.expect('Done', timeout=5)
-    if thread.channel != '':
-        command = 'channel ' + thread.channel
+    if thread.channel:
+        command = 'dataset channel ' + thread.channel
         execute_command(dut, command)
         dut.expect('Done', timeout=5)
-    if thread.exaddr != '':
+    if thread.exaddr:
         command = 'extaddr ' + thread.exaddr
         execute_command(dut, command)
         dut.expect('Done', timeout=5)
+    if thread.networkname:
+        command = 'dataset networkname ' + thread.networkname
+        execute_command(dut, command)
+        dut.expect('Done', timeout=5)
+    if thread.panid:
+        command = 'dataset panid ' + thread.panid
+        execute_command(dut, command)
+        dut.expect('Done', timeout=5)
+    if thread.extpanid:
+        command = 'dataset extpanid ' + thread.extpanid
+        execute_command(dut, command)
+        dut.expect('Done', timeout=5)
+    if thread.networkkey:
+        command = 'dataset networkkey ' + thread.networkkey
+        execute_command(dut, command)
+        dut.expect('Done', timeout=5)
+    if thread.pskc:
+        command = 'dataset pskc ' + thread.pskc
+        execute_command(dut, command)
+        dut.expect('Done', timeout=5)
+    execute_command(dut, 'dataset commit active')
+    dut.expect('Done', timeout=5)
     if thread.bbr:
         execute_command(dut, 'bbr enable')
         dut.expect('Done', timeout=5)
@@ -109,9 +149,13 @@ def getDataset(dut:IdfDut) -> str:
     return str(dut_data)
 
 
-def reset_thread(dut:IdfDut) -> None:
+def init_thread(dut:IdfDut) -> None:
     dut.expect('>', timeout=10)
     wait(dut, 3)
+    reset_thread(dut)
+
+
+def reset_thread(dut:IdfDut) -> None:
     clean_buffer(dut)
     execute_command(dut, 'factoryreset')
     dut.expect('OpenThread attached to netif', timeout=20)
@@ -314,6 +358,25 @@ def create_host_udp_server(myudp:udp_parameter) -> None:
         print('The host did not receive message!')
     finally:
         print('Close the socket.')
+        sock.close()
+
+
+def host_udp_send_message(udp_target:udp_parameter) -> None:
+    interface_name = get_host_interface_name()
+    try:
+        if udp_target.udp_type == 'INET6':
+            AF_INET = socket.AF_INET6
+        else:
+            AF_INET = socket.AF_INET
+        sock = socket.socket(AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('::', 12350))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, interface_name.encode())
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 32)
+        print('Host is sending message')
+        sock.sendto(udp_target.udp_bytes, (udp_target.addr, udp_target.port))
+    except socket.error:
+        print('Host cannot send message')
+    finally:
         sock.close()
 
 

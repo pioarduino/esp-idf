@@ -24,16 +24,19 @@ if(NOT BOOTLOADER_BUILD)
                      "intr_alloc.c"
                      "mac_addr.c"
                      "periph_ctrl.c"
+                     "revision.c"
                      "rtc_module.c"
                      "sleep_modes.c"
                      "sleep_gpio.c"
+                     "sleep_event.c"
                      "sleep_modem.c"
                      "regi2c_ctrl.c"
                      "esp_gpio_reserve.c"
                      "sar_periph_ctrl_common.c"
                      "port/${target}/io_mux.c"
                      "port/${target}/esp_clk_tree.c"
-                     "port/esp_clk_tree_common.c")
+                     "port/esp_clk_tree_common.c"
+                     "dma/esp_dma_utils.c")
 
     if(CONFIG_SOC_ADC_SUPPORTED)
         list(APPEND srcs "adc_share_hw_ctrl.c")
@@ -47,24 +50,31 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "sleep_retention.c"  "sleep_system_peripheral.c" "sleep_clock.c")
     endif()
 
-    # [refactor-todo]: requires "driver" for GPIO and RTC  (by sleep_gpio and sleep_modes)
-    list(APPEND priv_requires driver esp_timer)
+    # [refactor-todo]
+    list(APPEND priv_requires driver            # for UART (by sleep_modes)
+                              esp_driver_gpio   # for GPIO and RTC (by sleep_gpio and sleep_modes)
+                              esp_timer
+                              esp_pm)
+
+    list(APPEND priv_requires esp_mm)
 
     if(CONFIG_IDF_TARGET_ESP32 OR CONFIG_IDF_TARGET_ESP32S2)
         list(APPEND srcs "rtc_wdt.c")
     endif()
 
     if(CONFIG_SOC_GDMA_SUPPORTED)
-        list(APPEND srcs "dma/gdma.c" "dma/async_memcpy_impl_gdma.c")
-    endif()
-
-    if(CONFIG_SOC_CP_DMA_SUPPORTED)
-        list(APPEND srcs "dma/async_memcpy_impl_cp_dma.c")
+        list(APPEND srcs "dma/gdma.c")
     endif()
 
     if(CONFIG_SOC_ASYNC_MEMCPY_SUPPORTED)
         list(APPEND srcs "dma/esp_async_memcpy.c")
-    endif()
+        if(CONFIG_SOC_GDMA_SUPPORTED)
+            list(APPEND srcs "dma/async_memcpy_gdma.c")
+        endif() # CONFIG_SOC_GDMA_SUPPORTED
+        if(CONFIG_SOC_CP_DMA_SUPPORTED)
+            list(APPEND srcs "dma/async_memcpy_cp_dma.c")
+        endif() # CONFIG_SOC_CP_DMA_SUPPORTED
+    endif() # CONFIG_SOC_ASYNC_MEMCPY_SUPPORTED
 
     if(CONFIG_SOC_GDMA_SUPPORT_ETM)
         list(APPEND srcs "dma/gdma_etm.c")
@@ -118,12 +128,17 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "sleep_wake_stub.c")
     endif()
 
-    if(CONFIG_IDF_TARGET_ESP32H2)
+    if(CONFIG_SOC_GPIO_CLOCKOUT_BY_GPIO_MATRIX OR CONFIG_SOC_GPIO_CLOCKOUT_BY_IO_MUX)
+        list(APPEND srcs "esp_clock_output.c")
+    endif()
+
+    if(CONFIG_IDF_TARGET_ESP32P4)
         list(REMOVE_ITEM srcs
-                "sleep_cpu.c"         # TODO: IDF-6267
-                "sleep_modes.c"       # TODO: IDF-6267
-                "sleep_wake_stub.c"   # TODO: IDF-6267
-                "sleep_gpio.c"        # TODO: IDF-6267
+                "sleep_cpu.c"         # TODO: IDF-7528, IDF-7529
+                "sleep_modes.c"       # TODO: IDF-7528, IDF-7529
+                "sleep_wake_stub.c"   # TODO: IDF-7529
+                "sleep_gpio.c"        # TODO: IDF-7528, IDF-7529
+                "port/esp_clk_tree_common.c"    # TODO: IDF-7526
             )
     endif()
 else()
@@ -136,7 +151,7 @@ idf_component_register(SRCS ${srcs}
                        PRIV_INCLUDE_DIRS port/include include/esp_private
                        REQUIRES ${requires}
                        PRIV_REQUIRES "${priv_requires}"
-                       LDFRAGMENTS linker.lf)
+                       LDFRAGMENTS linker.lf dma/linker.lf)
 
 idf_build_get_property(target IDF_TARGET)
 add_subdirectory(port/${target})
@@ -149,5 +164,3 @@ if(NOT BOOTLOADER_BUILD)
         target_link_libraries(${COMPONENT_LIB} PRIVATE "-u esp_crypto_dpa_prot_include_impl")
     endif()
 endif()
-
-target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")

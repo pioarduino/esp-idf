@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,11 +24,25 @@
 
 #pragma once
 
-#include <esp_types.h>
-#include "soc/lldesc.h"
-#include "soc/spi_struct.h"
+#include "sdkconfig.h"
+#include "esp_types.h"
 #include "soc/soc_caps.h"
+#include "hal/dma_types.h"
+#include "soc/gdma_channel.h"
+#if SOC_GPSPI_SUPPORTED
 #include "hal/spi_ll.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if SOC_GPSPI_SUPPORTED
+#if (SOC_GDMA_TRIG_PERIPH_SPI2_BUS == SOC_GDMA_BUS_AHB)
+typedef dma_descriptor_align4_t spi_dma_desc_t;
+#else
+typedef dma_descriptor_align8_t spi_dma_desc_t;
+#endif
 
 /**
  * Context that should be maintained by both the driver and the HAL.
@@ -39,11 +53,11 @@ typedef struct {
     spi_dma_dev_t *dma_in;          ///< Address of the DMA peripheral registers which stores the data received from a peripheral into RAM.
     spi_dma_dev_t *dma_out;         ///< Address of the DMA peripheral registers which transmits the data from RAM to a peripheral.
     /* should be configured by driver at initialization */
-    lldesc_t      *dmadesc_rx;      /**< Array of DMA descriptor used by the TX DMA.
+    spi_dma_desc_t *dmadesc_rx;     /**< Array of DMA descriptor used by the TX DMA.
                                      *   The amount should be larger than dmadesc_n. The driver should ensure that
                                      *   the data to be sent is shorter than the descriptors can hold.
                                      */
-    lldesc_t      *dmadesc_tx;      /**< Array of DMA descriptor used by the RX DMA.
+    spi_dma_desc_t *dmadesc_tx;     /**< Array of DMA descriptor used by the RX DMA.
                                      *   The amount should be larger than dmadesc_n. The driver should ensure that
                                      *   the data to be sent is shorter than the descriptors can hold.
                                      */
@@ -155,3 +169,9 @@ uint32_t spi_slave_hal_get_rcv_bitlen(spi_slave_hal_context_t *hal);
  */
 bool spi_slave_hal_dma_need_reset(const spi_slave_hal_context_t *hal);
 #endif //#if CONFIG_IDF_TARGET_ESP32
+
+#endif  //#if SOC_GPSPI_SUPPORTED
+
+#ifdef __cplusplus
+}
+#endif

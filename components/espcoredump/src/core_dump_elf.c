@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +13,10 @@
 #include "esp_core_dump_port.h"
 #include "esp_core_dump_port_impl.h"
 #include "esp_core_dump_common.h"
+#include "hal/efuse_hal.h"
 
 #ifdef CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF
+#include <sys/param.h>      // for the MIN macro
 #include "esp_app_desc.h"
 #endif
 
@@ -29,6 +31,7 @@
 #define ELF_PR_STATUS_SEG_NUM 0
 #define ELF_ESP_CORE_DUMP_INFO_TYPE 8266
 #define ELF_ESP_CORE_DUMP_EXTRA_INFO_TYPE 677
+#define ELF_ESP_CORE_DUMP_PANIC_DETAILS_TYPE 679
 #define ELF_NOTE_NAME_MAX_SIZE 32
 #define ELF_APP_SHA256_SIZE 66
 
@@ -69,7 +72,7 @@ typedef struct
     uint8_t app_elf_sha256[ELF_APP_SHA256_SIZE]; // sha256 of elf file
 } core_dump_elf_version_info_t;
 
-const static DRAM_ATTR char TAG[] __attribute__((unused)) = "esp_core_dump_elf";
+const static char TAG[] __attribute__((unused)) = "esp_core_dump_elf";
 
 // Main ELF handle type
 typedef struct _core_dump_elf_t
@@ -497,12 +500,11 @@ static int elf_write_core_dump_info(core_dump_elf_t *self)
     void *extra_info = NULL;
 
     ESP_COREDUMP_LOG_PROCESS("================ Processing coredump info ================");
-    int data_len = (int)sizeof(self->elf_version_info.app_elf_sha256);
-    // This dump function can be called when the cache is diable which requires putting
+    // This dump function can be called when the cache is disable which requires putting
     // esp_app_get_elf_sha256() into IRAM. But we want to reduce IRAM usage,
     // so we use a function that returns an already formatted string.
-    strncpy((char*)self->elf_version_info.app_elf_sha256, esp_app_get_elf_sha256_str(), (size_t)data_len);
-    data_len = strlen((char*)self->elf_version_info.app_elf_sha256) + 1; // + 1 for the null terminator
+    size_t data_len = strlcpy((char*)self->elf_version_info.app_elf_sha256, esp_app_get_elf_sha256_str(),
+		sizeof(self->elf_version_info.app_elf_sha256));
     ESP_COREDUMP_LOG_PROCESS("Application SHA256='%s', length=%d.",
                                 self->elf_version_info.app_elf_sha256, data_len);
     self->elf_version_info.version = esp_core_dump_elf_version();
@@ -521,12 +523,22 @@ static int elf_write_core_dump_info(core_dump_elf_t *self)
     }
 
     ret = elf_add_note(self,
-                        "EXTRA_INFO",
+                        "ESP_EXTRA_INFO",
                         ELF_ESP_CORE_DUMP_EXTRA_INFO_TYPE,
                         extra_info,
                         extra_info_len);
     ELF_CHECK_ERR((ret > 0), ret, "Extra info note write failed. Returned (%d).", ret);
     data_len += ret;
+
+    if (g_panic_abort_details && strlen(g_panic_abort_details) > 0) {
+        ret = elf_add_note(self,
+                        "ESP_PANIC_DETAILS",
+                        ELF_ESP_CORE_DUMP_PANIC_DETAILS_TYPE,
+                        g_panic_abort_details,
+                        strlen(g_panic_abort_details));
+        ELF_CHECK_ERR((ret > 0), ret, "Panic details note write failed. Returned (%d).", ret);
+        data_len += ret;
+    }
 
     ret = elf_process_note_segment(self, data_len);
     ELF_CHECK_ERR((ret > 0), ret,
@@ -609,6 +621,7 @@ esp_err_t esp_core_dump_write_elf(core_dump_write_config_t *write_cfg)
     dump_hdr.tasks_num = 0; // unused in ELF format
     dump_hdr.tcb_sz = 0; // unused in ELF format
     dump_hdr.mem_segs_num = 0; // unused in ELF format
+    dump_hdr.chip_rev = efuse_hal_chip_revision();
     err = write_cfg->write(write_cfg->priv,
                            (void*)&dump_hdr,
                            sizeof(core_dump_header_t));
@@ -646,8 +659,18 @@ esp_err_t esp_core_dump_write_elf(core_dump_write_config_t *write_cfg)
 
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
 
-/* Below are the helper function to parse the core dump ELF stored in flash */
+typedef struct {
+#if ELF_CLASS == ELFCLASS32
+    Elf32_Word n_type;
+    Elf32_Word n_descsz;
+#else
+    Elf64_Word n_type;
+    Elf64_Word n_descsz;
+#endif
+	void *n_ptr;
+} elf_note_content_t;
 
+/* Below are the helper function to parse the core dump ELF stored in flash */
 static esp_err_t elf_core_dump_image_mmap(esp_partition_mmap_handle_t* core_data_handle, const void **map_addr)
 {
     size_t out_size;
@@ -704,62 +727,118 @@ static void elf_parse_exc_task_name(esp_core_dump_summary_t *summary, void *tcb_
     ESP_COREDUMP_LOGD("Crashing task %s", summary->exc_task);
 }
 
-esp_err_t esp_core_dump_get_summary(esp_core_dump_summary_t *summary)
+static uint8_t *elf_core_dump_image_ptr(esp_partition_mmap_handle_t *core_data_handle)
 {
-    int i;
-    elf_phdr *ph;
-    elf_note *note;
-    const void *map_addr;
-    size_t consumed_note_sz;
-    esp_partition_mmap_handle_t core_data_handle;
+	if (!core_data_handle) {
+		return NULL;
+	}
 
-    if (!summary) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_err_t err = elf_core_dump_image_mmap(&core_data_handle, &map_addr);
+	const void *map_addr;
+
+    esp_err_t err = elf_core_dump_image_mmap(core_data_handle, &map_addr);
     if (err != ESP_OK) {
-        return err;
+        return NULL;
     }
-    uint8_t *ptr = (uint8_t *) map_addr + sizeof(core_dump_header_t);
-    elfhdr *eh = (elfhdr *)ptr;
+	return (uint8_t *)map_addr + sizeof(core_dump_header_t);
+}
 
-    ESP_COREDUMP_LOGD("ELF ident %02x %c %c %c", eh->e_ident[0], eh->e_ident[1], eh->e_ident[2], eh->e_ident[3]);
+static void esp_core_dump_parse_note_section(uint8_t *coredump_data, elf_note_content_t *target_notes, size_t size)
+{
+    elfhdr *eh = (elfhdr *)coredump_data;
+	elf_phdr *phdr = (elf_phdr *)(coredump_data + eh->e_phoff);
+
+	ESP_COREDUMP_LOGD("ELF ident %02x %c %c %c", eh->e_ident[0], eh->e_ident[1], eh->e_ident[2], eh->e_ident[3]);
     ESP_COREDUMP_LOGD("Ph_num %d offset %x", eh->e_phnum, eh->e_phoff);
 
-    for (i = 0; i < eh->e_phnum; i++) {
-        ph = (elf_phdr *)((ptr + i * sizeof(*ph)) + eh->e_phoff);
-        ESP_COREDUMP_LOGD("PHDR type %d off %x vaddr %x paddr %x filesz %x memsz %x flags %x align %x",
-                          ph->p_type, ph->p_offset, ph->p_vaddr, ph->p_paddr, ph->p_filesz, ph->p_memsz,
-                          ph->p_flags, ph->p_align);
+	for (unsigned int i = 0; i < eh->e_phnum; i++) {
+		const elf_phdr *ph = &phdr[i];
+		ESP_COREDUMP_LOGD("PHDR type %d off %x vaddr %x paddr %x filesz %x memsz %x flags %x align %x",
+					ph->p_type, ph->p_offset, ph->p_vaddr, ph->p_paddr, ph->p_filesz, ph->p_memsz,
+					ph->p_flags, ph->p_align);
         if (ph->p_type == PT_NOTE) {
-            consumed_note_sz = 0;
-            while(consumed_note_sz < ph->p_memsz) {
-                note = (elf_note *)(ptr + ph->p_offset + consumed_note_sz);
-                char *nm = (char *)(ptr + ph->p_offset + consumed_note_sz + sizeof(elf_note));
-                ESP_COREDUMP_LOGD("Note NameSZ %x DescSZ %x Type %x name %s", note->n_namesz,
-                                  note->n_descsz, note->n_type, nm);
-                if (strncmp(nm, "EXTRA_INFO", note->n_namesz) == 0 ) {
-                    esp_core_dump_summary_parse_extra_info(summary, (void *)(nm + note->n_namesz));
-                }
-                if (strncmp(nm, "ESP_CORE_DUMP_INFO", note->n_namesz) == 0 ) {
-                    elf_parse_version_info(summary, (void *)(nm + note->n_namesz));
-                }
+            size_t consumed_note_sz = 0;
+            while (consumed_note_sz < ph->p_memsz) {
+                const elf_note *note = (const elf_note *)(coredump_data + ph->p_offset + consumed_note_sz);
+				for (size_t idx = 0; idx < size; ++idx) {
+					if (target_notes[idx].n_type == note->n_type) {
+						char *nm = (char *)&note[1];
+                        target_notes[idx].n_ptr = nm + note->n_namesz;
+                        target_notes[idx].n_descsz = note->n_descsz;
+                        ESP_COREDUMP_LOGD("%d bytes target note (%X) found in the note section",
+                            note->n_descsz, note->n_type);
+						break;
+					}
+				}
                 consumed_note_sz += note->n_namesz + note->n_descsz + sizeof(elf_note);
                 ALIGN(4, consumed_note_sz);
             }
         }
     }
+}
+
+esp_err_t esp_core_dump_get_panic_reason(char *reason_buffer, size_t buffer_size)
+{
+    if (!reason_buffer || buffer_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+	esp_partition_mmap_handle_t core_data_handle;
+	uint8_t *ptr = elf_core_dump_image_ptr(&core_data_handle);
+	if (ptr == NULL) {
+		return ESP_FAIL;
+	}
+
+	elf_note_content_t target_note = { .n_type = ELF_ESP_CORE_DUMP_PANIC_DETAILS_TYPE, .n_ptr = NULL };
+
+	esp_core_dump_parse_note_section(ptr, &target_note, 1);
+	if (target_note.n_ptr) {
+        size_t len = MIN(target_note.n_descsz, buffer_size - 1);
+        strncpy(reason_buffer, target_note.n_ptr, len);
+        reason_buffer[len] = '\0';
+	}
+	esp_partition_munmap(core_data_handle);
+
+    return target_note.n_ptr ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t esp_core_dump_get_summary(esp_core_dump_summary_t *summary)
+{
+	if (!summary) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+	esp_partition_mmap_handle_t core_data_handle;
+	uint8_t *ptr = elf_core_dump_image_ptr(&core_data_handle);
+	if (ptr == NULL) {
+		return ESP_FAIL;
+	}
+
+	elf_note_content_t target_notes[2] = {
+		[0] = { .n_type = ELF_ESP_CORE_DUMP_EXTRA_INFO_TYPE, .n_ptr = NULL },
+		[1] = { .n_type = ELF_ESP_CORE_DUMP_INFO_TYPE, .n_ptr = NULL }
+	};
+
+	esp_core_dump_parse_note_section(ptr, target_notes, sizeof(target_notes) / sizeof(target_notes[0]));
+	if (target_notes[0].n_ptr) {
+		esp_core_dump_summary_parse_extra_info(summary, target_notes[0].n_ptr);
+	}
+	if (target_notes[1].n_ptr) {
+		elf_parse_version_info(summary, target_notes[1].n_ptr);
+	}
+
     /* Following code assumes that task stack segment follows the TCB segment for the respective task.
      * In general ELF does not impose any restrictions on segments' order so this can be changed without impacting core dump version.
      * More universal and flexible way would be to retrieve stack start address from crashed task TCB segment and then look for the stack segment with that address.
      */
+	elfhdr *eh = (elfhdr *)ptr;
+	elf_phdr *phdr = (elf_phdr *)(ptr + eh->e_phoff);
     int flag = 0;
-    for (i = 0; i < eh->e_phnum; i++) {
-        ph = (elf_phdr *)((ptr + i * sizeof(*ph)) + eh->e_phoff);
+    for (unsigned int i = 0; i < eh->e_phnum; i++) {
+		const elf_phdr *ph = &phdr[i];
         if (ph->p_type == PT_LOAD) {
             if (flag) {
                 esp_core_dump_summary_parse_exc_regs(summary, (void *)(ptr + ph->p_offset));
-                esp_core_dump_summary_parse_backtrace_info(&summary->exc_bt_info, (void *) ph->p_vaddr,
+                esp_core_dump_summary_parse_backtrace_info(&summary->exc_bt_info, (void *)ph->p_vaddr,
                                                            (void *)(ptr + ph->p_offset), ph->p_memsz);
                 break;
             }
@@ -769,7 +848,9 @@ esp_err_t esp_core_dump_get_summary(esp_core_dump_summary_t *summary)
             }
         }
     }
+
     esp_partition_munmap(core_data_handle);
+
     return ESP_OK;
 }
 

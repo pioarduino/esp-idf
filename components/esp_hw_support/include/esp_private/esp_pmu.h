@@ -41,31 +41,64 @@ extern "C" {
 #else
 #define RTC_EXT0_TRIG_EN            0
 #endif
+
 #if SOC_PM_SUPPORT_EXT1_WAKEUP
 #define RTC_EXT1_TRIG_EN            PMU_EXT1_WAKEUP_EN      //!< EXT1 wakeup
+#else
+#define RTC_EXT1_TRIG_EN            0
 #endif
+
 #define RTC_GPIO_TRIG_EN            PMU_GPIO_WAKEUP_EN      //!< GPIO wakeup
+
+#if SOC_LP_TIMER_SUPPORTED
 #define RTC_TIMER_TRIG_EN           PMU_LP_TIMER_WAKEUP_EN  //!< Timer wakeup
+#else
+#define RTC_TIMER_TRIG_EN           0
+#endif
+
+#if SOC_WIFI_SUPPORTED
 #define RTC_WIFI_TRIG_EN            PMU_WIFI_SOC_WAKEUP_EN  //!< WIFI wakeup (light sleep only)
+#else
+#define RTC_WIFI_TRIG_EN            0
+#endif
+
+#if SOC_UART_SUPPORT_WAKEUP_INT
 #define RTC_UART0_TRIG_EN           PMU_UART0_WAKEUP_EN     //!< UART0 wakeup (light sleep only)
 #define RTC_UART1_TRIG_EN           PMU_UART1_WAKEUP_EN     //!< UART1 wakeup (light sleep only)
+#else
+#define RTC_UART0_TRIG_EN           0
+#define RTC_UART1_TRIG_EN           0
+#endif
+
+#if SOC_BT_SUPPORTED
 #define RTC_BT_TRIG_EN              PMU_BLE_SOC_WAKEUP_EN   //!< BT wakeup (light sleep only)
+#else
+#define RTC_BT_TRIG_EN              0
+#endif
+
 #define RTC_USB_TRIG_EN             PMU_USB_WAKEUP_EN
+
 #if SOC_LP_CORE_SUPPORTED
 #define RTC_LP_CORE_TRIG_EN         PMU_LP_CORE_WAKEUP_EN   //!< LP core wakeup
+#else
+#define RTC_LP_CORE_TRIG_EN         0
 #endif //SOC_LP_CORE_SUPPORTED
+
 #define RTC_XTAL32K_DEAD_TRIG_EN    0 // TODO
 #define RTC_BROWNOUT_DET_TRIG_EN    0 // TODO
 
 /**
  * RTC_SLEEP_REJECT_MASK records sleep reject sources supported by chip
  */
-#define RTC_SLEEP_REJECT_MASK (RTC_GPIO_TRIG_EN         | \
+#define RTC_SLEEP_REJECT_MASK (RTC_EXT0_TRIG_EN         | \
+                               RTC_EXT1_TRIG_EN         | \
+                               RTC_GPIO_TRIG_EN         | \
                                RTC_TIMER_TRIG_EN        | \
                                RTC_WIFI_TRIG_EN         | \
                                RTC_UART0_TRIG_EN        | \
                                RTC_UART1_TRIG_EN        | \
                                RTC_BT_TRIG_EN           | \
+                               RTC_LP_CORE_TRIG_EN      | \
                                RTC_XTAL32K_DEAD_TRIG_EN | \
                                RTC_USB_TRIG_EN          | \
                                RTC_BROWNOUT_DET_TRIG_EN)
@@ -96,7 +129,11 @@ extern "C" {
 #define PMU_SLEEP_PD_MODEM          BIT(2)
 #define PMU_SLEEP_PD_HP_PERIPH      BIT(3)
 #define PMU_SLEEP_PD_CPU            BIT(4)
-#define PMU_SLEEP_PD_AON            BIT(5)
+
+#if SOC_PM_SUPPORT_HP_AON_PD
+#define PMU_SLEEP_PD_HP_AON         BIT(5)
+#endif
+
 #define PMU_SLEEP_PD_MEM_G0         BIT(6)
 #define PMU_SLEEP_PD_MEM_G1         BIT(7)
 #define PMU_SLEEP_PD_MEM_G2         BIT(8)
@@ -244,6 +281,15 @@ bool pmu_sleep_finish(void);
  * @brief Initialize PMU related power/clock/digital parameters and functions
  */
 void pmu_init(void);
+
+/**
+ * @brief Enable or disable system clock in PMU HP sleep state
+ *
+ * This API only used for fix BLE 40 MHz low power clock source issue
+ *
+ * @param enable  true to enable, false to disable
+ */
+void pmu_sleep_enable_hp_sleep_sysclk(bool enable);
 
 
 #endif //#if SOC_PMU_SUPPORTED

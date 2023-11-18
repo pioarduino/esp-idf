@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
 
 # Multiple Build Configurations Example
 
@@ -79,6 +79,24 @@ It is possible to specify multiple files in this variable, separating them with 
 * product 2: `sdkconfig.prod_common;sdkconfig.prod2`
 
 This way the common options do not need to be repeated in each of `sdkconfig.prodN` files.
+
+### Create configuration profile files via @filename
+
+You can further enhance your build process by using configuration profile files. These profile files contain arguments that streamline the build process for specific scenarios. Let's have our example profile files: 
+
+- [profiles/prod](profiles/prod)
+- [profiles/debug](profiles/debug)
+
+You can use these profile files to quickly set up the build environment with specific configurations.
+
+- To build with the production profile: `idf.py @profiles/prod build`
+- To build with the debug profile: `idf.py @profiles/debug build`
+
+This approach simplifies the process of specifying complex command-line arguments and allows for greater flexibility in managing different build scenarios.
+
+Moreover, you can combine arguments from a profile file with additional command line arguments. Anywhere on the idf.py command line, you can specify a file as @filename.txt to read one or more arguments from the text file. Arguments in the file can be separated by newlines or spaces and are expanded exactly as if they had appeared in that order on the idf.py command line.
+
+For example using [cutom_flash.txt](custom_flash.txt), you can expand the command: `idf.py -B build_production @custom_flash.txt monitor`
 
 ### Generated `sdkconfig` file
 

@@ -85,7 +85,9 @@ static esp_err_t esp_mpi_isr_initialise(void)
             return ESP_FAIL;
         }
 
-        esp_intr_alloc(ETS_RSA_INTR_SOURCE, 0, esp_mpi_complete_isr, NULL, NULL);
+        const int isr_flags = esp_intr_level_to_flags(CONFIG_MBEDTLS_MPI_INTERRUPT_LEVEL);
+
+        esp_intr_alloc(ETS_RSA_INTR_SOURCE, isr_flags, esp_mpi_complete_isr, NULL, NULL);
     }
 
     /* MPI is clocked proportionally to CPU clock, take power management lock */
@@ -631,13 +633,28 @@ static int mpi_mult_mpi_failover_mod_mult( mbedtls_mpi *Z, const mbedtls_mpi *X,
     mpi_hal_read_result_hw_op(Z->MBEDTLS_PRIVATE(p), Z->MBEDTLS_PRIVATE(n), hw_words);
 
     Z->MBEDTLS_PRIVATE(s) = X->MBEDTLS_PRIVATE(s) * Y->MBEDTLS_PRIVATE(s);
+
     /*
-     * If this condition fails then most likely hardware peripheral
-     * has produced an incorrect result for MPI operation. This can
-     * happen if data fed to the peripheral register was incorrect.
-     * Relevant: https://github.com/espressif/esp-idf/issues/8710#issuecomment-1249178698
+     * Relevant: https://github.com/espressif/esp-idf/issues/11850
+     *
+     * If z_words < mpi_words(Z) (the actual words taken by the MPI result),
+     * the assert fails due to unsigned arithmetic - most likely hardware
+     * peripheral has produced an incorrect result for MPI operation.
+     * This can happen if data fed to the peripheral register was incorrect.
+     *
+     * z_words is calculated as the worst-case possible size of the result
+     * MPI Z. The difference between z_words and the actual words taken by
+     * the MPI result (mpi_words(Z)) can be a maximum of 1 word.
+     * The value z_bits (actual bits taken by the MPI result) is calculated
+     * as x_bits + y_bits bits, however, in some cases, z_bits can be
+     * x_bits + y_bits - 1 bits (see example below).
+     * 0b1111 * 0b1111 = 0b11100001 -> 8 bits
+     * 0b1000 * 0b1000 = 0b01000000 -> 7 bits.
+     * The code rounds up to the nearest word size, so the maximum difference
+     * could be of only 1 word. The assert handles this.
+     *
      */
-    assert(mpi_words(Z) == z_words);
+    assert(z_words - mpi_words(Z) <= (size_t)1);
 cleanup:
     esp_mpi_disable_hardware_hw_op();
     return ret;

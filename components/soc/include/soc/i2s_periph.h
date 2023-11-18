@@ -7,19 +7,24 @@
 #pragma once
 #include "soc/soc.h"
 #include "soc/periph_defs.h"
+#include "soc/soc_caps.h"
+
+#if SOC_I2S_SUPPORTED
 #include "soc/i2s_struct.h"
 #include "soc/i2s_reg.h"
-#include "soc/soc_caps.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#if SOC_I2S_SUPPORTED
 /*
  Stores a bunch of per-I2S-peripheral data.
 */
 typedef struct {
     const uint8_t mck_out_sig;
+    const uint8_t mck_in_sig;
 
     const uint8_t m_tx_bck_sig;
     const uint8_t m_rx_bck_sig;
@@ -50,6 +55,8 @@ typedef struct {
 } i2s_signal_conn_t;
 
 extern const i2s_signal_conn_t i2s_periph_signal[SOC_I2S_NUM];
+
+#endif // SOC_I2S_SUPPORTED
 
 #ifdef __cplusplus
 }

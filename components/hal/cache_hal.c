@@ -1,10 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <sys/param.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "sdkconfig.h"
 #include "esp_err.h"
 #include "esp_attr.h"
@@ -25,144 +26,276 @@
  *----------------------------------------------------------------------------*/
 
 /**
- * To know if autoload is enabled or not.
- *
- * We should have a unified flag for this aim, then we don't need to call following 2 functions
- * to know the flag.
- *
- * Suggest ROM keeping this flag value to BIT(2). Then we can replace following lines to:
- * #define DATA_AUTOLOAD_FLAG      BIT(2)
- * #define INST_AUTOLOAD_FLAG      BIT(2)
- */
-#define DATA_AUTOLOAD_FLAG      Cache_Disable_DCache()
-#define INST_AUTOLOAD_FLAG      Cache_Disable_ICache()
-
-/**
  * Necessary hal contexts, could be maintained by upper layer in the future
  */
 typedef struct {
-    uint32_t data_autoload_flag;
-    uint32_t inst_autoload_flag;
+    bool i_autoload_en;
+    bool d_autoload_en;
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    // There's no register indicating if cache is enabled on these chips, use sw flag to save this state.
+    bool i_cache_enabled;
+    bool d_cache_enabled;
+#endif
+} cache_hal_state_t;
+
+
+typedef struct {
+    cache_hal_state_t l1;
+    cache_hal_state_t l2;
 } cache_hal_context_t;
 
 static cache_hal_context_t ctx;
 
+
+void s_cache_hal_init_ctx(void)
+{
+    ctx.l1.d_autoload_en = cache_ll_is_cache_autoload_enabled(1, CACHE_TYPE_DATA, CACHE_LL_ID_ALL);
+    ctx.l1.i_autoload_en = cache_ll_is_cache_autoload_enabled(1, CACHE_TYPE_INSTRUCTION, CACHE_LL_ID_ALL);
+    ctx.l2.d_autoload_en = cache_ll_is_cache_autoload_enabled(2, CACHE_TYPE_DATA, CACHE_LL_ID_ALL);
+    ctx.l2.i_autoload_en = cache_ll_is_cache_autoload_enabled(2, CACHE_TYPE_INSTRUCTION, CACHE_LL_ID_ALL);
+}
+
 void cache_hal_init(void)
 {
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    ctx.data_autoload_flag = INST_AUTOLOAD_FLAG;
-    Cache_Enable_ICache(ctx.data_autoload_flag);
-#else
-    ctx.data_autoload_flag = DATA_AUTOLOAD_FLAG;
-    Cache_Enable_DCache(ctx.data_autoload_flag);
-    ctx.inst_autoload_flag = INST_AUTOLOAD_FLAG;
-    Cache_Enable_ICache(ctx.inst_autoload_flag);
-#endif
+    s_cache_hal_init_ctx();
+
+    if (CACHE_LL_LEVEL_EXT_MEM == 1) {
+        cache_ll_enable_cache(1, CACHE_TYPE_ALL, CACHE_LL_ID_ALL, ctx.l1.i_autoload_en, ctx.l1.d_autoload_en);
+    } else if (CACHE_LL_LEVEL_EXT_MEM == 2) {
+        cache_ll_enable_cache(2, CACHE_TYPE_ALL, CACHE_LL_ID_ALL, ctx.l2.i_autoload_en, ctx.l2.d_autoload_en);
+    }
 
     cache_ll_l1_enable_bus(0, CACHE_LL_DEFAULT_DBUS_MASK);
     cache_ll_l1_enable_bus(0, CACHE_LL_DEFAULT_IBUS_MASK);
-
 #if !CONFIG_FREERTOS_UNICORE
     cache_ll_l1_enable_bus(1, CACHE_LL_DEFAULT_DBUS_MASK);
     cache_ll_l1_enable_bus(1, CACHE_LL_DEFAULT_IBUS_MASK);
 #endif
-}
 
-void cache_hal_disable(cache_type_t type)
-{
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    Cache_Disable_ICache();
-#else
-    if (type == CACHE_TYPE_DATA) {
-        Cache_Disable_DCache();
-    } else if (type == CACHE_TYPE_INSTRUCTION) {
-        Cache_Disable_ICache();
-    } else {
-        Cache_Disable_ICache();
-        Cache_Disable_DCache();
-    }
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    ctx.l1.i_cache_enabled = 1;
+    ctx.l1.d_cache_enabled = 1;
+    ctx.l2.i_cache_enabled = 1;
+    ctx.l2.d_cache_enabled = 1;
 #endif
 }
 
-void cache_hal_enable(cache_type_t type)
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+void s_update_cache_state(uint32_t cache_level, cache_type_t type, bool en)
 {
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    Cache_Enable_ICache(ctx.inst_autoload_flag);
-#else
-    if (type == CACHE_TYPE_DATA) {
-        Cache_Enable_DCache(ctx.data_autoload_flag);
-    } else if (type == CACHE_TYPE_INSTRUCTION) {
-        Cache_Enable_ICache(ctx.inst_autoload_flag);
-    } else {
-        Cache_Enable_ICache(ctx.inst_autoload_flag);
-        Cache_Enable_DCache(ctx.data_autoload_flag);
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    switch (cache_level) {
+    case 1:
+        if (type == CACHE_TYPE_INSTRUCTION) {
+            ctx.l1.i_cache_enabled = en;
+            break;
+        } else if (type == CACHE_TYPE_DATA) {
+            ctx.l1.d_cache_enabled = en;
+            break;
+        } else if (type == CACHE_TYPE_ALL) {
+            ctx.l1.i_cache_enabled = en;
+            ctx.l1.d_cache_enabled = en;
+            break;
+        } else {
+            HAL_ASSERT(false);
+            break;
+        }
+    case 2:
+        if (type == CACHE_TYPE_INSTRUCTION) {
+            ctx.l2.i_cache_enabled = en;
+            break;
+        } else if (type == CACHE_TYPE_DATA) {
+            ctx.l2.d_cache_enabled = en;
+            break;
+        } else if (type == CACHE_TYPE_ALL) {
+            ctx.l2.i_cache_enabled = en;
+            ctx.l2.d_cache_enabled = en;
+            break;
+        } else {
+            HAL_ASSERT(false);
+            break;
+        }
+    default:
+        HAL_ASSERT(false);
+        break;
     }
+}
+
+bool s_get_cache_state(uint32_t cache_level, cache_type_t type)
+{
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+    bool enabled = false;
+
+    switch (cache_level) {
+    case 1:
+        if (type == CACHE_TYPE_INSTRUCTION) {
+            enabled = ctx.l1.i_cache_enabled;
+            break;
+        } else if (type == CACHE_TYPE_DATA) {
+            enabled = ctx.l1.d_cache_enabled;
+            break;
+        } else if (type == CACHE_TYPE_ALL) {
+            enabled = ctx.l1.i_cache_enabled;
+            enabled &= ctx.l1.d_cache_enabled;
+            break;
+        } else {
+            HAL_ASSERT(false);
+            break;
+        }
+    case 2:
+        if (type == CACHE_TYPE_INSTRUCTION) {
+            enabled = ctx.l2.i_cache_enabled;
+            break;
+        } else if (type == CACHE_TYPE_DATA) {
+            enabled = ctx.l2.d_cache_enabled;
+            break;
+        } else if (type == CACHE_TYPE_ALL) {
+            enabled = ctx.l2.i_cache_enabled;
+            enabled &= ctx.l2.d_cache_enabled;
+            break;
+        } else {
+            HAL_ASSERT(false);
+            break;
+        }
+    default:
+        HAL_ASSERT(false);
+        break;
+    }
+
+    return enabled;
+}
+#endif  //#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+
+void cache_hal_disable(uint32_t cache_level, cache_type_t type)
+{
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    cache_ll_disable_cache(cache_level, type, CACHE_LL_ID_ALL);
+
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    s_update_cache_state(cache_level, type, false);
 #endif
 }
 
-void cache_hal_invalidate_addr(uint32_t vaddr, uint32_t size)
+void cache_hal_enable(uint32_t cache_level, cache_type_t type)
 {
-    //Now only esp32 has 2 MMUs, this file doesn't build on esp32
-    HAL_ASSERT(mmu_hal_check_valid_ext_vaddr_region(0, vaddr, size, MMU_VADDR_DATA | MMU_VADDR_INSTRUCTION));
-    Cache_Invalidate_Addr(vaddr, size);
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    if (cache_level == 1) {
+        cache_ll_enable_cache(1, type, CACHE_LL_ID_ALL, ctx.l1.i_autoload_en, ctx.l1.d_autoload_en);
+    } else if (cache_level == 2) {
+        cache_ll_enable_cache(2, type, CACHE_LL_ID_ALL, ctx.l2.i_autoload_en, ctx.l2.d_autoload_en);
+    }
+
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    s_update_cache_state(cache_level, type, true);
+#endif
+}
+
+void cache_hal_suspend(uint32_t cache_level, cache_type_t type)
+{
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    cache_ll_suspend_cache(cache_level, type, CACHE_LL_ID_ALL);
+
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    s_update_cache_state(cache_level, type, false);
+#endif
+}
+
+void cache_hal_resume(uint32_t cache_level, cache_type_t type)
+{
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    if (cache_level == 1) {
+        cache_ll_resume_cache(1, type, CACHE_LL_ID_ALL, ctx.l1.i_autoload_en, ctx.l1.d_autoload_en);
+    } else if (cache_level == 2) {
+        cache_ll_resume_cache(2, type, CACHE_LL_ID_ALL, ctx.l2.i_autoload_en, ctx.l2.d_autoload_en);
+    }
+
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    s_update_cache_state(cache_level, type, true);
+#endif
+}
+
+bool cache_hal_is_cache_enabled(uint32_t cache_level, cache_type_t type)
+{
+    bool enabled = false;
+#if CACHE_LL_ENABLE_DISABLE_STATE_SW
+    enabled = s_get_cache_state(cache_level, type);
+#else
+    enabled = cache_ll_is_cache_enabled(type);
+#endif //CACHE_LL_ENABLE_DISABLE_STATE_SW
+    return enabled;
+}
+
+bool cache_hal_vaddr_to_cache_level_id(uint32_t vaddr_start, uint32_t len, uint32_t *out_level, uint32_t *out_id)
+{
+    if (!out_level || !out_id) {
+        return false;
+    }
+    return cache_ll_vaddr_to_cache_level_id(vaddr_start, len, out_level, out_id);
+}
+
+bool cache_hal_invalidate_addr(uint32_t vaddr, uint32_t size)
+{
+    bool valid = false;
+    uint32_t cache_level = 0;
+    uint32_t cache_id = 0;
+
+    valid = cache_hal_vaddr_to_cache_level_id(vaddr, size, &cache_level, &cache_id);
+    if (valid) {
+        cache_ll_invalidate_addr(cache_level, CACHE_TYPE_ALL, cache_id, vaddr, size);
+    }
+
+    return valid;
 }
 
 #if SOC_CACHE_WRITEBACK_SUPPORTED
-void cache_hal_writeback_addr(uint32_t vaddr, uint32_t size)
+bool cache_hal_writeback_addr(uint32_t vaddr, uint32_t size)
 {
-    HAL_ASSERT(mmu_hal_check_valid_ext_vaddr_region(0, vaddr, size, MMU_VADDR_DATA));
-    Cache_WriteBack_Addr(vaddr, size);
+    bool valid = false;
+    uint32_t cache_level = 0;
+    uint32_t cache_id = 0;
+
+    valid = cache_hal_vaddr_to_cache_level_id(vaddr, size, &cache_level, &cache_id);
+    if (valid) {
+        cache_ll_writeback_addr(cache_level, CACHE_TYPE_DATA, cache_id, vaddr, size);
+    }
+
+    return valid;
 }
 #endif  //#if SOC_CACHE_WRITEBACK_SUPPORTED
 
-
 #if SOC_CACHE_FREEZE_SUPPORTED
-void cache_hal_freeze(cache_type_t type)
+void cache_hal_freeze(uint32_t cache_level, cache_type_t type)
 {
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    Cache_Freeze_ICache_Enable(CACHE_FREEZE_ACK_BUSY);
-#else
-    if (type == CACHE_TYPE_DATA) {
-        Cache_Freeze_DCache_Enable(CACHE_FREEZE_ACK_BUSY);
-    } else if (type == CACHE_TYPE_INSTRUCTION) {
-        Cache_Freeze_ICache_Enable(CACHE_FREEZE_ACK_BUSY);
-    } else {
-        Cache_Freeze_ICache_Enable(CACHE_FREEZE_ACK_BUSY);
-        Cache_Freeze_DCache_Enable(CACHE_FREEZE_ACK_BUSY);
-    }
-#endif
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    cache_ll_freeze_cache(cache_level, type, CACHE_LL_ID_ALL);
 }
 
-void cache_hal_unfreeze(cache_type_t type)
+void cache_hal_unfreeze(uint32_t cache_level, cache_type_t type)
 {
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    Cache_Freeze_ICache_Disable();
-#else
-    if (type == CACHE_TYPE_DATA) {
-        Cache_Freeze_DCache_Disable();
-    } else if (type == CACHE_TYPE_INSTRUCTION) {
-        Cache_Freeze_ICache_Disable();
-    } else {
-        Cache_Freeze_DCache_Disable();
-        Cache_Freeze_ICache_Disable();
-    }
-#endif
+    HAL_ASSERT(cache_level && (cache_level <= CACHE_LL_LEVEL_NUMS));
+
+    cache_ll_unfreeze_cache(cache_level, type, CACHE_LL_ID_ALL);
 }
 #endif  //#if SOC_CACHE_FREEZE_SUPPORTED
 
-uint32_t cache_hal_get_cache_line_size(cache_type_t type)
+uint32_t cache_hal_get_cache_line_size(uint32_t cache_level, cache_type_t type)
 {
-#if SOC_SHARED_IDCACHE_SUPPORTED
-    return Cache_Get_ICache_Line_Size();
+    HAL_ASSERT(cache_level <= CACHE_LL_LEVEL_NUMS);
+    uint32_t line_size = 0;
+
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+    line_size = cache_ll_get_line_size(cache_level, type, CACHE_LL_ID_ALL);
 #else
-    uint32_t size = 0;
-    if (type == CACHE_TYPE_DATA) {
-        size = Cache_Get_DCache_Line_Size();
-    } else if (type == CACHE_TYPE_INSTRUCTION) {
-        size = Cache_Get_ICache_Line_Size();
-    } else {
-        HAL_ASSERT(false);
+    if (cache_level == CACHE_LL_LEVEL_EXT_MEM) {
+        line_size = cache_ll_get_line_size(cache_level, type, CACHE_LL_ID_ALL);
     }
-    return size;
 #endif
+
+    return line_size;
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -167,7 +167,7 @@ typedef struct sleep_modem_config {
 
 static sleep_modem_config_t s_sleep_modem = { .wifi.phy_link = NULL, .wifi.flags = 0 };
 
-static __attribute__((unused)) esp_err_t sleep_modem_wifi_modem_state_init(void)
+esp_err_t sleep_modem_wifi_modem_state_init(void)
 {
     esp_err_t err = ESP_OK;
     phy_i2c_master_command_attribute_t cmd;
@@ -244,7 +244,7 @@ static __attribute__((unused)) esp_err_t sleep_modem_wifi_modem_state_init(void)
     return err;
 }
 
-static __attribute__((unused)) void sleep_modem_wifi_modem_state_deinit(void)
+__attribute__((unused)) void sleep_modem_wifi_modem_state_deinit(void)
 {
     if (s_sleep_modem.wifi.phy_link) {
         regdma_link_destroy(s_sleep_modem.wifi.phy_link, 0);
@@ -256,28 +256,38 @@ static __attribute__((unused)) void sleep_modem_wifi_modem_state_deinit(void)
 void IRAM_ATTR sleep_modem_wifi_do_phy_retention(bool restore)
 {
     if (restore) {
-        if (s_sleep_modem.wifi.modem_state_phy_done == 1) {
-            pau_regdma_trigger_modem_link_restore();
-        }
+        pau_regdma_trigger_modem_link_restore();
     } else {
         pau_regdma_trigger_modem_link_backup();
         s_sleep_modem.wifi.modem_state_phy_done = 1;
     }
 }
 
-bool sleep_modem_wifi_modem_state_enabled(void)
+inline __attribute__((always_inline)) bool sleep_modem_wifi_modem_state_enabled(void)
 {
-    return (s_sleep_modem.wifi.phy_link != NULL) ? true : false;
+    return (s_sleep_modem.wifi.phy_link != NULL);
+}
+
+inline __attribute__((always_inline)) bool sleep_modem_wifi_modem_link_done(void)
+{
+    return (s_sleep_modem.wifi.modem_state_phy_done == 1);
 }
 
 #endif /* SOC_PM_SUPPORT_PMU_MODEM_STATE */
 
-bool IRAM_ATTR modem_domain_pd_allowed(void)
+bool modem_domain_pd_allowed(void)
 {
 #if SOC_PM_MODEM_RETENTION_BY_REGDMA
     const uint32_t modules = sleep_retention_get_modules();
-    const uint32_t mask = (const uint32_t) (SLEEP_RETENTION_MODULE_WIFI_MAC | SLEEP_RETENTION_MODULE_WIFI_BB);
-    return ((modules & mask) == mask);
+    const uint32_t mask_wifi = (const uint32_t) (SLEEP_RETENTION_MODULE_WIFI_MAC |
+                                                 SLEEP_RETENTION_MODULE_WIFI_BB);
+    const uint32_t mask_ble = (const uint32_t) (SLEEP_RETENTION_MODULE_BLE_MAC |
+                                                SLEEP_RETENTION_MODULE_BT_BB);
+    const uint32_t mask_154 = (const uint32_t) (SLEEP_RETENTION_MODULE_802154_MAC |
+                                                SLEEP_RETENTION_MODULE_BT_BB);
+    return (((modules & mask_wifi) == mask_wifi) ||
+            ((modules & mask_ble)  == mask_ble) ||
+            ((modules & mask_154)  == mask_154));
 #else
     return false; /* MODEM power domain is controlled by each module (WiFi, Bluetooth or 15.4) of modem */
 #endif
@@ -292,11 +302,14 @@ uint32_t IRAM_ATTR sleep_modem_reject_triggers(void)
     return reject_triggers;
 }
 
-static __attribute__((unused)) bool IRAM_ATTR sleep_modem_wifi_modem_state_skip_light_sleep(void)
+bool IRAM_ATTR sleep_modem_wifi_modem_state_skip_light_sleep(void)
 {
     bool skip = false;
 #if SOC_PM_SUPPORT_PMU_MODEM_STATE
-    skip = (s_sleep_modem.wifi.phy_link != NULL) && (s_sleep_modem.wifi.modem_state_phy_done == 0);
+    /* To block the system from entering sleep before modem link done. In light
+     * sleep mode, the system may switch to modem state, which will cause
+     * hardware to fail to enable RF */
+    skip = sleep_modem_wifi_modem_state_enabled() && !sleep_modem_wifi_modem_link_done();
 #endif
     return skip;
 }
@@ -304,17 +317,8 @@ static __attribute__((unused)) bool IRAM_ATTR sleep_modem_wifi_modem_state_skip_
 esp_err_t sleep_modem_configure(int max_freq_mhz, int min_freq_mhz, bool light_sleep_enable)
 {
 #if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
-    extern int esp_wifi_internal_mac_sleep_configure(bool, bool);
-    if (light_sleep_enable) {
-        if (sleep_modem_wifi_modem_state_init() == ESP_OK) {
-            esp_pm_register_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
-            esp_wifi_internal_mac_sleep_configure(light_sleep_enable, true); /* require WiFi to enable automatically receives the beacon */
-        }
-    } else {
-        esp_wifi_internal_mac_sleep_configure(light_sleep_enable, false); /* require WiFi to disable automatically receives the beacon */
-        esp_pm_unregister_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
-        sleep_modem_wifi_modem_state_deinit();
-    }
+    extern int esp_wifi_internal_light_sleep_configure(bool);
+    esp_wifi_internal_light_sleep_configure(light_sleep_enable);
 #endif
 #if CONFIG_PM_SLP_DEFAULT_PARAMS_OPT
     if (light_sleep_enable) {
@@ -324,7 +328,7 @@ esp_err_t sleep_modem_configure(int max_freq_mhz, int min_freq_mhz, bool light_s
     return ESP_OK;
 }
 
-#define PERIPH_INFORM_OUT_LIGHT_SLEEP_OVERHEAD_NO 1
+#define PERIPH_INFORM_OUT_LIGHT_SLEEP_OVERHEAD_NO 2
 
 /* Inform peripherals of light sleep wakeup overhead time */
 static inform_out_light_sleep_overhead_cb_t s_periph_inform_out_light_sleep_overhead_cb[PERIPH_INFORM_OUT_LIGHT_SLEEP_OVERHEAD_NO];

@@ -28,6 +28,7 @@
 #include "soc/gpio_reg.h"
 #include "soc/io_mux_reg.h"
 #include "soc/interrupt_matrix_reg.h"
+#include "hal/mwdt_ll.h"
 
 static __attribute__((unused)) const char *TAG = "sleep_sys_periph";
 
@@ -67,11 +68,17 @@ esp_err_t sleep_sys_periph_tee_apm_retention_init(void)
     #define N_REGS_APM()    (((HP_APM_CLOCK_GATE_REG - DR_REG_HP_APM_BASE) / 4) + 1)
 
     const static sleep_retention_entries_config_t tee_apm_regs_retention[] = {
-        [0] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_TEEAPM_LINK(0), DR_REG_TEE_BASE, DR_REG_TEE_BASE, N_REGS_TEE(), 0, 0), .owner = ENTRY(0) | ENTRY(2) },         /* tee */
-        [1] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_TEEAPM_LINK(1), DR_REG_HP_APM_BASE, DR_REG_HP_APM_BASE, N_REGS_APM(), 0, 0), .owner = ENTRY(0) | ENTRY(2) }    /* apm */
+        [0] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_TEEAPM_LINK(0), DR_REG_HP_APM_BASE, DR_REG_HP_APM_BASE, N_REGS_APM(), 0, 0), .owner = ENTRY(0) | ENTRY(2) }, /* apm */
+        [1] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_TEEAPM_LINK(1), DR_REG_TEE_BASE,    DR_REG_TEE_BASE,    N_REGS_TEE(), 0, 0), .owner = ENTRY(0) | ENTRY(2) }  /* tee */
     };
 
     esp_err_t err = sleep_retention_entries_create(tee_apm_regs_retention, ARRAY_SIZE(tee_apm_regs_retention), REGDMA_LINK_PRI_4, SLEEP_RETENTION_MODULE_TEE_APM);
+    if (err == ESP_OK) {
+        const static sleep_retention_entries_config_t regs_highpri_retention[] = {
+            [0] = { .config = REGDMA_LINK_WRITE_INIT(REGDMA_TEEAPM_LINK(2), TEE_M4_MODE_CTRL_REG, 0x0, 0xffffffff, 1, 0), .owner = ENTRY(2) }
+        };
+        err = sleep_retention_entries_create(regs_highpri_retention, ARRAY_SIZE(regs_highpri_retention), REGDMA_LINK_PRI_2, SLEEP_RETENTION_MODULE_TEE_APM);
+    }
     ESP_RETURN_ON_ERROR(err, TAG, "failed to allocate memory for digital peripherals (TEE/APM) retention");
     ESP_LOGI(TAG, "TEE/APM sleep retention initialization");
     return ESP_OK;
@@ -79,10 +86,10 @@ esp_err_t sleep_sys_periph_tee_apm_retention_init(void)
 
 esp_err_t sleep_sys_periph_uart0_retention_init(void)
 {
-    #define N_REGS_UART()   (((UART_ID_REG(0) - REG_UART_BASE(0)) / 4) + 1)
+    #define N_REGS_UART()   (((UART_ID_REG(0) - UART_INT_RAW_REG(0)) / 4) + 1)
 
     const static sleep_retention_entries_config_t uart_regs_retention[] = {
-        [0] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_UART_LINK(0x00), REG_UART_BASE(0),       REG_UART_BASE(0), N_REGS_UART(),     0, 0), .owner = ENTRY(0) | ENTRY(2) }, /* uart */
+        [0] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_UART_LINK(0x00), UART_INT_RAW_REG(0),       UART_INT_RAW_REG(0), N_REGS_UART(),     0, 0), .owner = ENTRY(0) | ENTRY(2) }, /* uart */
         /* Note: uart register should set update reg to make the configuration take effect */
         [1] = { .config = REGDMA_LINK_WRITE_INIT     (REGDMA_UART_LINK(0x01), UART_REG_UPDATE_REG(0), UART_REG_UPDATE,  UART_REG_UPDATE_M, 1, 0), .owner = ENTRY(0) | ENTRY(2) },
         [2] = { .config = REGDMA_LINK_WAIT_INIT      (REGDMA_UART_LINK(0x02), UART_REG_UPDATE_REG(0), 0x0,              UART_REG_UPDATE_M, 1, 0), .owner = ENTRY(0) | ENTRY(2) }
@@ -118,11 +125,17 @@ esp_err_t sleep_sys_periph_tg0_retention_init(void)
 
 esp_err_t sleep_sys_periph_iomux_retention_init(void)
 {
+#if CONFIG_IDF_TARGET_ESP32C6
     #define N_REGS_IOMUX_0()    (((PERIPHS_IO_MUX_SPID_U - REG_IO_MUX_BASE) / 4) + 1)
     #define N_REGS_IOMUX_1()    (((GPIO_FUNC34_OUT_SEL_CFG_REG - GPIO_FUNC0_OUT_SEL_CFG_REG) / 4) + 1)
     #define N_REGS_IOMUX_2()    (((GPIO_FUNC124_IN_SEL_CFG_REG - GPIO_STATUS_NEXT_REG) / 4) + 1)
     #define N_REGS_IOMUX_3()    (((GPIO_PIN34_REG - DR_REG_GPIO_BASE) / 4) + 1)
-
+#elif CONFIG_IDF_TARGET_ESP32H2
+    #define N_REGS_IOMUX_0()    (((PERIPHS_IO_MUX_SPID_U - REG_IO_MUX_BASE) / 4) + 1)
+    #define N_REGS_IOMUX_1()    (((GPIO_FUNC31_OUT_SEL_CFG_REG - GPIO_FUNC0_OUT_SEL_CFG_REG) / 4) + 1)
+    #define N_REGS_IOMUX_2()    (((GPIO_FUNC124_IN_SEL_CFG_REG - GPIO_STATUS_NEXT_REG) / 4) + 1)
+    #define N_REGS_IOMUX_3()    (((GPIO_PIN31_REG - DR_REG_GPIO_BASE) / 4) + 1)
+#endif
     const static sleep_retention_entries_config_t iomux_regs_retention[] = {
         [0] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_IOMUX_LINK(0x00), REG_IO_MUX_BASE,            REG_IO_MUX_BASE,            N_REGS_IOMUX_0(), 0, 0), .owner = ENTRY(0) | ENTRY(2) }, /* io_mux */
         [1] = { .config = REGDMA_LINK_CONTINUOUS_INIT(REGDMA_IOMUX_LINK(0x01), GPIO_FUNC0_OUT_SEL_CFG_REG, GPIO_FUNC0_OUT_SEL_CFG_REG, N_REGS_IOMUX_1(), 0, 0), .owner = ENTRY(0) | ENTRY(2) },
@@ -230,7 +243,7 @@ error:
     return err;
 }
 
-bool IRAM_ATTR peripheral_domain_pd_allowed(void)
+bool peripheral_domain_pd_allowed(void)
 {
     const uint32_t modules = sleep_retention_get_modules();
     const uint32_t mask = (const uint32_t) (

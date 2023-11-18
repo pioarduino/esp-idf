@@ -1,10 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2010-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2010-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "sdkconfig.h"
 #include "soc/soc.h"
+#include "esp_private/periph_ctrl.h"
 #ifndef CONFIG_IDF_TARGET_ESP32
 #include "soc/system_reg.h"
 #endif // not CONFIG_IDF_TARGET_ESP32
@@ -24,6 +25,8 @@
 #include "esp_private/esp_pmu.h"
 #elif CONFIG_IDF_TARGET_ESP32H2
 #include "esp32h2/rom/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32P4
+#include "esp32p4/rom/rtc.h"
 #endif
 #include "esp_log.h"
 #include "esp_rom_sys.h"
@@ -74,7 +77,6 @@ void esp_clk_init(void)
 
 void esp_perip_clk_init(void)
 {
-
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 The Apache Software Foundation (ASF)
+ * SPDX-FileCopyrightText: 2015-2023 The Apache Software Foundation (ASF)
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -1110,6 +1110,12 @@ struct ble_hci_le_set_transmit_power_report_enable_cp {
     uint8_t remote_enable;
 } __attribute__((packed));
 
+#define BLE_HCI_OCF_LE_SET_DATA_ADDR_CHANGE	         (0x007C)
+struct ble_hci_le_set_data_addr_change_cp {
+    uint8_t adv_handle;
+    uint8_t change_reason;
+} __attribute__((packed));
+
 #define BLE_HCI_OCF_LE_SET_DEFAULT_SUBRATE               (0x007D)
 struct ble_hci_le_set_default_subrate_cp {
     uint16_t subrate_min;
@@ -1135,6 +1141,17 @@ struct ble_hci_le_subrate_req_cp {
 struct ble_hci_vs_rd_static_addr_rp {
     uint8_t addr[6];
 } __attribute__((packed));
+
+#define BLE_HCI_OCF_VS_DUPLICATE_EXCEPTION_LIST         (MYNEWT_VAL(BLE_HCI_VS_OCF_OFFSET) + (0x0108))
+struct ble_hci_vs_duplicate_exception_list_cp {
+    uint8_t operation;
+    uint32_t type;
+    uint8_t device_info[6];
+} __attribute__((packed));
+
+#if SOC_BLE_POWER_CONTROL_SUPPORTED && MYNEWT_VAL(BLE_HCI_VS)
+#define BLE_HCI_OCF_VS_PCL_SET_RSSI 			(MYNEWT_VAL(BLE_HCI_VS_OCF_OFFSET) + (0x0111))
+#endif
 
 /* Command Specific Definitions */
 /* --- Set controller to host flow control (OGF 0x03, OCF 0x0031) --- */
@@ -1858,9 +1875,9 @@ struct ble_hci_ev_le_subev_transmit_power_report {
     uint16_t conn_handle;
     uint8_t  reason;
     uint8_t  phy;
-    uint8_t  transmit_power_level;
+    int8_t  transmit_power_level;
     uint8_t  transmit_power_level_flag;
-    uint8_t delta;
+    int8_t delta;
 } __attribute__((packed));
 
 #define BLE_HCI_LE_SUBEV_BIGINFO_ADV_REPORT         (0x22)

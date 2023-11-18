@@ -17,6 +17,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_private/esp_clk.h"
+#include "esp_clk_tree.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_memory_utils.h"
@@ -96,15 +97,29 @@ esp_err_t mcpwm_new_capture_timer(const mcpwm_capture_timer_config_t *config, mc
     mcpwm_group_t *group = cap_timer->group;
     int group_id = group->group_id;
 
+    mcpwm_capture_clock_source_t clk_src = config->clk_src ? config->clk_src : MCPWM_CAPTURE_CLK_SRC_DEFAULT;
 #if SOC_MCPWM_CAPTURE_CLK_FROM_GROUP
     // capture timer clock source is same as the MCPWM group
-    ESP_GOTO_ON_ERROR(mcpwm_select_periph_clock(group, (soc_module_clk_t)config->clk_src), err, TAG, "set group clock failed");
+    ESP_GOTO_ON_ERROR(mcpwm_select_periph_clock(group, (soc_module_clk_t)clk_src), err, TAG, "set group clock failed");
+    uint32_t periph_src_clk_hz = 0;
+    ESP_GOTO_ON_ERROR(esp_clk_tree_src_get_freq_hz((soc_module_clk_t)clk_src, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &periph_src_clk_hz), err, TAG, "get clock source freq failed");
+    ESP_LOGD(TAG, "periph_src_clk_hz %"PRIu32"", periph_src_clk_hz);
+    // when resolution_hz set to zero, use default resolution_hz
+    uint32_t resolution_hz = config->resolution_hz ? config->resolution_hz : periph_src_clk_hz / MCPWM_GROUP_CLOCK_DEFAULT_PRESCALE;
+
+    ESP_GOTO_ON_ERROR(mcpwm_set_prescale(group, resolution_hz, MCPWM_LL_MAX_CAPTURE_TIMER_PRESCALE, NULL), err, TAG, "set prescale failed");
     cap_timer->resolution_hz = group->resolution_hz;
+    if (cap_timer->resolution_hz != resolution_hz) {
+        ESP_LOGW(TAG, "adjust cap_timer resolution to %"PRIu32"Hz", cap_timer->resolution_hz);
+    }
 #else
     // capture timer has independent clock source selection
-    switch (config->clk_src) {
+    switch (clk_src) {
     case MCPWM_CAPTURE_CLK_SRC_APB:
         cap_timer->resolution_hz = esp_clk_apb_freq();
+        if (config->resolution_hz) {
+            ESP_LOGW(TAG, "cap_timer resolution is not adjustable in current target, still %"PRIu32"Hz", cap_timer->resolution_hz);
+        }
 #if CONFIG_PM_ENABLE
         ret  = esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "mcpwm_cap_timer", &cap_timer->pm_lock);
         ESP_GOTO_ON_ERROR(ret, err, TAG, "create ESP_PM_APB_FREQ_MAX lock failed");
@@ -246,6 +261,10 @@ esp_err_t mcpwm_new_capture_channel(mcpwm_cap_timer_handle_t cap_timer, const mc
     mcpwm_cap_channel_t *cap_chan = NULL;
     ESP_GOTO_ON_FALSE(cap_timer && config && ret_cap_channel, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
     ESP_GOTO_ON_FALSE(config->prescale && config->prescale <= MCPWM_LL_MAX_CAPTURE_PRESCALE, ESP_ERR_INVALID_ARG, err, TAG, "invalid prescale");
+    if (config->intr_priority) {
+        ESP_GOTO_ON_FALSE(1 << (config->intr_priority) & MCPWM_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, err,
+                          TAG, "invalid interrupt priority:%d", config->intr_priority);
+    }
 
     // create instance firstly, then install onto platform
     cap_chan = calloc(1, sizeof(mcpwm_cap_channel_t));
@@ -255,6 +274,10 @@ esp_err_t mcpwm_new_capture_channel(mcpwm_cap_timer_handle_t cap_timer, const mc
     mcpwm_group_t *group = cap_timer->group;
     mcpwm_hal_context_t *hal = &group->hal;
     int cap_chan_id = cap_chan->cap_chan_id;
+
+    // if interrupt priority specified before, it cannot be changed until the group is released
+    // check if the new priority specified consistents with the old one
+    ESP_GOTO_ON_ERROR(mcpwm_check_intr_priority(group, config->intr_priority), err, TAG, "set group intrrupt priority failed");
 
     mcpwm_ll_capture_enable_negedge(hal->dev, cap_chan_id, config->flags.neg_edge);
     mcpwm_ll_capture_enable_posedge(hal->dev, cap_chan_id, config->flags.pos_edge);
@@ -367,6 +390,7 @@ esp_err_t mcpwm_capture_channel_register_event_callbacks(mcpwm_cap_channel_handl
     if (!cap_channel->intr) {
         ESP_RETURN_ON_FALSE(cap_channel->fsm == MCPWM_CAP_CHAN_FSM_INIT, ESP_ERR_INVALID_STATE, TAG, "channel not in init state");
         int isr_flags = MCPWM_INTR_ALLOC_FLAG;
+        isr_flags |= mcpwm_get_intr_priority_flag(group);
         ESP_RETURN_ON_ERROR(esp_intr_alloc_intrstatus(mcpwm_periph_signals.groups[group_id].irq_id, isr_flags,
                             (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev), MCPWM_LL_EVENT_CAPTURE(cap_chan_id),
                             mcpwm_capture_default_isr, cap_channel, &cap_channel->intr), TAG, "install interrupt service for cap channel failed");

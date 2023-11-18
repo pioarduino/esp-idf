@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +16,7 @@
 #include "esp_private/esp_clk.h"
 #include "esp_wpa.h"
 #include "esp_netif.h"
-#include "esp_coexist_internal.h"
+#include "private/esp_coexist_internal.h"
 #include "esp_phy_init.h"
 #include "esp_private/phy.h"
 #ifdef CONFIG_ESP_WIFI_NAN_ENABLE
@@ -165,7 +165,12 @@ esp_err_t esp_wifi_deinit(void)
 #endif
     esp_wifi_power_domain_off();
 #if CONFIG_MAC_BB_PD
+    esp_wifi_internal_set_mac_sleep(false);
     esp_mac_bb_pd_mem_deinit();
+#endif
+#if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+    esp_wifi_internal_modem_state_configure(false);
+    esp_pm_unregister_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
 #endif
     esp_phy_modem_deinit();
 
@@ -230,11 +235,11 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
 #endif
 
 #if CONFIG_ESP_WIFI_SLP_IRAM_OPT
-    esp_pm_register_light_sleep_default_params_config_callback(esp_wifi_internal_update_light_sleep_default_params);
-
     int min_freq_mhz = esp_pm_impl_get_cpu_freq(PM_MODE_LIGHT_SLEEP);
     int max_freq_mhz = esp_pm_impl_get_cpu_freq(PM_MODE_CPU_MAX);
     esp_wifi_internal_update_light_sleep_default_params(min_freq_mhz, max_freq_mhz);
+
+    esp_pm_register_light_sleep_default_params_config_callback(esp_wifi_internal_update_light_sleep_default_params);
 
     uint32_t sleep_delay_us = CONFIG_ESP_WIFI_SLP_DEFAULT_MIN_ACTIVE_TIME * 1000;
     esp_wifi_set_sleep_delay_time(sleep_delay_us);
@@ -290,6 +295,12 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
         esp_wifi_internal_set_mac_sleep(true);
 #endif
         esp_phy_modem_init();
+#if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+        if (sleep_modem_wifi_modem_state_enabled()) {
+            esp_pm_register_skip_light_sleep_callback(sleep_modem_wifi_modem_state_skip_light_sleep);
+            esp_wifi_internal_modem_state_configure(true); /* require WiFi to enable automatically receives the beacon */
+        }
+#endif
 #if CONFIG_IDF_TARGET_ESP32
         s_wifi_mac_time_update_cb = esp_wifi_internal_update_mac_time;
 #endif
@@ -325,9 +336,6 @@ void wifi_apb80m_request(void)
 {
     assert(s_wifi_modem_sleep_lock);
     esp_pm_lock_acquire(s_wifi_modem_sleep_lock);
-    if (esp_clk_apb_freq() != APB_CLK_FREQ) {
-        ESP_LOGE(__func__, "WiFi needs 80MHz APB frequency to work, but got %dHz", esp_clk_apb_freq());
-    }
 }
 
 void wifi_apb80m_release(void)
@@ -347,7 +355,77 @@ void ieee80211_ftm_attach(void)
 #ifndef CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 void net80211_softap_funcs_init(void)
 {
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
 }
+
+bool ieee80211_ap_try_sa_query(void *p)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return false;
+}
+
+bool ieee80211_ap_sa_query_timeout(void *p)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return false;
+}
+
+int add_mic_ie_bip(void *p)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return 0;
+}
+
+void ieee80211_free_beacon_eb(void)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+}
+
+int ieee80211_pwrsave(void *p1, void *p2)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return 0;
+}
+
+void cnx_node_remove(void *p)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+}
+
+int ieee80211_set_tim(void *p, int arg)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return 0;
+}
+
+bool ieee80211_is_bufferable_mmpdu(void *p)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return false;
+}
+
+void cnx_node_leave(void *p, uint8_t arg)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+}
+
+void ieee80211_beacon_construct(void *p1, void *p2, void *p3, void *p4)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+}
+
+void * ieee80211_assoc_resp_construct(void *p, int arg)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return NULL;
+}
+
+void * ieee80211_alloc_proberesp(void *p, int arg)
+{
+    /* Do not remove, stub to overwrite weak link in Wi-Fi Lib */
+    return NULL;
+}
+
 #endif
 
 #ifndef CONFIG_ESP_WIFI_NAN_ENABLE

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,6 +24,7 @@
 #include "hal/assert.h"
 #include "hal/spi_types.h"
 #include "hal/spi_flash_types.h"
+#include "hal/misc.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -369,21 +370,12 @@ static inline void spimem_flash_ll_program_page(spi_mem_dev_t *dev, const void *
  * should be configured before this is called.
  *
  * @param dev Beginning address of the peripheral registers.
+ * @param pe_ops Is page program/erase operation or not.
  */
-static inline void spimem_flash_ll_user_start(spi_mem_dev_t *dev)
+static inline void spimem_flash_ll_user_start(spi_mem_dev_t *dev, bool pe_ops)
 {
-    dev->cmd.usr = 1;
-}
-
-/**
- * In user mode, it is set to indicate that program/erase operation will be triggered.
- * This function is combined with `spimem_flash_ll_user_start`. The pe_bit will be cleared automatically once the operation done.
- *
- * @param dev Beginning address of the peripheral registers.
- */
-static inline void spimem_flash_ll_set_pe_bit(spi_mem_dev_t *dev)
-{
-    dev->cmd.flash_pe = 1;
+    uint32_t usr_pe = (pe_ops ? 0x60000 : 0x40000);
+    dev->cmd.val |= usr_pe;
 }
 
 /**
@@ -406,12 +398,12 @@ static inline bool spimem_flash_ll_host_idle(const spi_mem_dev_t *dev)
 static inline void spimem_flash_ll_read_phase(spi_mem_dev_t *dev)
 {
     typeof (dev->user) user = {
-        .usr_command = 1,
         .usr_mosi = 0,
         .usr_miso = 1,
         .usr_addr = 1,
+        .usr_command = 1,
     };
-    dev->user = user;
+    dev->user.val = user.val;
 }
 /*------------------------------------------------------------------------------
  * Configs
@@ -436,7 +428,9 @@ static inline void spimem_flash_ll_set_cs_pin(spi_mem_dev_t *dev, int pin)
  */
 static inline void spimem_flash_ll_set_read_mode(spi_mem_dev_t *dev, esp_flash_io_mode_t read_mode)
 {
-    typeof (dev->ctrl) ctrl = dev->ctrl;
+    typeof (dev->ctrl) ctrl;
+    ctrl.val = dev->ctrl.val;
+
     ctrl.val &= ~(SPI_MEM_FREAD_QIO_M | SPI_MEM_FREAD_QUAD_M | SPI_MEM_FREAD_DIO_M | SPI_MEM_FREAD_DUAL_M);
     ctrl.val |= SPI_MEM_FASTRD_MODE_M;
     switch (read_mode) {
@@ -461,7 +455,7 @@ static inline void spimem_flash_ll_set_read_mode(spi_mem_dev_t *dev, esp_flash_i
     default:
         abort();
     }
-    dev->ctrl = ctrl;
+    dev->ctrl.val = ctrl.val;
 }
 
 /**
@@ -514,7 +508,7 @@ static inline void spimem_flash_ll_set_command(spi_mem_dev_t *dev, uint32_t comm
         .usr_command_value = command,
         .usr_command_bitlen = (bitlen - 1),
     };
-    dev->user2 = user2;
+    dev->user2.val = user2.val;
 }
 
 /**

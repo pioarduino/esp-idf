@@ -12,7 +12,7 @@ The Wi-Fi libraries provide support for configuring and monitoring the {IDF_TARG
 - AP mode (aka Soft-AP mode or Access Point mode). Stations connect to the {IDF_TARGET_NAME}.
 - Station/AP-coexistence mode ({IDF_TARGET_NAME} is concurrently an access point and a station connected to another access point).
 
-- Various security modes for the above (WPA, WPA2, WEP, etc.)
+- Various security modes for the above (WPA, WPA2, WPA3, etc.)
 - Scanning for access points (active & passive scanning).
 - Promiscuous mode for monitoring of IEEE802.11 Wi-Fi packets.
 
@@ -28,3 +28,8 @@ API Reference
 
 .. include-build-file:: inc/esp_wifi.inc
 .. include-build-file:: inc/esp_wifi_types.inc
+.. include-build-file:: inc/esp_eap_client.inc
+.. include-build-file:: inc/esp_wps.inc
+.. include-build-file:: inc/esp_rrm.inc
+.. include-build-file:: inc/esp_wnm.inc
+.. include-build-file:: inc/esp_mbo.inc

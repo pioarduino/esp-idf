@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +17,7 @@
 #include "esp_cpu.h"
 
 #include "esp_private/crosscore_int.h"
+#include "esp_private/uart_private.h"
 
 #include "soc/rtc.h"
 #include "hal/uart_ll.h"
@@ -31,6 +32,10 @@
 #include "xtensa/core-macros.h"
 #endif
 
+#if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
+#include "esp_private/mspi_timing_tuning.h"
+#endif
+
 #include "esp_private/pm_impl.h"
 #include "esp_private/pm_trace.h"
 #include "esp_private/esp_timer_private.h"
@@ -39,6 +44,7 @@
 #include "esp_private/sleep_gpio.h"
 #include "esp_private/sleep_modem.h"
 #include "esp_sleep.h"
+#include "esp_memory_utils.h"
 
 #include "sdkconfig.h"
 
@@ -79,6 +85,8 @@
 #define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32H2
 #define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32P4
+#define REF_CLK_DIV_MIN 2
 #endif
 
 #ifdef CONFIG_PM_PROFILING
@@ -117,6 +125,8 @@ static bool s_skipped_light_sleep[portNUM_PROCESSORS];
  */
 static bool s_skip_light_sleep[portNUM_PROCESSORS];
 #endif // portNUM_PROCESSORS == 2
+
+static _lock_t s_skip_light_sleep_lock;
 #endif // CONFIG_FREERTOS_USE_TICKLESS_IDLE
 
 /* A flag indicating that Idle hook has run on a given CPU;
@@ -195,6 +205,154 @@ pm_mode_t esp_pm_impl_get_mode(esp_pm_lock_type_t type, int arg)
     }
 }
 
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+/**
+ * @brief Function entry parameter types for light sleep callback functions (if CONFIG_FREERTOS_USE_TICKLESS_IDLE)
+ */
+struct _esp_pm_sleep_cb_config_t {
+    /**
+     * Callback function defined by user.
+     */
+    esp_pm_light_sleep_cb_t cb;
+    /**
+     * Input parameters of callback function defined by user.
+     */
+    void *arg;
+    /**
+     * Execution priority of callback function defined by user.
+     */
+    uint32_t prior;
+    /**
+     * Next callback function defined by user.
+     */
+    struct _esp_pm_sleep_cb_config_t *next;
+};
+
+typedef struct _esp_pm_sleep_cb_config_t esp_pm_sleep_cb_config_t;
+
+static esp_pm_sleep_cb_config_t *s_light_sleep_enter_cb_config;
+static esp_pm_sleep_cb_config_t *s_light_sleep_exit_cb_config;
+static portMUX_TYPE s_sleep_pm_cb_mutex = portMUX_INITIALIZER_UNLOCKED;
+
+esp_err_t esp_pm_light_sleep_register_cbs(esp_pm_sleep_cbs_register_config_t *cbs_conf)
+{
+    if (cbs_conf->enter_cb == NULL && cbs_conf->exit_cb == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&s_sleep_pm_cb_mutex);
+    if (cbs_conf->enter_cb != NULL) {
+        esp_pm_sleep_cb_config_t **current_enter_ptr = &(s_light_sleep_enter_cb_config);
+        while (*current_enter_ptr != NULL) {
+            if (((*current_enter_ptr)->cb) == (cbs_conf->enter_cb)) {
+                portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+                return ESP_FAIL;
+            }
+            current_enter_ptr = &((*current_enter_ptr)->next);
+        }
+        esp_pm_sleep_cb_config_t *new_enter_config = (esp_pm_sleep_cb_config_t *)heap_caps_malloc(sizeof(esp_pm_sleep_cb_config_t), MALLOC_CAP_INTERNAL);
+        if (new_enter_config == NULL) {
+            portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+            return ESP_ERR_NO_MEM; /* Memory allocation failed */
+        }
+        new_enter_config->cb = cbs_conf->enter_cb;
+        new_enter_config->arg = cbs_conf->enter_cb_user_arg;
+        new_enter_config->prior = cbs_conf->enter_cb_prior;
+        while (*current_enter_ptr != NULL && (*current_enter_ptr)->prior <= new_enter_config->prior) {
+            current_enter_ptr = &((*current_enter_ptr)->next);
+        }
+        new_enter_config->next = *current_enter_ptr;
+        *current_enter_ptr = new_enter_config;
+    }
+
+    if (cbs_conf->exit_cb != NULL) {
+        esp_pm_sleep_cb_config_t **current_exit_ptr = &(s_light_sleep_exit_cb_config);
+        while (*current_exit_ptr != NULL) {
+            if (((*current_exit_ptr)->cb) == (cbs_conf->exit_cb)) {
+                portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+                return ESP_FAIL;
+            }
+            current_exit_ptr = &((*current_exit_ptr)->next);
+        }
+        esp_pm_sleep_cb_config_t *new_exit_config = (esp_pm_sleep_cb_config_t *)heap_caps_malloc(sizeof(esp_pm_sleep_cb_config_t), MALLOC_CAP_INTERNAL);
+        if (new_exit_config == NULL) {
+            portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+            return ESP_ERR_NO_MEM; /* Memory allocation failed */
+        }
+        new_exit_config->cb = cbs_conf->exit_cb;
+        new_exit_config->arg = cbs_conf->exit_cb_user_arg;
+        new_exit_config->prior = cbs_conf->exit_cb_prior;
+        while (*current_exit_ptr != NULL && (*current_exit_ptr)->prior <= new_exit_config->prior) {
+            current_exit_ptr = &((*current_exit_ptr)->next);
+        }
+        new_exit_config->next = *current_exit_ptr;
+        *current_exit_ptr = new_exit_config;
+    }
+    portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+    return ESP_OK;
+}
+
+esp_err_t esp_pm_light_sleep_unregister_cbs(esp_pm_sleep_cbs_register_config_t *cbs_conf)
+{
+    if (cbs_conf->enter_cb == NULL && cbs_conf->exit_cb == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&s_sleep_pm_cb_mutex);
+    if (cbs_conf->enter_cb != NULL) {
+        esp_pm_sleep_cb_config_t **current_enter_ptr = &(s_light_sleep_enter_cb_config);
+        while (*current_enter_ptr != NULL) {
+            if ((*current_enter_ptr)->cb == cbs_conf->enter_cb) {
+                esp_pm_sleep_cb_config_t *temp = *current_enter_ptr;
+                *current_enter_ptr = (*current_enter_ptr)->next;
+                free(temp);
+                break;
+            }
+            current_enter_ptr = &((*current_enter_ptr)->next);
+        }
+    }
+
+    if (cbs_conf->exit_cb != NULL) {
+        esp_pm_sleep_cb_config_t **current_exit_ptr = &(s_light_sleep_exit_cb_config);
+        while (*current_exit_ptr != NULL) {
+            if ((*current_exit_ptr)->cb == cbs_conf->exit_cb) {
+                esp_pm_sleep_cb_config_t *temp = *current_exit_ptr;
+                *current_exit_ptr = (*current_exit_ptr)->next;
+                free(temp);
+                break;
+            }
+            current_exit_ptr = &((*current_exit_ptr)->next);
+        }
+    }
+    portEXIT_CRITICAL(&s_sleep_pm_cb_mutex);
+    return ESP_OK;
+}
+
+static void IRAM_ATTR esp_pm_execute_enter_sleep_callbacks(int64_t sleep_time_us)
+{
+    esp_pm_sleep_cb_config_t *enter_current = s_light_sleep_enter_cb_config;
+    while (enter_current != NULL) {
+        if (enter_current->cb != NULL) {
+            if (ESP_OK != (*enter_current->cb)(sleep_time_us, enter_current->arg)) {
+                ESP_EARLY_LOGW(TAG, "esp_pm_execute_enter_sleep_callbacks has an err, enter_current = %p", enter_current);
+            }
+        }
+        enter_current = enter_current->next;
+    }
+}
+
+static void IRAM_ATTR esp_pm_execute_exit_sleep_callbacks(int64_t sleep_time_us)
+{
+    esp_pm_sleep_cb_config_t *exit_current = s_light_sleep_exit_cb_config;
+    while (exit_current != NULL) {
+        if (exit_current->cb != NULL) {
+            if (ESP_OK != (*exit_current->cb)(sleep_time_us, exit_current->arg)) {
+                ESP_EARLY_LOGW(TAG, "esp_pm_execute_exit_sleep_callbacks has an err, exit_current = %p", exit_current);
+            }
+        }
+        exit_current = exit_current->next;
+    }
+}
+#endif
+
 static esp_err_t esp_pm_sleep_configure(const void *vconfig)
 {
     esp_err_t err = ESP_OK;
@@ -262,15 +420,14 @@ esp_err_t esp_pm_configure(const void* vconfig)
          */
         apb_max_freq = 80;
     }
-#elif CONFIG_IDF_TARGET_ESP32C6
+#else
     /* Maximum SOC APB clock frequency is 40 MHz, maximum Modem (WiFi,
      * Bluetooth, etc..) APB clock frequency is 80 MHz */
-    const int soc_apb_clk_freq = esp_clk_apb_freq() / MHZ;
-    const int modem_apb_clk_freq = MODEM_APB_CLK_FREQ / MHZ;
-    const int apb_clk_freq = MAX(soc_apb_clk_freq, modem_apb_clk_freq);
+    int apb_clk_freq = esp_clk_apb_freq() / MHZ;
+#if CONFIG_ESP_WIFI_ENABLED || CONFIG_BT_ENABLED || CONFIG_IEEE802154_ENABLED
+    apb_clk_freq = MAX(apb_clk_freq, MODEM_REQUIRED_MIN_APB_CLK_FREQ / MHZ);
+#endif
     int apb_max_freq = MIN(max_freq_mhz, apb_clk_freq); /* CPU frequency in APB_MAX mode */
-#else
-    int apb_max_freq = MIN(max_freq_mhz, 80); /* CPU frequency in APB_MAX mode */
 #endif
 
     apb_max_freq = MAX(apb_max_freq, min_freq_mhz);
@@ -475,7 +632,17 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
         if (switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
-        rtc_clk_cpu_freq_set_config_fast(&new_config);
+        if (new_config.source == SOC_CPU_CLK_SRC_PLL) {
+            rtc_clk_cpu_freq_set_config_fast(&new_config);
+#if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
+            mspi_timing_change_speed_mode_cache_safe(false);
+#endif
+        } else {
+#if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
+            mspi_timing_change_speed_mode_cache_safe(true);
+#endif
+            rtc_clk_cpu_freq_set_config_fast(&new_config);
+        }
         if (!switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
@@ -532,25 +699,32 @@ static void IRAM_ATTR leave_idle(void)
 
 esp_err_t esp_pm_register_skip_light_sleep_callback(skip_light_sleep_cb_t cb)
 {
+    _lock_acquire(&s_skip_light_sleep_lock);
     for (int i = 0; i < PERIPH_SKIP_LIGHT_SLEEP_NO; i++) {
         if (s_periph_skip_light_sleep_cb[i] == cb) {
+            _lock_release(&s_skip_light_sleep_lock);
             return ESP_OK;
         } else if (s_periph_skip_light_sleep_cb[i] == NULL) {
             s_periph_skip_light_sleep_cb[i] = cb;
+            _lock_release(&s_skip_light_sleep_lock);
             return ESP_OK;
         }
     }
+    _lock_release(&s_skip_light_sleep_lock);
     return ESP_ERR_NO_MEM;
 }
 
 esp_err_t esp_pm_unregister_skip_light_sleep_callback(skip_light_sleep_cb_t cb)
 {
+    _lock_acquire(&s_skip_light_sleep_lock);
     for (int i = 0; i < PERIPH_SKIP_LIGHT_SLEEP_NO; i++) {
         if (s_periph_skip_light_sleep_cb[i] == cb) {
             s_periph_skip_light_sleep_cb[i] = NULL;
+            _lock_release(&s_skip_light_sleep_lock);
             return ESP_OK;
         }
     }
+    _lock_release(&s_skip_light_sleep_lock);
     return ESP_ERR_INVALID_STATE;
 }
 
@@ -604,6 +778,12 @@ void IRAM_ATTR vApplicationSleep( TickType_t xExpectedIdleTime )
         int64_t time_until_next_alarm = next_esp_timer_alarm - now;
         int64_t wakeup_delay_us = portTICK_PERIOD_MS * 1000LL * xExpectedIdleTime;
         int64_t sleep_time_us = MIN(wakeup_delay_us, time_until_next_alarm);
+        int64_t slept_us = 0;
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+        uint32_t cycle = esp_cpu_get_cycle_count();
+        esp_pm_execute_enter_sleep_callbacks(sleep_time_us);
+        sleep_time_us -= (esp_cpu_get_cycle_count() - cycle) / (esp_clk_cpu_freq() / 1000000ULL);
+#endif
         if (sleep_time_us >= configEXPECTED_IDLE_TIME_BEFORE_SLEEP * portTICK_PERIOD_MS * 1000LL) {
             esp_sleep_enable_timer_wakeup(sleep_time_us - LIGHT_SLEEP_EARLY_WAKEUP_US);
 #if CONFIG_PM_TRACE && SOC_PM_SUPPORT_RTC_PERIPH_PD
@@ -620,7 +800,7 @@ void IRAM_ATTR vApplicationSleep( TickType_t xExpectedIdleTime )
                 s_light_sleep_counts++;
 #endif
             }
-            int64_t slept_us = esp_timer_get_time() - sleep_start;
+            slept_us = esp_timer_get_time() - sleep_start;
             ESP_PM_TRACE_EXIT(SLEEP, core_id);
 
             uint32_t slept_ticks = slept_us / (portTICK_PERIOD_MS * 1000LL);
@@ -644,6 +824,9 @@ void IRAM_ATTR vApplicationSleep( TickType_t xExpectedIdleTime )
             }
             other_core_should_skip_light_sleep(core_id);
         }
+#if CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+        esp_pm_execute_exit_sleep_callbacks(slept_us);
+#endif
     }
     portEXIT_CRITICAL(&s_switch_lock);
 }
@@ -712,14 +895,19 @@ void esp_pm_impl_init(void)
 #else
     #error "No UART clock source is aware of DFS"
 #endif // SOC_UART_SUPPORT_xxx
-    while(!uart_ll_is_tx_idle(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM)));
+    while (!uart_ll_is_tx_idle(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM))) {
+        ;
+    }
     /* When DFS is enabled, override system setting and use REFTICK as UART clock source */
-    uart_ll_set_sclk(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), clk_source);
-
+    HP_UART_SRC_CLK_ATOMIC() {
+        uart_ll_set_sclk(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), (soc_module_clk_t)clk_source);
+    }
     uint32_t sclk_freq;
     esp_err_t err = uart_get_sclk_freq(clk_source, &sclk_freq);
     assert(err == ESP_OK);
-    uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), CONFIG_ESP_CONSOLE_UART_BAUDRATE, sclk_freq);
+    HP_UART_SRC_CLK_ATOMIC() {
+        uart_ll_set_baudrate(UART_LL_GET_HW(CONFIG_ESP_CONSOLE_UART_NUM), CONFIG_ESP_CONSOLE_UART_BAUDRATE, sclk_freq);
+    }
 #endif // CONFIG_ESP_CONSOLE_UART
 
 #ifdef CONFIG_PM_TRACE

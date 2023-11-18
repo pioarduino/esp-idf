@@ -172,19 +172,21 @@ void initialise_wifi(void)
     ESP_ERROR_CHECK(esp_wifi_start() );
 
 #if CONFIG_EXTERNAL_COEX_ENABLE
-#if SOC_EXTERNAL_COEX_ADVANCE
-    uint32_t in_pin0  = 1;
-    uint32_t in_pin1  = 2;
-    uint32_t out_pin0 = 3;
-    ESP_ERROR_CHECK( esp_external_coex_leader_role_set_gpio_pin(EXTERN_COEX_WIRE_3, in_pin0, in_pin1, out_pin0) );
-#else
     esp_external_coex_gpio_set_t gpio_pin;
-    gpio_pin.in_pin0  = 1;
-    gpio_pin.in_pin1  = 2;
-    gpio_pin.out_pin0 = 3;
-    ESP_ERROR_CHECK( esp_enable_extern_coex_gpio_pin(EXTERN_COEX_WIRE_3, gpio_pin) );
+    gpio_pin.request = 1;
+    gpio_pin.priority = 2;
+    gpio_pin.grant = 3;
+#if SOC_EXTERNAL_COEX_LEADER_TX_LINE
+    gpio_pin.tx_line = 4;
 #endif
-#endif
+
+    esp_external_coex_set_work_mode(EXTERNAL_COEX_LEADER_ROLE);
+#if SOC_EXTERNAL_COEX_LEADER_TX_LINE
+    ESP_ERROR_CHECK(esp_enable_extern_coex_gpio_pin(EXTERN_COEX_WIRE_4, gpio_pin));
+#else
+    ESP_ERROR_CHECK(esp_enable_extern_coex_gpio_pin(EXTERN_COEX_WIRE_3, gpio_pin));
+#endif /* SOC_EXTERNAL_COEX_LEADER_TX_LINE */
+#endif /* CONFIG_EXTERNAL_COEX_ENABLE */
 
 #if CONFIG_ESP_WIFI_ENABLE_WIFI_RX_STATS
 #if CONFIG_ESP_WIFI_ENABLE_WIFI_RX_MU_STATS
@@ -241,6 +243,7 @@ static int wifi_cmd_sta(int argc, char **argv)
     }
 
     ESP_LOGI(TAG, "sta connecting to '%s'", sta_args.ssid->sval[0]);
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     wifi_cmd_sta_join(sta_args.ssid->sval[0], sta_args.password->sval[0], false);
     return 0;
 }
@@ -274,6 +277,7 @@ static int wifi_cmd_sta_mcs89(int argc, char **argv)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_protocol(0, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_11AX));
     ESP_ERROR_CHECK(esp_wifi_set_bandwidth(0, WIFI_BW_HT20));
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     ESP_LOGI(TAG, "sta connecting to '%s'", sta_args.ssid->sval[0]);
     wifi_cmd_sta_join(sta_args.ssid->sval[0], sta_args.password->sval[0], true);

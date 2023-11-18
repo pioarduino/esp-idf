@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,6 +10,8 @@
 #include "esp_cpu.h"
 #include "rv_decode.h"
 #include "sdkconfig.h"
+#include "esp_private/crosscore_int.h"
+#include "esp_private/freertos_debug.h"
 
 extern volatile esp_gdbstub_frame_t *temp_regs_frame;
 
@@ -84,8 +86,7 @@ void esp_gdbstub_int(__attribute__((unused)) void *frame)
    /* Pointer to saved frame is in pxCurrentTCB
     * See rtos_int_enter function
     */
-    extern void *pxCurrentTCB;
-    dummy_tcb_t *tcb = pxCurrentTCB;
+    dummy_tcb_t *tcb = (dummy_tcb_t *)pvTaskGetCurrentTCBForCore(esp_cpu_get_core_id());
     gdbstub_handle_uart_int((esp_gdbstub_frame_t *)tcb->top_of_stack);
 }
 

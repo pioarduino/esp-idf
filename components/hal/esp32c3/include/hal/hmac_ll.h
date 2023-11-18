@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /*******************************************************************************
  * NOTICE
@@ -20,11 +12,13 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <string.h>
 
 #include "soc/system_reg.h"
+#include "soc/system_struct.h"
 #include "soc/hwcrypto_reg.h"
-#include "hal/hmac_hal.h"
+#include "hal/hmac_types.h"
 
 #define SHA256_BLOCK_SZ 64
 #define SHA256_DIGEST_SZ 32
@@ -37,6 +31,33 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Enable the bus clock for HMAC peripheral module
+ *
+ * @param true to enable the module, false to disable the module
+ */
+static inline void hmac_ll_enable_bus_clock(bool enable)
+{
+    SYSTEM.perip_clk_en1.reg_crypto_hmac_clk_en = enable;
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
+#define hmac_ll_enable_bus_clock(...) (void)__DECLARE_RCC_ATOMIC_ENV; hmac_ll_enable_bus_clock(__VA_ARGS__)
+
+/**
+ * @brief Reset the HMAC peripheral module
+ */
+static inline void hmac_ll_reset_register(void)
+{
+    SYSTEM.perip_rst_en1.reg_crypto_hmac_rst = 1;
+    SYSTEM.perip_rst_en1.reg_crypto_hmac_rst = 0;
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
+#define hmac_ll_reset_register(...) (void)__DECLARE_RCC_ATOMIC_ENV; hmac_ll_reset_register(__VA_ARGS__)
 
 /**
  * Makes the peripheral ready for use, after enabling it.

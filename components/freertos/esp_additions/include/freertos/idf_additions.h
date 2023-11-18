@@ -25,32 +25,30 @@
 #include "freertos/event_groups.h"
 #include "esp_heap_caps.h"
 
+/* *INDENT-OFF* */
 #ifdef __cplusplus
     extern "C" {
 #endif
+/* *INDENT-ON* */
 
-/* -----------------------------------------------------------------------------
- * SMP related API additions to FreeRTOS
- *
- * Todo: Move IDF FreeRTOS SMP related additions to this header as well (see
- * IDF-7201)
- * Todo: Add these SMP related additions to docs once they are combined with
- * IDF FreeRTOS.
- * -------------------------------------------------------------------------- */
 
-#if CONFIG_FREERTOS_SMP
+/* -------------------------------------------------- Task Creation ------------------------------------------------- */
+
+#if ( configSUPPORT_DYNAMIC_ALLOCATION == 1 )
 
 /**
  * @brief Create a new task that is pinned to a particular core
  *
- * Helper function to create a task that is pinned to a particular core, or has
- * no affinity. In other words, the created task will have an affinity mask of:
- * - (1 << xCoreID) if it is pinned to a particular core
- * - Set to tskNO_AFFINITY if it has no affinity
+ * This function is similar to xTaskCreate(), but allows the creation of a pinned
+ * task. The task's pinned core is specified by the xCoreID argument. If xCoreID
+ * is set to tskNO_AFFINITY, then the task is unpinned and can run on any core.
+ *
+ * @note If ( configNUM_CORES == 1 ), xCoreID is ignored.
  *
  * @param pxTaskCode Pointer to the task entry function.
  * @param pcName A descriptive name for the task.
- * @param usStackDepth The size of the task stack.
+ * @param ulStackDepth The size of the task stack specified as the NUMBER OF
+ * BYTES. Note that this differs from vanilla FreeRTOS.
  * @param pvParameters Pointer that will be used as the parameter for the task
  * being created.
  * @param uxPriority The priority at which the task should run.
@@ -63,21 +61,30 @@
  */
     BaseType_t xTaskCreatePinnedToCore( TaskFunction_t pxTaskCode,
                                         const char * const pcName,
-                                        const uint32_t usStackDepth,
+                                        const uint32_t ulStackDepth,
                                         void * const pvParameters,
                                         UBaseType_t uxPriority,
                                         TaskHandle_t * const pxCreatedTask,
                                         const BaseType_t xCoreID );
 
+#endif /* configSUPPORT_DYNAMIC_ALLOCATION */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Create a new static task that is pinned to a particular core
  *
- * This funciton is the static equivalent of xTaskCreatePinnedToCore().
+ * This function is similar to xTaskCreateStatic(), but allows the creation of a
+ * pinned task. The task's pinned core is specified by the xCoreID argument. If
+ * xCoreID is set to tskNO_AFFINITY, then the task is unpinned and can run on any
+ * core.
+ *
+ * @note If ( configNUM_CORES == 1 ), xCoreID is ignored.
  *
  * @param pxTaskCode Pointer to the task entry function.
  * @param pcName A descriptive name for the task.
- * @param ulStackDepth The size of the task stack.
+ * @param ulStackDepth The size of the task stack specified as the NUMBER OF
+ * BYTES. Note that this differs from vanilla FreeRTOS.
  * @param pvParameters Pointer that will be used as the parameter for the task
  * being created.
  * @param uxPriority The priority at which the task should run.
@@ -89,78 +96,147 @@
  * the task has no core affinity
  * @return The task handle if the task was created, NULL otherwise.
  */
-    #if ( configSUPPORT_STATIC_ALLOCATION == 1 )
-        TaskHandle_t xTaskCreateStaticPinnedToCore( TaskFunction_t pxTaskCode,
-                                                    const char * const pcName,
-                                                    const uint32_t ulStackDepth,
-                                                    void * const pvParameters,
-                                                    UBaseType_t uxPriority,
-                                                    StackType_t * const puxStackBuffer,
-                                                    StaticTask_t * const pxTaskBuffer,
-                                                    const BaseType_t xCoreID );
-    #endif /* configSUPPORT_STATIC_ALLOCATION */
+    TaskHandle_t xTaskCreateStaticPinnedToCore( TaskFunction_t pxTaskCode,
+                                                const char * const pcName,
+                                                const uint32_t ulStackDepth,
+                                                void * const pvParameters,
+                                                UBaseType_t uxPriority,
+                                                StackType_t * const puxStackBuffer,
+                                                StaticTask_t * const pxTaskBuffer,
+                                                const BaseType_t xCoreID );
+
+#endif /* configSUPPORT_STATIC_ALLOCATION */
+
+/* ------------------------------------------------- Task Utilities ------------------------------------------------- */
 
 /**
- * @brief Get the handle of the task running on a certain core
+ * @brief Get the current core ID of a particular task
+ *
+ * Helper function to get the core ID of a particular task. If the task is
+ * pinned to a particular core, the core ID is returned. If the task is not
+ * pinned to a particular core, tskNO_AFFINITY is returned.
+ *
+ * If CONFIG_FREERTOS_UNICORE is enabled, this function simply returns 0.
+ *
+ * [refactor-todo] See if this needs to be deprecated (IDF-8145)(IDF-8164)
+ *
+ * @note If CONFIG_FREERTOS_SMP is enabled, please call vTaskCoreAffinityGet()
+ * instead.
+ * @note In IDF FreerTOS when configNUMBER_OF_CORES == 1, this function will
+ * always return 0,
+ * @param xTask The task to query
+ * @return The task's core ID or tskNO_AFFINITY
+ */
+BaseType_t xTaskGetCoreID( TaskHandle_t xTask );
+
+/** @cond */
+/* Todo: Deprecate this API in favor of xTaskGetIdleTaskHandleForCore (IDF-8163) */
+static inline __attribute__( ( always_inline ) )
+BaseType_t xTaskGetAffinity( TaskHandle_t xTask )
+{
+    return xTaskGetCoreID( xTask );
+}
+/** @endcond */
+
+/**
+ * @brief Get the handle of idle task for the given core.
+ *
+ * [refactor-todo] See if this needs to be deprecated (IDF-8145)
+ *
+ * @note If CONFIG_FREERTOS_SMP is enabled, please call xTaskGetIdleTaskHandle()
+ * instead.
+ * @param xCoreID The core to query
+ * @return Handle of the idle task for the queried core
+ */
+TaskHandle_t xTaskGetIdleTaskHandleForCore( BaseType_t xCoreID );
+
+/** @cond */
+/* Todo: Deprecate this API in favor of xTaskGetIdleTaskHandleForCore (IDF-8163) */
+static inline __attribute__( ( always_inline ) )
+TaskHandle_t xTaskGetIdleTaskHandleForCPU( BaseType_t xCoreID )
+{
+    return xTaskGetIdleTaskHandleForCore( xCoreID );
+}
+/** @endcond */
+
+/**
+ * @brief Get the handle of the task currently running on a certain core
  *
  * Because of the nature of SMP processing, there is no guarantee that this
  * value will still be valid on return and should only be used for debugging
  * purposes.
  *
- * [refactor-todo] Mark this function as deprecated, call
- * xTaskGetCurrentTaskHandleCPU() instead
+ * [refactor-todo] See if this needs to be deprecated (IDF-8145)
  *
+ * @note If CONFIG_FREERTOS_SMP is enabled, please call xTaskGetCurrentTaskHandleCPU()
+ * instead.
  * @param xCoreID The core to query
  * @return Handle of the current task running on the queried core
  */
-    TaskHandle_t xTaskGetCurrentTaskHandleForCPU( BaseType_t xCoreID );
+TaskHandle_t xTaskGetCurrentTaskHandleForCore( BaseType_t xCoreID );
+
+/** @cond */
+/* Todo: Deprecate this API in favor of xTaskGetCurrentTaskHandleForCore (IDF-8163) */
+static inline __attribute__( ( always_inline ) )
+TaskHandle_t xTaskGetCurrentTaskHandleForCPU( BaseType_t xCoreID )
+{
+    return xTaskGetCurrentTaskHandleForCore( xCoreID );
+}
+/** @endcond */
+
+#if ( !CONFIG_FREERTOS_SMP && ( configGENERATE_RUN_TIME_STATS == 1 ) && ( INCLUDE_xTaskGetIdleTaskHandle == 1 ) )
 
 /**
- * @brief Get the handle of idle task for the given CPU.
+ * @brief Get the total execution of a particular core's idle task
  *
- * [refactor-todo] Mark this function as deprecated, call
- * xTaskGetIdleTaskHandle() instead
+ * This function is equivalent to ulTaskGetIdleRunTimeCounter() but queries the
+ * idle task of a particular core.
  *
- * @param xCoreID The core to query
- * @return Handle of the idle task for the queried core
+ * @param xCoreID Core ID of the idle task to query
+ * @return The total run time of the idle task
  */
-    TaskHandle_t xTaskGetIdleTaskHandleForCPU( BaseType_t xCoreID );
+    configRUN_TIME_COUNTER_TYPE ulTaskGetIdleRunTimeCounterForCore( BaseType_t xCoreID );
 
 /**
- * @brief Get the current core affinity of a particular task
+ * @brief Get the percentage run time of a particular core's idle task
  *
- * Helper function to get the core affinity of a particular task. If the task is
- * pinned to a particular core, the core ID is returned. If the task is not
- * pinned to a particular core, tskNO_AFFINITY is returned.
+ * This function is equivalent to ulTaskGetIdleRunTimePercent() but queries the
+ * idle task of a particular core.
  *
- * [refactor-todo] Mark this function as deprecated, call vTaskCoreAffinityGet()
- * instead
- *
- * @param xTask The task to query
- * @return The tasks coreID or tskNO_AFFINITY
+ * @param xCoreID Core ID of the idle task to query
+ * @return The percentage run time of the idle task
  */
-    BaseType_t xTaskGetAffinity( TaskHandle_t xTask );
+    configRUN_TIME_COUNTER_TYPE ulTaskGetIdleRunTimePercentForCore( BaseType_t xCoreID );
 
-#endif // CONFIG_FREERTOS_SMP
+#endif /* ( !CONFIG_FREERTOS_SMP && ( configGENERATE_RUN_TIME_STATS == 1 ) && ( INCLUDE_xTaskGetIdleTaskHandle == 1 ) ) */
 
-/* -----------------------------------------------------------------------------
- * TLSP Deletion Callback related API additions
+/**
+ * Returns the start of the stack associated with xTask.
  *
- * Todo: Move IDF FreeRTOS TLSP Deletion Callback related additions to this
- * header as well (see IDF-7201)
- * Todo: Add these SMP related additions to docs once they are combined with
- * IDF FreeRTOS.
- * -------------------------------------------------------------------------- */
+ * Returns the lowest stack memory address, regardless of whether the stack
+ * grows up or down.
+ *
+ * [refactor-todo] Change return type to StackType_t (IDF-8158)
+ *
+ * @param xTask Handle of the task associated with the stack returned.
+ * Set xTask to NULL to return the stack of the calling task.
+ *
+ * @return A pointer to the start of the stack.
+ */
+uint8_t * pxTaskGetStackStart( TaskHandle_t xTask );
 
-#if CONFIG_FREERTOS_SMP
+/* --------------------------------------------- TLSP Deletion Callbacks -------------------------------------------- */
 
-    #if ( CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS )
+#if CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS
 
 /**
  * Prototype of local storage pointer deletion callback.
  */
-        typedef void (* TlsDeleteCallbackFunction_t)( int,
-                                                      void * );
+    typedef void (* TlsDeleteCallbackFunction_t)( int,
+                                                  void * );
+#endif /* CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS */
+
+#if CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS
 
 /**
  * Set local storage pointer and deletion callback.
@@ -184,24 +260,21 @@
  * @param pvDelCallback  Function to call to dispose of the local storage
  * pointer when the task is deleted.
  */
-        void vTaskSetThreadLocalStoragePointerAndDelCallback( TaskHandle_t xTaskToSet,
-                                                              BaseType_t xIndex,
-                                                              void * pvValue,
-                                                              TlsDeleteCallbackFunction_t pvDelCallback );
-    #endif // CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS
+    void vTaskSetThreadLocalStoragePointerAndDelCallback( TaskHandle_t xTaskToSet,
+                                                          BaseType_t xIndex,
+                                                          void * pvValue,
+                                                          TlsDeleteCallbackFunction_t pvDelCallback );
 
-#endif // CONFIG_FREERTOS_SMP
+#endif /* CONFIG_FREERTOS_TLSP_DELETION_CALLBACKS */
 
-/* -----------------------------------------------------------------------------
- * Creation With Memory Caps
- *
- * Helper functions to create various FreeRTOS objects (e.g., queues,
- * semaphores) with specific memory capabilities (e.g., MALLOC_CAP_INTERNAL).
- * -------------------------------------------------------------------------- */
-
-#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+/* -------------------------------------------- Creation With Memory Caps ----------------------------------------------
+ * Helper functions to create various FreeRTOS objects (e.g., queues, semaphores) with specific memory capabilities
+ * (e.g., MALLOC_CAP_INTERNAL).
+ * ------------------------------------------------------------------------------------------------------------------ */
 
 /* ---------------------------------- Tasks --------------------------------- */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a pinned task where its stack has specific memory capabilities
@@ -237,6 +310,10 @@
                                                 TaskHandle_t * const pvCreatedTask,
                                                 const BaseType_t xCoreID,
                                                 UBaseType_t uxMemoryCaps );
+
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a task where its stack has specific memory capabilities
@@ -275,6 +352,10 @@
         return xTaskCreatePinnedToCoreWithCaps( pvTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pvCreatedTask, tskNO_AFFINITY, uxMemoryCaps );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes a task previously created using xTaskCreateWithCaps() or
  * xTaskCreatePinnedToCoreWithCaps()
@@ -283,7 +364,11 @@
  */
     void vTaskDeleteWithCaps( TaskHandle_t xTaskToDelete );
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
 /* ---------------------------------- Queue --------------------------------- */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a queue with specific memory capabilities
@@ -304,6 +389,10 @@
                                         UBaseType_t uxItemSize,
                                         UBaseType_t uxMemoryCaps );
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes a queue previously created using xQueueCreateWithCaps()
  *
@@ -311,14 +400,18 @@
  */
     void vQueueDeleteWithCaps( QueueHandle_t xQueue );
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
 /* -------------------------------- Semaphore ------------------------------- */
 
 /** @cond */ /* Doxygen command to hide this from docs */
-    SemaphoreHandle_t xSemaphoreCreateGenericWithCaps( UBaseType_t uxMaxCount,
-                                                       UBaseType_t uxInitialCount,
-                                                       const uint8_t ucQueueType,
-                                                       UBaseType_t uxMemoryCaps );
+SemaphoreHandle_t xSemaphoreCreateGenericWithCaps( UBaseType_t uxMaxCount,
+                                                   UBaseType_t uxInitialCount,
+                                                   const uint8_t ucQueueType,
+                                                   UBaseType_t uxMemoryCaps );
 /** @endcond */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a binary semaphore with specific memory capabilities
@@ -337,6 +430,10 @@
     {
         return xSemaphoreCreateGenericWithCaps( 0, 0, queueQUEUE_TYPE_BINARY_SEMAPHORE, uxMemoryCaps );
     }
+
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a counting semaphore with specific memory capabilities
@@ -361,6 +458,10 @@
         return xSemaphoreCreateGenericWithCaps( uxMaxCount, uxInitialCount, queueQUEUE_TYPE_COUNTING_SEMAPHORE, uxMemoryCaps );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Creates a mutex semaphore with specific memory capabilities
  *
@@ -378,6 +479,10 @@
     {
         return xSemaphoreCreateGenericWithCaps( 0, 0, queueQUEUE_TYPE_MUTEX, uxMemoryCaps );
     }
+
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a recursive mutex with specific memory capabilities
@@ -397,6 +502,10 @@
         return xSemaphoreCreateGenericWithCaps( 0, 0, queueQUEUE_TYPE_RECURSIVE_MUTEX, uxMemoryCaps );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes a semaphore previously created using one of the
  * xSemaphoreCreate...WithCaps() functions
@@ -405,17 +514,21 @@
  */
     void vSemaphoreDeleteWithCaps( SemaphoreHandle_t xSemaphore );
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
 /* ------------------------ Stream & Message Buffers ------------------------ */
 
 /** @cond */ /* Doxygen command to hide this from docs */
-    StreamBufferHandle_t xStreamBufferGenericCreateWithCaps( size_t xBufferSizeBytes,
-                                                             size_t xTriggerLevelBytes,
-                                                             BaseType_t xIsMessageBuffer,
-                                                             UBaseType_t uxMemoryCaps );
+StreamBufferHandle_t xStreamBufferGenericCreateWithCaps( size_t xBufferSizeBytes,
+                                                         size_t xTriggerLevelBytes,
+                                                         BaseType_t xIsMessageBuffer,
+                                                         UBaseType_t uxMemoryCaps );
 
-    void vStreamBufferGenericDeleteWithCaps( StreamBufferHandle_t xStreamBuffer,
-                                             BaseType_t xIsMessageBuffer );
+void vStreamBufferGenericDeleteWithCaps( StreamBufferHandle_t xStreamBuffer,
+                                         BaseType_t xIsMessageBuffer );
 /** @endcond */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a stream buffer with specific memory capabilities
@@ -441,6 +554,10 @@
         return xStreamBufferGenericCreateWithCaps( xBufferSizeBytes, xTriggerLevelBytes, pdFALSE, uxMemoryCaps );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes a stream buffer previously created using
  * xStreamBufferCreateWithCaps()
@@ -451,6 +568,10 @@
     {
         vStreamBufferGenericDeleteWithCaps( xStreamBuffer, pdFALSE );
     }
+
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates a message buffer with specific memory capabilities
@@ -473,6 +594,10 @@
         return ( MessageBufferHandle_t ) xStreamBufferGenericCreateWithCaps( xBufferSizeBytes, ( size_t ) 0, pdTRUE, uxMemoryCaps );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes a stream buffer previously created using
  * xMessageBufferCreateWithCaps()
@@ -484,7 +609,11 @@
         vStreamBufferGenericDeleteWithCaps( ( StreamBufferHandle_t ) xMessageBuffer, pdTRUE );
     }
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
 /* ------------------------------ Event Groups ------------------------------ */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
 
 /**
  * @brief Creates an event group with specific memory capabilities
@@ -501,6 +630,10 @@
  */
     EventGroupHandle_t xEventGroupCreateWithCaps( UBaseType_t uxMemoryCaps );
 
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
+
+#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
+
 /**
  * @brief Deletes an event group previously created using
  * xEventGroupCreateWithCaps()
@@ -509,8 +642,10 @@
  */
     void vEventGroupDeleteWithCaps( EventGroupHandle_t xEventGroup );
 
-#endif /* if ( configSUPPORT_STATIC_ALLOCATION == 1 ) */
+#endif /* configSUPPORT_STATIC_ALLOCATION == 1 */
 
+/* *INDENT-OFF* */
 #ifdef __cplusplus
-}
+    }
 #endif
+/* *INDENT-ON* */

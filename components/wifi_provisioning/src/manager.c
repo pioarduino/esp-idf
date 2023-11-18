@@ -558,6 +558,16 @@ static void prov_stop_and_notify(bool is_async)
         vTaskDelay(cleanup_delay / portTICK_PERIOD_MS);
     }
 
+    protocomm_remove_endpoint(prov_ctx->pc, "prov-ctrl");
+
+    protocomm_remove_endpoint(prov_ctx->pc, "prov-scan");
+
+    protocomm_remove_endpoint(prov_ctx->pc, "prov-config");
+
+    protocomm_unset_security(prov_ctx->pc, "prov-session");
+
+    protocomm_unset_version(prov_ctx->pc, "proto-ver");
+
     /* All the extra application added endpoints are also
      * removed automatically when prov_stop is called */
     prov_ctx->mgr_config.scheme.prov_stop(prov_ctx->pc);
@@ -950,7 +960,6 @@ static void wifi_prov_mgr_event_handler_internal(
 
         /* Set code corresponding to the reason for disconnection */
         switch (disconnected->reason) {
-        case WIFI_REASON_AUTH_EXPIRE:
         case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
         case WIFI_REASON_AUTH_FAIL:
         case WIFI_REASON_HANDSHAKE_TIMEOUT:

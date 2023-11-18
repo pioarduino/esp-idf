@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,6 +13,8 @@
 #include "lwip/mem.h"
 #include "lwip/ip_addr.h"
 #include "lwip/timeouts.h"
+#include "lwip/etharp.h"
+#include "lwip/prot/ethernet.h"
 
 #include "dhcpserver/dhcpserver.h"
 #include "dhcpserver/dhcpserver_options.h"
@@ -28,6 +30,7 @@
 #endif
 
 #define BOOTP_BROADCAST 0x8000
+#define BROADCAST_BIT_IS_SET(flag) (flag & BOOTP_BROADCAST)
 
 #define DHCP_REQUEST        1
 #define DHCP_REPLY          2
@@ -74,6 +77,18 @@
             DHCPS_LOG("dhcps: Illegal subnet mask.\n");                                                   \
             return ERR_ARG;                                                                               \
         }                                                                                                 \
+    } while (0)
+
+#define DHCP_CHECK_IP_MATCH_SUBNET_MASK(mask, ip)                           \
+    u32_t start_ip = 0;                                                     \
+    u32_t end_ip = 0;                                                       \
+    do {                                                                    \
+        start_ip = ip & mask;                                               \
+        end_ip = start_ip | ~mask;                                          \
+        if (ip == end_ip || ip == start_ip) {                               \
+            DHCPS_LOG("dhcps: ip address and subnet mask do not match.\n"); \
+            return ERR_ARG;                                                 \
+        }                                                                   \
     } while (0)
 
 #define MAX_STATION_NUM CONFIG_LWIP_DHCPS_MAX_STATION_NUM
@@ -496,34 +511,66 @@ static void create_msg(dhcps_t *dhcps, struct dhcps_msg *m)
     client.addr = *((uint32_t *) &dhcps->client_address);
 
     m->op = DHCP_REPLY;
-
     m->htype = DHCP_HTYPE_ETHERNET;
-
     m->hlen = 6;
 
-    m->hops = 0;
-//        os_memcpy((char *) xid, (char *) m->xid, sizeof(m->xid));
-    m->secs = 0;
+#if !ETHARP_SUPPORT_STATIC_ENTRIES
+    /* If the DHCP server does not support sending unicast message to the client,
+     * need to set the 'flags' field to broadcast */
     m->flags = htons(BOOTP_BROADCAST);
+#endif
 
     memcpy((char *) m->yiaddr, (char *) &client.addr, sizeof(m->yiaddr));
-
-    memset((char *) m->ciaddr, 0, sizeof(m->ciaddr));
-
-    memset((char *) m->siaddr, 0, sizeof(m->siaddr));
-
-    memset((char *) m->giaddr, 0, sizeof(m->giaddr));
-
-    memset((char *) m->sname, 0, sizeof(m->sname));
-
-    memset((char *) m->file, 0, sizeof(m->file));
-
-    memset((char *) m->options, 0, sizeof(m->options));
-
-    u32_t magic_cookie_temp = magic_cookie;
-
-    memcpy((char *) m->options, &magic_cookie_temp, sizeof(magic_cookie_temp));
+    memcpy((char *) m->options, &magic_cookie, sizeof(magic_cookie));
 }
+
+/******************************************************************************
+ * FunctionName : dhcps_response_ip_set
+ * Description  : set the ip address for sending to the DHCP client
+ * Parameters   : m -- DHCP message info
+ *                ip4_out -- ip address for sending
+ * Returns      : none
+*******************************************************************************/
+static void dhcps_response_ip_set(dhcps_t *dhcps, struct dhcps_msg *m, ip4_addr_t *ip4_out)
+{
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    ip4_addr_t ip4_giaddr;
+    ip4_addr_t ip4_ciaddr;
+    ip4_addr_t ip4_yiaddr;
+
+    struct eth_addr chaddr;
+    memcpy(chaddr.addr, m->chaddr, sizeof(chaddr.addr));
+    memcpy((char *)&ip4_giaddr.addr, (char *)m->giaddr, sizeof(m->giaddr));
+    memcpy((char *)&ip4_ciaddr.addr, (char *)m->ciaddr, sizeof(m->ciaddr));
+    memcpy((char *)&ip4_yiaddr.addr, (char *)m->yiaddr, sizeof(m->yiaddr));
+
+    if (!ip4_addr_isany_val(ip4_giaddr)) {
+        /* If the 'giaddr' field is non-zero, send return message to the address in 'giaddr'. (RFC 2131)*/
+        ip4_addr_set(ip4_out, &ip4_giaddr);
+        /* add the IP<->MAC as static entry into the arp table. */
+        etharp_add_static_entry(&ip4_giaddr, &chaddr);
+    } else {
+        if (!ip4_addr_isany_val(ip4_ciaddr)) {
+            /* If the 'giaddr' field is zero and the 'ciaddr' is nonzero,
+             * the server unicasts DHCPOFFER and DHCPACK message to the address in 'ciaddr'*/
+            ip4_addr_set(ip4_out, &ip4_ciaddr);
+            etharp_add_static_entry(&ip4_ciaddr, &chaddr);
+        } else if (!BROADCAST_BIT_IS_SET(htons(m->flags))) {
+            /* If the 'giaddr' is zero and 'ciaddr' is zero, and the broadcast bit is not set,
+             * the server unicasts DHCPOFFER and DHCPACK message to the client's hardware address and
+             * 'yiaddr' address. */
+            ip4_addr_set(ip4_out, &ip4_yiaddr);
+            etharp_add_static_entry(&ip4_yiaddr, &chaddr);
+        } else {
+            /* The server broadcast DHCPOFFER and DHCPACK message to 0xffffffff*/
+            ip4_addr_set(ip4_out, &dhcps->broadcast_dhcps);
+        }
+    }
+#else
+    ip4_addr_set(ip4_out, &dhcps->broadcast_dhcps);
+#endif
+}
+
 
 struct pbuf * dhcps_pbuf_alloc(u16_t len)
 {
@@ -602,12 +649,17 @@ static void send_offer(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
     }
 
     ip_addr_t ip_temp = IPADDR4_INIT(0x0);
-    ip4_addr_set(ip_2_ip4(&ip_temp), &dhcps->broadcast_dhcps);
+    dhcps_response_ip_set(dhcps, m, ip_2_ip4(&ip_temp));
 #if DHCPS_DEBUG
-    SendOffer_err_t = udp_sendto(pcb_dhcps, p, &ip_temp, DHCPS_CLIENT_PORT);
+    SendOffer_err_t = udp_sendto(dhcps->dhcps_pcb, p, &ip_temp, DHCPS_CLIENT_PORT);
     DHCPS_LOG("dhcps: send_offer>>udp_sendto result %x\n", SendOffer_err_t);
 #else
     udp_sendto(dhcps->dhcps_pcb, p, &ip_temp, DHCPS_CLIENT_PORT);
+#endif
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    /* remove the IP<->MAC from the arp table. */
+    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
 #endif
 
     if (p->ref != 0) {
@@ -680,12 +732,35 @@ static void send_nak(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
     }
 
     ip_addr_t ip_temp = IPADDR4_INIT(0x0);
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    ip4_addr_t ip4_giaddr;
+    struct eth_addr chaddr;
+    memcpy(chaddr.addr, m->chaddr, sizeof(chaddr.addr));
+    memcpy((char *)&ip4_giaddr.addr, (char *)m->giaddr, sizeof(m->giaddr));
+
+    if (!ip4_addr_isany_val(ip4_giaddr)) {
+        ip4_addr_set(ip_2_ip4(&ip_temp), &ip4_giaddr);
+        /* add the IP<->MAC as static entry into the arp table. */
+        etharp_add_static_entry(&ip4_giaddr, &chaddr);
+    } else {
+        /* when 'giaddr' is zero, the server broadcasts any DHCPNAK message to 0xffffffff. (RFC 2131)*/
+        ip4_addr_set(ip_2_ip4(&ip_temp), &dhcps->broadcast_dhcps);
+    }
+#else
     ip4_addr_set(ip_2_ip4(&ip_temp), &dhcps->broadcast_dhcps);
+#endif
+
 #if DHCPS_DEBUG
-    SendNak_err_t = udp_sendto(pcb_dhcps, p, &ip_temp, DHCPS_CLIENT_PORT);
+    SendNak_err_t = udp_sendto(dhcps->dhcps_pcb, p, &ip_temp, DHCPS_CLIENT_PORT);
     DHCPS_LOG("dhcps: send_nak>>udp_sendto result %x\n", SendNak_err_t);
 #else
     udp_sendto(dhcps->dhcps_pcb, p, &ip_temp, DHCPS_CLIENT_PORT);
+#endif
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    /* remove the IP<->MAC from the arp table. */
+    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
 #endif
 
     if (p->ref != 0) {
@@ -757,10 +832,15 @@ static void send_ack(dhcps_t *dhcps, struct dhcps_msg *m, u16_t len)
     }
 
     ip_addr_t ip_temp = IPADDR4_INIT(0x0);
-    ip4_addr_set(ip_2_ip4(&ip_temp), &dhcps->broadcast_dhcps);
+    dhcps_response_ip_set(dhcps, m, ip_2_ip4(&ip_temp));
     SendAck_err_t = udp_sendto(dhcps->dhcps_pcb, p, &ip_temp, DHCPS_CLIENT_PORT);
 #if DHCPS_DEBUG
     DHCPS_LOG("dhcps: send_ack>>udp_sendto result %x\n", SendAck_err_t);
+#endif
+
+#if ETHARP_SUPPORT_STATIC_ENTRIES
+    /* remove the IP<->MAC from the arp table. */
+    etharp_remove_static_entry(ip_2_ip4(&ip_temp));
 #endif
 
     if (SendAck_err_t == ERR_OK) {
@@ -1005,7 +1085,7 @@ POOL_CHECK:
 
 #if DHCPS_DEBUG
         DHCPS_LOG("dhcps: xid changed\n");
-        DHCPS_LOG("dhcps: client_address.addr = %x\n", client_address.addr);
+        DHCPS_LOG("dhcps: client_address.addr = %x\n", dhcps->client_address.addr);
 #endif
         return ret;
     }
@@ -1154,11 +1234,11 @@ static void handle_dhcp(void *arg,
 *******************************************************************************/
 static void dhcps_poll_set(dhcps_t *dhcps, u32_t ip)
 {
-    u32_t server_ip = 0, local_ip = 0;
+    u32_t server_ip = 0;
     u32_t start_ip = 0;
     u32_t end_ip = 0;
-    u32_t temp_local_ip = 0;
-    u32_t host_num = 0;
+    u32_t range_start_ip = 0;
+    u32_t range_end_ip = 0;
     dhcps_lease_t *dhcps_poll = &dhcps->dhcps_poll;
     if (dhcps_poll->enable == true) {
         server_ip = htonl(ip);
@@ -1166,40 +1246,40 @@ static void dhcps_poll_set(dhcps_t *dhcps, u32_t ip)
         end_ip = htonl(dhcps_poll->end_ip.addr);
 
         /*config ip information can't contain local ip*/
-        if ((start_ip <= server_ip) && (server_ip <= end_ip)) {
+        if ((server_ip >= start_ip) && (server_ip <= end_ip)) {
             dhcps_poll->enable = false;
         } else {
             /*config ip information must be in the same segment as the local ip*/
-            server_ip >>= 8;
 
-            if (((start_ip >> 8 != server_ip) || (end_ip >> 8 != server_ip))
-                    || (end_ip - start_ip > DHCPS_MAX_LEASE)) {
+            if (!ip4_addr_netcmp(&dhcps_poll->start_ip, &dhcps->server_address, &dhcps->dhcps_mask)
+                  || !ip4_addr_netcmp(&dhcps_poll->end_ip, &dhcps->server_address, &dhcps->dhcps_mask)
+                  || (end_ip - start_ip + 1 > DHCPS_MAX_LEASE)) {
                 dhcps_poll->enable = false;
             }
         }
     }
 
     if (dhcps_poll->enable == false) {
-        local_ip = server_ip = htonl(ip);
-        server_ip &= 0xFFFFFF00;
-        temp_local_ip = local_ip &= 0xFF;
+        server_ip = htonl(ip);
+        range_start_ip = server_ip & htonl(dhcps->dhcps_mask.addr);
+        range_end_ip = range_start_ip | ~htonl(dhcps->dhcps_mask.addr);
 
-        if (local_ip >= 0x80) {
-            local_ip -= DHCPS_MAX_LEASE;
-            temp_local_ip -= DHCPS_MAX_LEASE;
+        if (server_ip - range_start_ip > range_end_ip - server_ip) {
+            range_start_ip = range_start_ip + 1;
+            range_end_ip = server_ip - 1;
         } else {
-            local_ip ++;
+            range_start_ip = server_ip + 1;
+            range_end_ip = range_end_ip - 1;
         }
-
+        if (range_end_ip - range_start_ip + 1 > DHCPS_MAX_LEASE) {
+            range_end_ip = range_start_ip + DHCPS_MAX_LEASE - 1;
+        }
         bzero(dhcps_poll, sizeof(*dhcps_poll));
-        host_num = IP_CLASS_HOST_NUM(htonl(dhcps->dhcps_mask.addr));
-        if (host_num > DHCPS_MAX_LEASE) {
-            host_num = DHCPS_MAX_LEASE;
-        }
-        dhcps_poll->start_ip.addr = server_ip | local_ip;
-        dhcps_poll->end_ip.addr = server_ip | (temp_local_ip + host_num - 1);
+        dhcps_poll->start_ip.addr = range_start_ip;
+        dhcps_poll->end_ip.addr = range_end_ip;
         dhcps_poll->start_ip.addr = htonl(dhcps_poll->start_ip.addr);
         dhcps_poll->end_ip.addr = htonl(dhcps_poll->end_ip.addr);
+        dhcps_poll->enable = true;
     }
 
 }
@@ -1242,7 +1322,7 @@ err_t dhcps_start(dhcps_t *dhcps, struct netif *netif, ip4_addr_t ip)
     dhcps->dhcps_pcb = udp_new();
 
     if (dhcps->dhcps_pcb == NULL || ip4_addr_isany_val(ip)) {
-        printf("dhcps_start(): could not obtain pcb\n");
+        DHCPS_LOG("dhcps_start(): could not obtain pcb\n");
         return ERR_ARG;
     }
 
@@ -1250,6 +1330,7 @@ err_t dhcps_start(dhcps_t *dhcps, struct netif *netif, ip4_addr_t ip)
 
     dhcps->server_address.addr = ip.addr;
     DHCP_CHECK_SUBNET_MASK_IP(htonl(dhcps->dhcps_mask.addr));
+    DHCP_CHECK_IP_MATCH_SUBNET_MASK(htonl(dhcps->dhcps_mask.addr), htonl(ip.addr));
     dhcps_poll_set(dhcps, dhcps->server_address.addr);
 
     dhcps->client_address_plus.addr = dhcps->dhcps_poll.start_ip.addr;

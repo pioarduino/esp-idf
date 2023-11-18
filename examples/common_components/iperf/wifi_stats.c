@@ -148,7 +148,7 @@ int wifi_cmd_get_tx_statistics(int argc, char **argv)
 {
     uint8_t i, h, j, k;
 
-    ESP_LOGW(TAG, "Get tx statistics\n");
+    ESP_LOGW(TAG, "Get tx statistics");
     esp_test_tx_tb_statistics_t tb_stats = { 0, };               //32 bytes
     esp_test_tx_statistics_t tx_stats = { 0, };                  //136 bytes
     esp_test_tx_fail_statistics_t tx_fail[TEST_TX_FAIL_MAX] = { 0, }; //TEST_TX_FAIL_MAX * 164 bytes
@@ -210,7 +210,7 @@ int wifi_cmd_get_tx_statistics(int argc, char **argv)
                tx_stats.collision, tx_stats.timeout);
 
         float tot_rtt_ms = (float) tx_stats.tx_tot_rtt / (float) 1000;
-        printf("(test)aci:%" PRIu8 ", seqno_rtt[%" PRIu32 ",%" PRIu32 "], hw_rtt[%" PRIu32 ", %" PRIu32 "], muedca[enable:%" PRIu32 ", times:%" PRIi64 ", %.2f, %.2f, tot:%.2f], avg:%.3f ms, tot:%.3f secs\n",
+        printf("(test)aci:%" PRIu8 ", seqno_rtt[%" PRIu32 ",%" PRIu32 "], hw_rtt[%" PRIu32 ", %" PRIu32 "], muedca[enable:%" PRIu32 ", times:%" PRIu32 ", %.2f, %.2f, tot:%.2f], avg:%.3f ms, tot:%.3f secs\n",
                i,
                tx_stats.tx_seq_min_rtt,
                tx_stats.tx_seq_max_rtt,

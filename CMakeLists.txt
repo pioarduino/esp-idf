@@ -22,6 +22,9 @@ if(NOT BOOTLOADER_BUILD)
         endif()
     elseif(CONFIG_COMPILER_OPTIMIZATION_DEBUG)
         list(APPEND compile_options "-Og")
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU" AND NOT CONFIG_IDF_TARGET_LINUX)
+            list(APPEND compile_options "-fno-shrink-wrap")  # Disable shrink-wrapping to reduce binary size
+        endif()
     elseif(CONFIG_COMPILER_OPTIMIZATION_NONE)
         list(APPEND compile_options "-O0")
     elseif(CONFIG_COMPILER_OPTIMIZATION_PERF)
@@ -37,6 +40,9 @@ else()  # BOOTLOADER_BUILD
         endif()
     elseif(CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_DEBUG)
         list(APPEND compile_options "-Og")
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU" AND NOT CONFIG_IDF_TARGET_LINUX)
+            list(APPEND compile_options "-fno-shrink-wrap")  # Disable shrink-wrapping to reduce binary size
+        endif()
     elseif(CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_NONE)
         list(APPEND compile_options "-O0")
     elseif(CONFIG_BOOTLOADER_COMPILER_OPTIMIZATION_PERF)
@@ -186,6 +192,13 @@ if(CONFIG_COMPILER_DISABLE_GCC12_WARNINGS)
                                 "-Wno-use-after-free")
 endif()
 
+if(CONFIG_COMPILER_DISABLE_GCC13_WARNINGS)
+    list(APPEND compile_options "-Wno-xor-used-as-pow")
+    list(APPEND c_compile_options "-Wno-enum-int-mismatch")
+    list(APPEND cxx_compile_options "-Wno-self-move"
+                                    "-Wno-dangling-reference")
+endif()
+
 # GCC-specific options
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     list(APPEND compile_options "-fstrict-volatile-bitfields"
@@ -224,11 +237,10 @@ endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
     list(APPEND compile_options "-fno-use-cxa-atexit")
-    if(CONFIG_COMPILER_RT_LIB_GCCLIB)
-        list(APPEND link_options "-rtlib=libgcc")
-    elseif(CONFIG_COMPILER_RT_LIB_CLANGRT)
-        list(APPEND link_options "-rtlib=compiler-rt")
-    endif()
+endif()
+
+if(COMPILER_RT_LIB_NAME)
+    list(APPEND link_options "-rtlib=${CONFIG_COMPILER_RT_LIB_NAME}")
 endif()
 
 # For the transition period from 32-bit time_t to 64-bit time_t,

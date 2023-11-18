@@ -18,6 +18,7 @@
 #include "esp_check.h"
 #include "driver/rmt_encoder.h"
 #include "rmt_private.h"
+#include "hal/hal_utils.h"
 
 static const char *TAG = "rmt";
 
@@ -46,15 +47,6 @@ static esp_err_t rmt_bytes_encoder_reset(rmt_encoder_t *encoder)
     return ESP_OK;
 }
 
-__attribute__((always_inline))
-static inline uint8_t _bitwise_reverse(uint8_t n)
-{
-    n = ((n & 0xf0) >> 4) | ((n & 0x0f) << 4);
-    n = ((n & 0xcc) >> 2) | ((n & 0x33) << 2);
-    n = ((n & 0xaa) >> 1) | ((n & 0x55) << 1);
-    return n;
-}
-
 static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_handle_t channel,
         const void *primary_data, size_t data_size, rmt_encode_state_t *ret_state)
 {
@@ -62,8 +54,8 @@ static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_han
     rmt_tx_channel_t *tx_chan = __containerof(channel, rmt_tx_channel_t, base);
     const uint8_t *nd = (const uint8_t *)primary_data;
     rmt_encode_state_t state = RMT_ENCODING_RESET;
-    dma_descriptor_t *desc0 = NULL;
-    dma_descriptor_t *desc1 = NULL;
+    rmt_dma_descriptor_t *desc0 = NULL;
+    rmt_dma_descriptor_t *desc1 = NULL;
 
     size_t byte_index = bytes_encoder->last_byte_index;
     size_t bit_index = bytes_encoder->last_bit_index;
@@ -72,7 +64,12 @@ static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_han
     // how many symbols we can save for this round
     size_t mem_have = tx_chan->mem_end - tx_chan->mem_off;
     // where to put the encoded symbols? DMA buffer or RMT HW memory
-    rmt_symbol_word_t *mem_to = channel->dma_chan ? channel->dma_mem_base : channel->hw_mem_base;
+    rmt_symbol_word_t *mem_to_nc = NULL;
+    if (channel->dma_chan) {
+        mem_to_nc = (rmt_symbol_word_t *)RMT_GET_NON_CACHE_ADDR(channel->dma_mem_base);
+    } else {
+        mem_to_nc = channel->hw_mem_base;
+    }
     // how many symbols will be encoded in this round
     size_t encode_len = MIN(mem_want, mem_have);
     bool encoding_truncated = mem_have < mem_want;
@@ -81,9 +78,9 @@ static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_han
     if (channel->dma_chan) {
         // mark the start descriptor
         if (tx_chan->mem_off < tx_chan->ping_pong_symbols) {
-            desc0 = &tx_chan->dma_nodes[0];
+            desc0 = &tx_chan->dma_nodes_nc[0];
         } else {
-            desc0 = &tx_chan->dma_nodes[1];
+            desc0 = &tx_chan->dma_nodes_nc[1];
         }
     }
 
@@ -93,13 +90,13 @@ static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_han
         uint8_t cur_byte = nd[byte_index];
         // bit-wise reverse
         if (bytes_encoder->flags.msb_first) {
-            cur_byte = _bitwise_reverse(cur_byte);
+            cur_byte = hal_utils_bitwise_reverse8(cur_byte);
         }
         while ((len > 0) && (bit_index < 8)) {
             if (cur_byte & (1 << bit_index)) {
-                mem_to[tx_chan->mem_off++] = bytes_encoder->bit1;
+                mem_to_nc[tx_chan->mem_off++] = bytes_encoder->bit1;
             } else {
-                mem_to[tx_chan->mem_off++] = bytes_encoder->bit0;
+                mem_to_nc[tx_chan->mem_off++] = bytes_encoder->bit0;
             }
             len--;
             bit_index++;
@@ -113,9 +110,9 @@ static size_t IRAM_ATTR rmt_encode_bytes(rmt_encoder_t *encoder, rmt_channel_han
     if (channel->dma_chan) {
         // mark the end descriptor
         if (tx_chan->mem_off < tx_chan->ping_pong_symbols) {
-            desc1 = &tx_chan->dma_nodes[0];
+            desc1 = &tx_chan->dma_nodes_nc[0];
         } else {
-            desc1 = &tx_chan->dma_nodes[1];
+            desc1 = &tx_chan->dma_nodes_nc[1];
         }
 
         // cross line, means desc0 has prepared with sufficient data buffer
@@ -168,8 +165,8 @@ static size_t IRAM_ATTR rmt_encode_copy(rmt_encoder_t *encoder, rmt_channel_hand
     rmt_tx_channel_t *tx_chan = __containerof(channel, rmt_tx_channel_t, base);
     rmt_symbol_word_t *symbols = (rmt_symbol_word_t *)primary_data;
     rmt_encode_state_t state = RMT_ENCODING_RESET;
-    dma_descriptor_t *desc0 = NULL;
-    dma_descriptor_t *desc1 = NULL;
+    rmt_dma_descriptor_t *desc0 = NULL;
+    rmt_dma_descriptor_t *desc1 = NULL;
 
     size_t symbol_index = copy_encoder->last_symbol_index;
     // how many symbols will be copied by the encoder
@@ -177,7 +174,12 @@ static size_t IRAM_ATTR rmt_encode_copy(rmt_encoder_t *encoder, rmt_channel_hand
     // how many symbols we can save for this round
     size_t mem_have = tx_chan->mem_end - tx_chan->mem_off;
     // where to put the encoded symbols? DMA buffer or RMT HW memory
-    rmt_symbol_word_t *mem_to = channel->dma_chan ? channel->dma_mem_base : channel->hw_mem_base;
+    rmt_symbol_word_t *mem_to_nc = NULL;
+    if (channel->dma_chan) {
+        mem_to_nc = (rmt_symbol_word_t *)RMT_GET_NON_CACHE_ADDR(channel->dma_mem_base);
+    } else {
+        mem_to_nc = channel->hw_mem_base;
+    }
     // how many symbols will be encoded in this round
     size_t encode_len = MIN(mem_want, mem_have);
     bool encoding_truncated = mem_have < mem_want;
@@ -186,24 +188,24 @@ static size_t IRAM_ATTR rmt_encode_copy(rmt_encoder_t *encoder, rmt_channel_hand
     if (channel->dma_chan) {
         // mark the start descriptor
         if (tx_chan->mem_off < tx_chan->ping_pong_symbols) {
-            desc0 = &tx_chan->dma_nodes[0];
+            desc0 = &tx_chan->dma_nodes_nc[0];
         } else {
-            desc0 = &tx_chan->dma_nodes[1];
+            desc0 = &tx_chan->dma_nodes_nc[1];
         }
     }
 
     size_t len = encode_len;
     while (len > 0) {
-        mem_to[tx_chan->mem_off++] = symbols[symbol_index++];
+        mem_to_nc[tx_chan->mem_off++] = symbols[symbol_index++];
         len--;
     }
 
     if (channel->dma_chan) {
         // mark the end descriptor
         if (tx_chan->mem_off < tx_chan->ping_pong_symbols) {
-            desc1 = &tx_chan->dma_nodes[0];
+            desc1 = &tx_chan->dma_nodes_nc[0];
         } else {
-            desc1 = &tx_chan->dma_nodes[1];
+            desc1 = &tx_chan->dma_nodes_nc[1];
         }
 
         // cross line, means desc0 has prepared with sufficient data buffer

@@ -11,7 +11,7 @@ Build the project by running:
 
     idf.py build
 
-This command will compile the application and all ESP-IDF components, then it will generate the bootloader, partition table, and application binaries.
+This command compiles the application and all ESP-IDF components, then it generates the bootloader, partition table, and application binaries.
 
 .. code-block:: none
 
@@ -33,7 +33,7 @@ This command will compile the application and all ESP-IDF components, then it wi
     ../../../components/esptool_py/esptool/esptool.py -p (PORT) -b 921600 write_flash --flash_mode dio --flash_size detect --flash_freq 40m 0x10000 build/hello_world.bin  build 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin
     or run 'idf.py -p PORT flash'
 
-If there are no errors, the build will finish by generating the firmware binary .bin files.
+If there are no errors, the build finishes by generating the firmware binary .bin files.
 
 
 Flash onto the Device
@@ -53,7 +53,7 @@ For more information on ``idf.py`` arguments, see :ref:`idf.py`.
 
     The option ``flash`` automatically builds and flashes the project, so running ``idf.py build`` is not necessary.
 
-Encountered Issues While Flashing? See this :doc:`flashing-troubleshooting` page or :doc:`establish-serial-connection` for more detailed information.
+Encountered Issues While Flashing? See the "Additional Tips" below. You can also refer to :doc:`flashing-troubleshooting` page or :doc:`establish-serial-connection` for more detailed information.
 
 Normal Operation
 ~~~~~~~~~~~~~~~~
@@ -320,6 +320,9 @@ When flashing, you will see the output log similar to the following:
 
 .. only:: esp32h2
 
+    .. code-block:: none
+
+        ...
         esptool esp32h2 -p /dev/ttyUSB0 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 48m --flash_size 2MB 0x0 bootloader/bootloader.bin 0x10000 hello_world.bin 0x8000 partition_table/partition-table.bin
         esptool.py v4.6
         Serial port /dev/ttyUSB0
@@ -357,9 +360,9 @@ When flashing, you will see the output log similar to the following:
         Leaving...
         Hard resetting via RTS pin...
 
-If there are no issues by the end of the flash process, the board will reboot and start up the “hello_world” application.
+If there are no issues by the end of the flash process, the board will reboot and start up the "hello_world" application.
 
-If you'd like to use the Eclipse or VS Code IDE instead of running ``idf.py``, check out `Eclipse Plugin <https://github.com/espressif/idf-eclipse-plugin/blob/master/README.md>`_, `VSCode Extension <https://github.com/espressif/vscode-esp-idf-extension/blob/master/docs/tutorial/install.md>`_.
+If you would like to use the Eclipse or VS Code IDE instead of running ``idf.py``, check out `Eclipse Plugin <https://github.com/espressif/idf-eclipse-plugin/blob/master/README.md>`_, `VSCode Extension <https://github.com/espressif/vscode-esp-idf-extension/blob/master/docs/tutorial/install.md>`_.
 
 Monitor the Output
 ==================
@@ -430,7 +433,7 @@ See also:
 - :doc:`IDF Monitor <../api-guides/tools/idf-monitor>` for handy shortcuts and more details on using IDF monitor.
 - :ref:`idf.py` for a full reference of ``idf.py`` commands and options.
 
-**That's all that you need to get started with {IDF_TARGET_NAME}!**
+**That is all that you need to get started with {IDF_TARGET_NAME}!**
 
 Now you are ready to try some other :idf:`examples`, or go straight to developing your own applications.
 
@@ -441,18 +444,19 @@ Now you are ready to try some other :idf:`examples`, or go straight to developin
     If building an example, please check the README file for the ``Supported Targets`` table. If this is present including {IDF_TARGET_NAME} target, or the table does not exist at all, the example will work on {IDF_TARGET_NAME}.
 
 
+
 Additional Tips
 ===============
 
-Permission issues /dev/ttyUSB0
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Permission Denied Issue
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-With some Linux distributions, you may get the ``Failed to open port /dev/ttyUSB0`` error message when flashing the {IDF_TARGET_NAME}. :ref:`This can be solved by adding the current user to the dialout group<linux-dialout-group>`.
+With some Linux distributions, you may get the error message similar to ``Could not open port <PORT>: Permission denied: '<PORT>'`` when flashing the {IDF_TARGET_NAME}. :ref:`This can be solved by adding the current user to the specific group <linux-dialout-group>`, such as ``dialout`` or ``uucp`` group.
 
-Python compatibility
+Python Compatibility
 ~~~~~~~~~~~~~~~~~~~~
 
-ESP-IDF supports Python 3.7 or newer. It is recommended to upgrade your operating system to a recent version satisfying this requirement. Other options include the installation of Python from `sources <https://www.python.org/downloads/>`_ or the use of a Python version management system such as `pyenv <https://github.com/pyenv/pyenv>`_.
+ESP-IDF supports Python 3.8 or newer. It is recommended to upgrade your operating system to a recent version satisfying this requirement. Other options include the installation of Python from `sources <https://www.python.org/downloads/>`_ or the use of a Python version management system such as `pyenv <https://github.com/pyenv/pyenv>`_.
 
 .. only:: esp32 or esp32s2 or esp32s3
 
@@ -471,7 +475,7 @@ ESP-IDF supports Python 3.7 or newer. It is recommended to upgrade your operatin
 
     .. only:: esp32
 
-        **Here's an example of how to add ESP-WROVER-KIT BSP to your project:**
+        **Here is an example of how to add ESP-WROVER-KIT BSP to your project:**
 
         .. code-block:: bash
 
@@ -479,7 +483,7 @@ ESP-IDF supports Python 3.7 or newer. It is recommended to upgrade your operatin
 
     .. only:: esp32s2
 
-        **Here's an example of how to add ESP32-S2-Kaluga-Kit BSP to your project:**
+        **Here is an example of how to add ESP32-S2-Kaluga-Kit BSP to your project:**
 
         .. code-block:: bash
 
@@ -487,7 +491,7 @@ ESP-IDF supports Python 3.7 or newer. It is recommended to upgrade your operatin
 
     .. only:: esp32s3
 
-        **Here's an example of how to add ESP-BOX BSP to your project:**
+        **Here is an example of how to add ESP-BOX BSP to your project:**
 
         .. code-block:: bash
 

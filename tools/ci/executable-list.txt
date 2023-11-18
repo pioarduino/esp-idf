@@ -40,6 +40,7 @@ examples/build_system/cmake/idf_as_lib/run.sh
 examples/common_components/protocol_examples_tapif_io/make_tap_netif
 examples/storage/parttool/parttool_example.py
 examples/storage/parttool/parttool_example.sh
+examples/system/app_trace_to_plot/read_trace.py
 examples/system/ota/otatool/get_running_partition.py
 examples/system/ota/otatool/otatool_example.py
 examples/system/ota/otatool/otatool_example.sh
@@ -53,17 +54,20 @@ tools/ci/check_callgraph.py
 tools/ci/check_codeowners.py
 tools/ci/check_deprecated_kconfigs.py
 tools/ci/check_esp_memory_utils_headers.sh
+tools/ci/check_examples_extra_component_dirs.sh
 tools/ci/check_examples_rom_header.sh
 tools/ci/check_executables.py
 tools/ci/check_idf_version.sh
 tools/ci/check_kconfigs.py
 tools/ci/check_readme_links.py
 tools/ci/check_requirement_files.py
+tools/ci/check_rules_components_patterns.py
 tools/ci/check_rules_yml.py
 tools/ci/check_soc_struct_headers.py
 tools/ci/check_tools_files_patterns.py
 tools/ci/check_type_comments.py
 tools/ci/checkout_project_ref.py
+tools/ci/cleanup_ignore_lists.py
 tools/ci/deploy_docs.py
 tools/ci/envsubst.py
 tools/ci/fix_empty_prototypes.sh
@@ -74,9 +78,6 @@ tools/ci/mirror-submodule-update.sh
 tools/ci/multirun_with_pyenv.sh
 tools/ci/push_to_github.sh
 tools/ci/test_autocomplete.py
-tools/ci/test_build_system_cmake.sh
-tools/ci/test_build_system_spaces.py
-tools/ci/test_check_kconfigs.py
 tools/ci/test_configure_ci_environment.sh
 tools/ci/test_reproducible_build.sh
 tools/docker/entrypoint.sh
@@ -85,6 +86,7 @@ tools/esp_app_trace/sysviewtrace_proc.py
 tools/esp_app_trace/test/logtrace/test.sh
 tools/esp_app_trace/test/sysview/test.sh
 tools/format.sh
+tools/gdb_panic_server.py
 tools/gen_esp_err_to_name.py
 tools/gen_soc_caps_kconfig/gen_soc_caps_kconfig.py
 tools/gen_soc_caps_kconfig/test/test_gen_soc_caps_kconfig.py
@@ -109,6 +111,3 @@ tools/test_idf_py/test_hints.py
 tools/test_idf_py/test_idf_py.py
 tools/test_idf_tools/test_idf_tools.py
 tools/test_mkdfu/test_mkdfu.py
-tools/test_mkuf2/test_mkuf2.py
-tools/unit-test-app/tools/get_available_configs.sh
-tools/unit-test-app/unit_test.py

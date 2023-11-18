@@ -34,23 +34,25 @@ MCPWM 外设是一个多功能 PWM 生成器，集成多个子模块，在电力
 
 下文将分节概述 MCPWM 的功能：
 
-- :ref:`mcpwm-resource-allocation-and-initialization` - 介绍各类 MCPWM 模块的分配，如定时器、操作器、比较器、生成器等。随后介绍的 IO 设置和控制功能也将围绕这些模块进行。
-- :ref:`mcpwm-timer-operations-and-events` - 介绍 MCPWM 定时器支持的控制功能和事件回调。
-- :ref:`mcpwm-comparator-operations-and-events` - 介绍 MCPWM 比较器支持的控制功能和事件回调。
-- :ref:`mcpwm-generator-actions-on-events` - 介绍如何针对 MCPWM 定时器和比较器生成的特定事件，设置 MCPWM 生成器的相应执行操作。
-- :ref:`mcpwm-classical-pwm-waveforms-and-generator-configurations` - 介绍一些经典 PWM 波形的生成器配置。
-- :ref:`mcpwm-dead-time` - 介绍如何设置 MCPWM 生成器的死区时间。
-- :ref:`mcpwm-classical-pwm-waveforms-and-dead-time-configurations` - 介绍一些经典 PWM 波形的死区配置。
-- :ref:`mcpwm-carrier-modulation` - 介绍如何在最终输出的 PWM 波形上调制高频载波。
-- :ref:`mcpwm-faults-and-brake-actions` - 介绍如何为 MCPWM 操作器配置特定故障事件下的制动操作。
-- :ref:`mcpwm-generator-force-actions` - 介绍如何强制异步控制生成器的输出水平。
-- :ref:`mcpwm-synchronization` - 介绍如何同步 MCPWM 定时器，并确保生成的最终输出 PWM 信号具有固定的相位差。
-- :ref:`mcpwm-capture` - 介绍如何使用 MCPWM 捕获模块测量信号脉宽。
-- :ref:`mcpwm-power-management` - 介绍不同的时钟源对功耗的影响。
-- :ref:`mcpwm-iram-safe` - 介绍如何协调 RMT 中断与禁用缓存。
-- :ref:`mcpwm-thread-safety` - 列出了由驱动程序认证为线程安全的 API。
-- :ref:`mcpwm-kconfig-options` - 列出了针对驱动的数个 Kconfig 支持选项。
+.. list::
 
+    - :ref:`mcpwm-resource-allocation-and-initialization` - 介绍各类 MCPWM 模块的分配，如定时器、操作器、比较器、生成器等。随后介绍的 IO 设置和控制功能也将围绕这些模块进行。
+    - :ref:`mcpwm-timer-operations-and-events` - 介绍 MCPWM 定时器支持的控制功能和事件回调。
+    - :ref:`mcpwm-comparator-operations-and-events` - 介绍 MCPWM 比较器支持的控制功能和事件回调。
+    - :ref:`mcpwm-generator-actions-on-events` - 介绍如何针对 MCPWM 定时器和比较器生成的特定事件，设置 MCPWM 生成器的相应执行操作。
+    - :ref:`mcpwm-classical-pwm-waveforms-and-generator-configurations` - 介绍一些经典 PWM 波形的生成器配置。
+    - :ref:`mcpwm-dead-time` - 介绍如何设置 MCPWM 生成器的死区时间。
+    - :ref:`mcpwm-classical-pwm-waveforms-and-dead-time-configurations` - 介绍一些经典 PWM 波形的死区配置。
+    - :ref:`mcpwm-carrier-modulation` - 介绍如何在最终输出的 PWM 波形上调制高频载波。
+    - :ref:`mcpwm-faults-and-brake-actions` - 介绍如何为 MCPWM 操作器配置特定故障事件下的制动操作。
+    - :ref:`mcpwm-generator-force-actions` - 介绍如何强制异步控制生成器的输出水平。
+    - :ref:`mcpwm-synchronization` - 介绍如何同步 MCPWM 定时器，并确保生成的最终输出 PWM 信号具有固定的相位差。
+    - :ref:`mcpwm-capture` - 介绍如何使用 MCPWM 捕获模块测量信号脉宽。
+    :SOC_MCPWM_SUPPORT_ETM: - :ref:`mcpwm-etm-event-and-task` - MCPWM 提供了哪些事件和任务可以连接到 ETM 通道上。
+    - :ref:`mcpwm-power-management` - 介绍不同的时钟源对功耗的影响。
+    - :ref:`mcpwm-iram-safe` - 介绍如何协调 RMT 中断与禁用缓存。
+    - :ref:`mcpwm-thread-safety` - 列出了由驱动程序认证为线程安全的 API。
+    - :ref:`mcpwm-kconfig-options` - 列出了针对驱动的数个 Kconfig 支持选项。
 
 .. _mcpwm-resource-allocation-and-initialization:
 
@@ -65,6 +67,7 @@ MCPWM 定时器
 调用 :cpp:func:`mcpwm_new_timer` 函数，以配置结构体 :cpp:type:`mcpwm_timer_config_t` 为参数，分配一个 MCPWM 定时器为对象。结构体定义为：
 
 - :cpp:member:`mcpwm_timer_config_t::group_id` 指定 MCPWM 组 ID，范围为 [0, :c:macro:`SOC_MCPWM_GROUPS` - 1]。需注意，位于不同组的定时器彼此独立。
+- :cpp:member:`mcpwm_timer_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则会分配一个默认优先级的中断，否则会使用指定的优先级。
 - :cpp:member:`mcpwm_timer_config_t::clk_src` 设置定时器的时钟源。
 - :cpp:member:`mcpwm_timer_config_t::resolution_hz` 设置定时器的预期分辨率。内部驱动将根据时钟源和分辨率设置合适的分频器。
 - :cpp:member:`mcpwm_timer_config_t::count_mode` 设置定时器的计数模式。
@@ -82,6 +85,7 @@ MCPWM 操作器
 调用 :cpp:func:`mcpwm_new_operator` 函数，以配置结构体 :cpp:type:`mcpwm_operator_config_t` 为参数，分配一个 MCPWM 操作器为对象。结构体定义为：
 
 - :cpp:member:`mcpwm_operator_config_t::group_id` 指定 MCPWM 组 ID，范围为 [0, :c:macro:`SOC_MCPWM_GROUPS` - 1]。需注意，位于不同组的操作器彼此独立。
+- :cpp:member:`mcpwm_operator_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则会分配一个默认优先级的中断，否则会使用指定的优先级。
 - :cpp:member:`mcpwm_operator_config_t::update_gen_action_on_tez` 设置是否在定时器计数为零时更新生成器操作。此处及下文提到的定时器指通过 :cpp:func:`mcpwm_operator_connect_timer` 连接到操作器的定时器。
 - :cpp:member:`mcpwm_operator_config_t::update_gen_action_on_tep` 设置当定时器计数达到峰值时是否更新生成器操作。
 - :cpp:member:`mcpwm_operator_config_t::update_gen_action_on_sync` 设置当定时器接收同步信号时是否更新生成器操作。
@@ -98,6 +102,7 @@ MCPWM 比较器
 
 调用 :cpp:func:`mcpwm_new_comparator` 函数，以一个 MCPWM 操作器句柄和配置结构体 :cpp:type:`mcpwm_comparator_config_t` 为参数，分配一个 MCPWM 比较器为对象。操作器句柄由 :cpp:func:`mcpwm_new_operator` 生成，结构体定义为：
 
+- :cpp:member:`mcpwm_comparator_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则会分配一个默认优先级的中断，否则会使用指定的优先级。
 - :cpp:member:`mcpwm_comparator_config_t::update_cmp_on_tez` 设置当定时器计数为零时是否更新比较阈值。
 - :cpp:member:`mcpwm_comparator_config_t::update_cmp_on_tep` 设置当定时器计数达到峰值时是否更新比较阈值。
 - :cpp:member:`mcpwm_comparator_config_t::update_cmp_on_sync` 设置当定时器接收同步信号时是否更新比较阈值。
@@ -105,6 +110,10 @@ MCPWM 比较器
 分配成功后，:cpp:func:`mcpwm_new_comparator` 将返回一个指向已分配比较器的指针。否则，函数将返回错误代码。具体来说，当 MCPWM 操作器中没有空闲比较器时，将返回 :c:macro:`ESP_ERR_NOT_FOUND` 错误。[1]_
 
 反之，调用 :cpp:func:`mcpwm_del_comparator` 函数将释放已分配的比较器。
+
+.. only:: SOC_MCPWM_SUPPORT_EVENT_COMPARATOR
+
+    MCPWM 中还有另外一种比较器 —— “事件比较器”，它不能直接控制 PWM 的输出，只能用来产生 EMT 子系统中使用到的事件。事件比较器能够设置的阈值也是可配的。调用 :cpp:func:`mcpwm_new_event_comparator` 函数可以申请一个事件比较器，该函数返回的句柄类型和 :cpp:func:`mcpwm_new_comparator` 函数一样，但是需要的配置结构体是不同的。事件比较器的配置位于 :cpp:type:`mcpwm_event_comparator_config_t`。更多相关内容请参阅 :ref:`mcpwm-etm-event-and-task`。
 
 MCPWM 生成器
 ~~~~~~~~~~~~~~~~
@@ -114,6 +123,8 @@ MCPWM 生成器
 - :cpp:member:`mcpwm_generator_config_t::gen_gpio_num` 设置生成器使用的 GPIO 编号。
 - :cpp:member:`mcpwm_generator_config_t::invert_pwm` 设置是否反相 PWM 信号。
 - :cpp:member:`mcpwm_generator_config_t::io_loop_back` 设置是否启用回环模式。该模式仅用于调试，使用 GPIO 交换矩阵外设同时启用 GPIO 输入和输出。
+- :cpp:member:`mcpwm_generator_config_t::io_od_mode` 设置是否启用漏极开路输出。
+- :cpp:member:`mcpwm_generator_config_t::pull_up` 和 :cpp:member:`mcpwm_generator_config_t::pull_down` 用来设置是否启用内部上下拉电阻。
 
 分配成功后，:cpp:func:`mcpwm_new_generator` 将返回一个指向已分配生成器的指针。否则，函数将返回错误代码。具体来说，当 MCPWM 操作器中没有空闲生成器时，将返回 :c:macro:`ESP_ERR_NOT_FOUND` 错误。[1]_
 
@@ -127,6 +138,7 @@ MCPWM 故障分为两种类型：来自 GPIO 的故障信号和软件故障。
 调用 :cpp:func:`mcpwm_new_gpio_fault` 函数，以配置结构体 :cpp:type:`mcpwm_gpio_fault_config_t` 为参数，分配一个 GPIO 故障为对象。结构体定义为：
 
 - :cpp:member:`mcpwm_gpio_fault_config_t::group_id` 设置 MCPWM 组 ID，范围为 [0, :c:macro:`SOC_MCPWM_GROUPS` - 1]。需注意，位于不同组的 GPIO 故障彼此独立，也就是说，1 组的操作器无法检测到 0 组的 GPIO 故障。
+- :cpp:member:`mcpwm_gpio_fault_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则会分配一个默认优先级的中断，否则会使用指定的优先级。
 - :cpp:member:`mcpwm_gpio_fault_config_t::gpio_num` 设置故障所使用的 GPIO 编号。
 - :cpp:member:`mcpwm_gpio_fault_config_t::active_level` 设置故障信号的有效电平。
 - :cpp:member:`mcpwm_gpio_fault_config_t::pull_up` 和 :cpp:member:`mcpwm_gpio_fault_config_t::pull_down` 设置是否在内部拉高和/或拉低 GPIO。
@@ -177,11 +189,19 @@ MCPWM 组有一个专用定时器，用于捕获特定事件发生时的时间�
 
 - :cpp:member:`mcpwm_capture_timer_config_t::group_id` 设置 MCPWM 组 ID，范围为 [0, :c:macro:`SOC_MCPWM_GROUPS` - 1]。
 - :cpp:member:`mcpwm_capture_timer_config_t::clk_src` 设置捕获定时器的时钟源。
+- :cpp:member:`mcpwm_capture_timer_config_t::resolution_hz` 设置捕获定时器的预期分辨率。内部驱动将根据时钟源和分辨率设置合适的分频器。设置为 ``0`` 时，驱动会自己选取一个适当的分辨率，后续你可以通过 :cpp:func:`mcpwm_capture_timer_get_resolution` 查看当前定时器的分辨率。
+
+.. only:: not SOC_MCPWM_CAPTURE_CLK_FROM_GROUP
+
+    .. note::
+
+        在 {IDF_TARGET_NAME} 中，:cpp:member:`mcpwm_capture_timer_config_t::resolution_hz` 参数无效，捕获定时器的分辨率始终等于 :cpp:enumerator:`MCPWM_CAPTURE_CLK_SRC_APB`。
 
 分配成功后，:cpp:func:`mcpwm_new_capture_timer` 将返回一个指向已分配捕获定时器的指针。否则，函数将返回错误代码。具体来说，当 MCPWM 组中没有空闲捕获定时器时，将返回 :c:macro:`ESP_ERR_NOT_FOUND` 错误。[1]_
 
 接下来，可以调用 :cpp:func:`mcpwm_new_capture_channel` 函数，以一个捕获定时器句柄和配置结构体 :cpp:type:`mcpwm_capture_channel_config_t` 为参数，分配一个捕获通道。结构体定义为：
 
+- :cpp:member:`mcpwm_capture_channel_config_t::intr_priority` 设置中断的优先级。如果设置为 ``0``，则会分配一个默认优先级的中断，否则会使用指定的优先级。
 - :cpp:member:`mcpwm_capture_channel_config_t::gpio_num` 设置捕获通道使用的 GPIO 编号。
 - :cpp:member:`mcpwm_capture_channel_config_t::prescale` 设置输入信号的预分频器。
 - :cpp:member:`mcpwm_capture_channel_config_t::pos_edge` 和 :cpp:member:`mcpwm_capture_channel_config_t::neg_edge` 设置是否在输入信号的上升沿和/或下降沿捕获时间戳。
@@ -193,11 +213,25 @@ MCPWM 组有一个专用定时器，用于捕获特定事件发生时的时间�
 
 反之，调用 :cpp:func:`mcpwm_del_capture_channel` 和 :cpp:func:`mcpwm_del_capture_timer` 将释放已分配的捕获通道和定时器。
 
+MCPWM 中断优先级
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+MCPWM 允许为 定时器、操作器、比较器、故障以及捕获事件分别配置中断，中断优先级由各自的 ``config_t::intr_priority`` 决定。且同一个 MCPWM 组中的事件共享同一个中断源。注册多个中断事件时，中断优先级需要保持一致。
+
+.. note::
+
+    MCPWM 组注册多个中断事件时，驱动将以第一个事件的中断优先级作为 MCPWM 组的中断优先级。
+
 
 .. _mcpwm-timer-operations-and-events:
 
 定时器操作和事件
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+更新定时器周期
+~~~~~~~~~~~~~~
+
+定时器周期在创建定时器时就已经通过 :cpp:member:`mcpwm_timer_config_t::period_ticks` 被初始化过了。你还可以在运行期间，调用 :cpp:func:`mcpwm_timer_set_period` 函数来更新定时周期。新周期的生效时机由 :cpp:member:`mcpwm_timer_config_t::update_period_on_empty` 和 :cpp:member:`mcpwm_timer_config_t::update_period_on_sync` 共同决定。如果他们两个参数都是 ``false``， 那么新的定时周期会立即生效。
 
 注册定时器事件回调
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -221,7 +255,7 @@ MCPWM 定时器运行时会生成不同的事件。若有函数需在特定事�
 
 * 将定时器的状态从 **init** 切换到 **enable**。
 * 若中断服务此前已通过 :cpp:func:`mcpwm_timer_register_event_callbacks` 函数延迟安装，则启用中断服务。
-* 若选择了特定时钟源（例如 PLL_160M 时钟），则获取相应的电源管理锁。更多信息请参见 `电源管理`_。
+* 若选择了特定时钟源（例如 PLL_160M 时钟），则获取相应的电源管理锁。更多信息请参见 :ref:`mcpwm-power-management`。
 
 反之，调用 :cpp:func:`mcpwm_timer_disable` 会将定时器切换回 **init** 状态、禁用中断服务并释放电源管理锁。
 
@@ -253,6 +287,12 @@ MCPWM 比较器可以在定时器计数器等于比较值时发送通知。若�
 函数 :cpp:func:`mcpwm_comparator_register_event_callbacks` 中的 ``user_data`` 参数用于保存用户上下文，将直接传递至各个回调函数。
 
 此函数会延迟安装 MCPWM 比较器的中断服务。中断服务只能通过 :cpp:type:`mcpwm_del_comparator` 移除。
+
+.. only:: SOC_MCPWM_SUPPORT_EVENT_COMPARATOR
+
+    .. note::
+
+        对于事件比较器，你无法通过该函数来注册回调函数，因为事件比较器触发产生任何中断事件。
 
 设置比较值
 ~~~~~~~~~~~~~~~~~
@@ -297,7 +337,41 @@ MCPWM 比较器可以在定时器计数器等于比较值时发送通知。若�
 
 需注意，:cpp:func:`mcpwm_generator_set_actions_on_compare_event` 的参数列表 **必须** 以 :c:macro:`MCPWM_GEN_COMPARE_EVENT_ACTION_END` 结束。
 
-也可以调用 :cpp:func:`mcpwm_generator_set_action_on_compare_event` 逐一设置定时器操作，无需涉及变量参数。
+也可以调用 :cpp:func:`mcpwm_generator_set_action_on_compare_event` 逐一设置比较器操作，无需涉及变量参数。
+
+设置生成器对故障事件执行的操作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+调用 :cpp:func:`mcpwm_generator_set_action_on_fault_event` 并辅以操作配置，可以针对故障事件，为生成器设置操作。操作配置定义在 :cpp:type:`mcpwm_gen_fault_event_action_t` 中：
+
+- :cpp:member:`mcpwm_gen_fault_event_action_t::direction` 指定定时器计数方向，可以调用 :cpp:type:`mcpwm_timer_direction_t` 查看支持的方向。
+- :cpp:member:`mcpwm_gen_fault_event_action_t::fault` 指定用于触发器的故障。有关分配故障的方法，请参见 `MCPWM 故障`_。
+- :cpp:member:`mcpwm_gen_fault_event_action_t::action` 指定随即进行的生成器操作，可以调用 :cpp:type:`mcpwm_generator_action_t` 查看支持的操作。
+
+当生成器所属的操作器中没有空闲触发器时，将返回 :c:macro:`ESP_ERR_NOT_FOUND` 错误。[1]_
+
+触发器支持的故障仅为 GPIO 故障，当传入故障不为 GPIO 故障时，将返回 :c:macro:`ESP_ERR_NOT_SUPPORTED` 错误。
+
+可借助辅助宏 :c:macro:`MCPWM_GEN_FAULT_EVENT_ACTION` 构建触发事件操作条目。
+
+需注意，故障事件没有类似 :cpp:func:`mcpwm_generator_set_actions_on_fault_event` 这样的可变参数函数。
+
+设置生成器对同步事件执行的操作
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+调用 :cpp:func:`mcpwm_generator_set_action_on_sync_event` 并辅以操作配置，可以针对同步事件，为生成器设置操作。操作配置定义在 :cpp:type:`mcpwm_gen_sync_event_action_t` 中：
+
+- :cpp:member:`mcpwm_gen_sync_event_action_t::direction` 指定定时器计数方向，可以调用 :cpp:type:`mcpwm_timer_direction_t` 查看支持的方向。
+- :cpp:member:`mcpwm_gen_sync_event_action_t::sync` 指定用于触发器的同步源。有关分配同步源的方法，请参见 `MCPWM 同步源`_。
+- :cpp:member:`mcpwm_gen_sync_event_action_t::action` 指定随即进行的生成器操作，可以调用 :cpp:type:`mcpwm_generator_action_t` 查看支持的操作。
+
+当生成器所属的操作器中没有空闲触发器时，将返回 :c:macro:`ESP_ERR_NOT_FOUND` 错误。[1]_
+
+无论同步为何种类型，触发器仅支持一种同步操作，如果多次设置同步操作，将返回 :c:macro:`ESP_ERR_INVALID_STATE` 错误。
+
+可借助辅助宏 :c:macro:`MCPWM_GEN_SYNC_EVENT_ACTION` 构建触发事件操作条目。
+
+需注意，同步事件没有类似 :cpp:func:`mcpwm_generator_set_actions_on_sync_event` 这样的可变参数函数。
 
 
 .. _mcpwm-classical-pwm-waveforms-and-generator-configurations:
@@ -433,7 +507,7 @@ MCPWM 比较器可以在定时器计数器等于比较值时发送通知。若�
 
 在电力电子学中，常常会用到整流器和逆变器，这就涉及到了整流桥和逆变桥的应用。每个桥臂配有两个功率电子器件，例如 MOSFET、IGBT 等。同一桥臂上的两个 MOSFET 不能同时导通，否则会造成短路。实际应用中，在 PWM 波形显示 MOSFET 开关已关闭后，仍需要一段时间窗口才能完全关闭 MOSFET。因此，需要设置 :ref:`mcpwm-generator-actions-on-events`，在已生成的 PWM 波形上添加额外延迟。
 
-死区驱动器的工作方式与 *装饰器* 类似。在 :cpp:func:`mcpwm_generator_set_dead_time` 函数的参数中，驱动接收主要生成器句柄 (``in_generator``)，并在应用死区后返回一个新的生成器 (``out_generator``)。需注意，如果 ``out_generator`` 和 ``in_generator`` 相同，这表示 PWM 波形中的时间延迟是以“就地”的方式添加的。反之，如果 ``out_generator`` 和 ``in_generator`` 不同，则代表在原 ``in_generator`` 的基础上派生出了一个新的 PWM 波形。
+死区驱动器的工作方式与 **装饰器** 类似。在 :cpp:func:`mcpwm_generator_set_dead_time` 函数的参数中，驱动接收主要生成器句柄 (``in_generator``)，并在应用死区后返回一个新的生成器 (``out_generator``)。需注意，如果 ``out_generator`` 和 ``in_generator`` 相同，这表示 PWM 波形中的时间延迟是以“就地”的方式添加的。反之，如果 ``out_generator`` 和 ``in_generator`` 不同，则代表在原 ``in_generator`` 的基础上派生出了一个新的 PWM 波形。
 
 结构体 :cpp:type:`mcpwm_dead_time_config_t` 中列出了死区相关的具体配置：
 
@@ -442,7 +516,7 @@ MCPWM 比较器可以在定时器计数器等于比较值时发送通知。若�
 
 .. warning::
 
-    由于硬件限制，同一种 delay 模块（`posedge delay` 或者 `negedge delay`）不能同时被应用在不同的 MCPWM 生成器中。例如，以下配置是无效的：
+    由于硬件限制，同一种 delay 模块（``posedge delay`` 或者 ``negedge delay``）不能同时被应用在不同的 MCPWM 生成器中。例如，以下配置是无效的：
 
     .. code:: c
 
@@ -454,7 +528,7 @@ MCPWM 比较器可以在定时器计数器等于比较值时发送通知。若�
         // NOTE: 下面的操作是无效的，不能将同一种 delay 应用于不同的 generator 上
         mcpwm_generator_set_dead_time(mcpwm_gen_b, mcpwm_gen_b, &dt_config);
 
-    然而，您可以为生成器 A 设置 `posedge delay`，为生成器 B 设置 `negedge delay`。另外，您也可以为生成器 A 同时设置 `posedge delay` 和 `negedge delay`，而让生成器 B 绕过死区模块。
+    然而，你可以为生成器 A 设置 ``posedge delay``，为生成器 B 设置 ``negedge delay``。另外，也可以为生成器 A 同时设置 ``posedge delay`` 和 ``negedge delay``，而让生成器 B 绕过死区模块。
 
 .. note::
 
@@ -688,7 +762,8 @@ MCPWM 操作器具有载波子模块，可以根据需要（例如隔离式数�
 
 调用 :cpp:func:`mcpwm_operator_apply_carrier`，并提供配置结构体 :cpp:type:`mcpwm_carrier_config_t`，配置载波子模块：
 
-- :cpp:member:`mcpwm_carrier_config_t::frequency_hz` 表示载波频率，单位为赫兹。
+- :cpp:member:`mcpwm_carrier_config_t::clk_src` 设置载波的时钟源。
+- :cpp:member:`mcpwm_carrier_config_t::frequency_hz` 表示载波频率，单位为赫兹。内部驱动将根据时钟源和载波频率设置合适的分频器。
 - :cpp:member:`mcpwm_carrier_config_t::duty_cycle` 表示载波的占空比。需注意，支持的占空比选项并不连续，驱动程序将根据配置查找最接近的占空比。
 - :cpp:member:`mcpwm_carrier_config_t::first_pulse_duration_us` 表示第一个脉冲的脉宽，单位为微秒。该脉冲的分辨率由 :cpp:member:`mcpwm_carrier_config_t::frequency_hz` 中的配置决定。第一个脉冲的脉宽不能为零，且至少为一个载波周期。脉宽越长，电感传导越快。
 - :cpp:member:`mcpwm_carrier_config_t::invert_before_modulate` 和 :cpp:member:`mcpwm_carrier_config_t::invert_after_modulate` 设置是否在调制前和调制后取反载波输出。
@@ -747,8 +822,8 @@ MCPWM 故障检测器支持在检测到实际故障或故障信号消失时发�
 
 MCPWM 操作器支持在进行制动操作前发送通知。若有函数需在特定事件发生时调用，则应预先调用 :cpp:func:`mcpwm_operator_register_event_callbacks`，将所需函数挂载至中断服务程序 (ISR) 中。驱动中制动事件回调函数原型声明为 :cpp:type:`mcpwm_brake_event_cb_t`，其所支持的事件回调类型则列在 :cpp:type:`mcpwm_operator_event_callbacks_t` 中：
 
-- :cpp:member:`mcpwm_operator_event_callbacks_t::on_brake_cbc` 设置操作器进行 *逐周期 (CBC)* 操作前调用的回调函数。
-- :cpp:member:`mcpwm_operator_event_callbacks_t::on_brake_ost` 设置操作器进行 *一次性 (OST)* 操作前调用的回调函数。
+- :cpp:member:`mcpwm_operator_event_callbacks_t::on_brake_cbc` 设置操作器进行 **逐周期 (CBC)** 操作前调用的回调函数。
+- :cpp:member:`mcpwm_operator_event_callbacks_t::on_brake_ost` 设置操作器进行 **一次性 (OST)** 操作前调用的回调函数。
 
 由于上述回调函数在 ISR 中调用，因此，这些函数 **不应** 涉及 block 操作。可以检查调用 API 的后缀，确保在函数中只调用了后缀为 ``ISR`` 的 FreeRTOS API。
 
@@ -849,7 +924,7 @@ MCPWM 捕获通道支持在信号上检测到有效边沿时发送通知。须�
 
 函数 :cpp:func:`mcpwm_capture_channel_register_event_callbacks` 中的 ``user_data`` 参数用于保存用户上下文，将直接传递至各个回调函数。
 
-此函数会延迟安装 MCPWM 故障的中断服务。中断服务只能通过 :cpp:type:`mcpwm_del_capture_channel` 移除。
+此函数会延迟安装 MCPWM 捕获的中断服务。中断服务只能通过 :cpp:type:`mcpwm_del_capture_channel` 移除。
 
 启用或禁用捕获通道
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -876,8 +951,22 @@ MCPWM 捕获通道支持在信号上检测到有效边沿时发送通知。须�
 
 某些场景下，可能存在需要软件触发“虚假”捕获事件的需求。此时，可以调用 :cpp:func:`mcpwm_capture_channel_trigger_soft_catch` 实现。需注意，此类“虚假”捕获事件仍然会触发中断，并从而调用捕获事件回调函数。
 
+.. only:: SOC_MCPWM_SUPPORT_ETM
 
-.. _mcpwm-power-management:
+    .. _mcpwm-etm-event-and-task:
+
+    ETM 事件与任务
+    ^^^^^^^^^^^^^^^^^^
+
+    MCPWM 比较器可以产生事件，这些事件可以连接到 :doc:`ETM </api-reference/peripherals/etm>` 模块。:cpp:type:`mcpwm_comparator_etm_event_type_t` 中列出了 MCPWM 比较器能够产生的事件类型。用户可以通过调用 :cpp:func:`mcpwm_comparator_new_etm_event` 来获得相应事件的 ETM event 句柄。
+
+    关于如何将 MCPWM 比较器事件连接到 ETM 通道中，请参阅 :doc:`ETM </api-reference/peripherals/etm>` 文档。
+
+    .. _mcpwm-power-management:
+
+.. only:: not SOC_MCPWM_SUPPORT_ETM
+
+    .. _mcpwm-power-management:
 
 电源管理
 ^^^^^^^^^^^^^^^^
@@ -907,6 +996,7 @@ IRAM 安全
 另一个 Kconfig 选项 :ref:`CONFIG_MCPWM_CTRL_FUNC_IN_IRAM` 也支持将常用的 IO 控制函数存放在 IRAM 中，以保证在禁用 cache 时可以正常使用函数。IO 控制函数如下所示：
 
 - :cpp:func:`mcpwm_comparator_set_compare_value`
+- :cpp:func:`mcpwm_timer_set_period`
 
 
 .. _mcpwm-thread-safety:
@@ -919,6 +1009,7 @@ IRAM 安全
 驱动程序设置了临界区，以防函数同时在任务和 ISR 中调用。因此，以下函数支持在 ISR 上下文运行：
 
 - :cpp:func:`mcpwm_comparator_set_compare_value`
+- :cpp:func:`mcpwm_timer_set_period`
 
 :ref:`mcpwm-resource-allocation-and-initialization` 中尚未提及的函数并非线程安全。在没有设置互斥锁保护的任务中，应避免调用这些函数。
 
@@ -952,12 +1043,13 @@ API Reference
 .. include-build-file:: inc/mcpwm_fault.inc
 .. include-build-file:: inc/mcpwm_sync.inc
 .. include-build-file:: inc/mcpwm_cap.inc
+.. include-build-file:: inc/mcpwm_etm.inc
 .. include-build-file:: inc/components/driver/mcpwm/include/driver/mcpwm_types.inc
 .. include-build-file:: inc/components/hal/include/hal/mcpwm_types.inc
 
 
 .. [1]
-   不同的 ESP 芯片上的 MCPWM 资源数量可能存在差异（如组、定时器、比较器、操作器、生成器等）。详情请参见 [`TRM <{IDF_TARGET_TRM_EN_URL}#mcpwm>`__]。当分配了超出资源数量的 MCPWM 资源时，在检测到没有可用硬件资源后，驱动程序将返回错误。请在进行 :ref:`mcpwm-resource-allocation-and-initialization` 时务必检查返回值。
+   不同的 ESP 芯片上的 MCPWM 资源数量可能存在差异（如组、定时器、比较器、操作器、生成器、触发器等）。详情请参见 [`TRM <{IDF_TARGET_TRM_EN_URL}#mcpwm>`__]。当分配了超出资源数量的 MCPWM 资源时，在检测到没有可用硬件资源后，驱动程序将返回错误。请在进行 :ref:`mcpwm-resource-allocation-and-initialization` 时务必检查返回值。
 
 .. [2]
    回调函数及其调用的子函数需手动存放进 IRAM 中。

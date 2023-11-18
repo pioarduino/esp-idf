@@ -1,10 +1,11 @@
 idf_build_get_property(target IDF_TARGET)
 
+if(${target} STREQUAL "linux")
+    return() # This component is not supported by the POSIX/Linux simulator
+endif()
+
 # Always compiled source files
 set(srcs
-    "gpio/gpio.c"
-    "gpio/gpio_glitch_filter_ops.c"
-    "gpio/rtc_io.c"
     "spi/spi_bus_lock.c")
 
 # Always included headers
@@ -12,14 +13,11 @@ set(includes "include"
              "deprecated"
              "analog_comparator/include"
              "dac/include"
-             "gpio/include"
-             "gptimer/include"
              "i2c/include"
              "i2s/include"
              "ledc/include"
              "mcpwm/include"
              "parlio/include"
-             "pcnt/include"
              "rmt/include"
              "sdio_slave/include"
              "sdmmc/include"
@@ -30,6 +28,9 @@ set(includes "include"
              "twai/include"
              "uart/include"
              "usb_serial_jtag/include")
+
+# Always included linker fragments
+set(ldfragments "linker.lf")
 
 # ADC related source files (dprecated)
 if(CONFIG_SOC_ADC_SUPPORTED)
@@ -43,6 +44,9 @@ endif()
 # Analog comparator related source files
 if(CONFIG_SOC_ANA_CMPR_SUPPORTED)
     list(APPEND srcs "analog_comparator/ana_cmpr.c")
+    if(CONFIG_SOC_ANA_CMPR_SUPPORT_ETM)
+        list(APPEND srcs "analog_comparator/ana_cmpr_etm.c")
+    endif()
 endif()
 
 # DAC related source files
@@ -61,42 +65,28 @@ if(CONFIG_SOC_PARLIO_SUPPORTED)
     list(APPEND srcs "parlio/parlio_common.c" "parlio/parlio_tx.c")
 endif()
 
-# GPIO related source files
-if(CONFIG_SOC_DEDICATED_GPIO_SUPPORTED)
-    list(APPEND srcs "gpio/dedic_gpio.c")
-endif()
-
-if(CONFIG_SOC_GPIO_SUPPORT_PIN_GLITCH_FILTER)
-    list(APPEND srcs "gpio/gpio_pin_glitch_filter.c")
-endif()
-
-if(CONFIG_SOC_GPIO_FLEX_GLITCH_FILTER_NUM GREATER 0)
-    list(APPEND srcs "gpio/gpio_flex_glitch_filter.c")
-endif()
-
-if(CONFIG_SOC_GPIO_SUPPORT_ETM)
-    list(APPEND srcs "gpio/gpio_etm.c")
-endif()
-
-# GPTimer related source files
+# GPTimer legacy driver
 if(CONFIG_SOC_GPTIMER_SUPPORTED)
-    list(APPEND srcs "gptimer/gptimer.c"
-                     "gptimer/gptimer_priv.c"
-                     "deprecated/timer_legacy.c")
-endif()
-
-if(CONFIG_SOC_TIMER_SUPPORT_ETM)
-    list(APPEND srcs "gptimer/gptimer_etm.c")
+    list(APPEND srcs "deprecated/timer_legacy.c")
 endif()
 
 # I2C related source files
 if(CONFIG_SOC_I2C_SUPPORTED)
-    list(APPEND srcs "i2c/i2c.c")
+    list(APPEND srcs "i2c/i2c.c"
+                     "i2c/i2c_master.c"
+                     "i2c/i2c_common.c"
+        )
+    if(CONFIG_SOC_I2C_SUPPORT_SLAVE)
+        list(APPEND srcs "i2c/i2c_slave.c")
+    endif()
+
+    list(APPEND ldfragments "i2c/linker.lf")
 endif()
 
 # I2S related source files
 if(CONFIG_SOC_I2S_SUPPORTED)
     list(APPEND srcs "i2s/i2s_common.c"
+                     "i2s/i2s_platform.c"
                      "i2s/i2s_std.c"
                      "deprecated/i2s_legacy.c")
     if(CONFIG_SOC_I2S_SUPPORTS_PDM)
@@ -110,6 +100,8 @@ endif()
 # LEDC related source files
 if(CONFIG_SOC_LEDC_SUPPORTED)
     list(APPEND srcs "ledc/ledc.c")
+
+    list(APPEND ldfragments "ledc/linker.lf")
 endif()
 
 # MCPWM related source files
@@ -123,12 +115,15 @@ if(CONFIG_SOC_MCPWM_SUPPORTED)
                      "mcpwm/mcpwm_sync.c"
                      "mcpwm/mcpwm_timer.c"
                      "deprecated/mcpwm_legacy.c")
+    if(CONFIG_SOC_MCPWM_SUPPORT_ETM)
+        list(APPEND srcs "mcpwm/mcpwm_etm.c")
+    endif()
+    list(APPEND ldfragments "mcpwm/linker.lf")
 endif()
 
-# PCNT related source files
+# PCNT legacy driver
 if(CONFIG_SOC_PCNT_SUPPORTED)
-    list(APPEND srcs "pcnt/pulse_cnt.c"
-                     "deprecated/pcnt_legacy.c")
+    list(APPEND srcs "deprecated/pcnt_legacy.c")
 endif()
 
 # RMT related source files
@@ -138,6 +133,7 @@ if(CONFIG_SOC_RMT_SUPPORTED)
                      "rmt/rmt_rx.c"
                      "rmt/rmt_tx.c"
                      "deprecated/rmt_legacy.c")
+    list(APPEND ldfragments "rmt/linker.lf")
 endif()
 
 # SDIO Slave related source files
@@ -187,11 +183,15 @@ endif()
 # TWAI related source files
 if(CONFIG_SOC_TWAI_SUPPORTED)
     list(APPEND srcs "twai/twai.c")
+
+    list(APPEND ldfragments "twai/linker.lf")
 endif()
 
 # UART related source files
 if(CONFIG_SOC_UART_SUPPORTED)
     list(APPEND srcs "uart/uart.c")
+
+    list(APPEND ldfragments "uart/linker.lf")
 endif()
 
 # USB Serial JTAG related source files
@@ -213,10 +213,14 @@ else()
     # (Legacy drivers requires `esp_adc`, due to ADC HW resource mutex logics are there.
     # Can be removed together with legacy drivers)
     idf_component_register(SRCS "${srcs}"
-                        INCLUDE_DIRS ${includes}
-                        PRIV_REQUIRES efuse esp_timer
-                        REQUIRES esp_pm esp_ringbuf freertos soc hal esp_hw_support
-                        LDFRAGMENTS linker.lf)
+                           INCLUDE_DIRS ${includes}
+                           PRIV_REQUIRES efuse esp_timer esp_mm
+                           REQUIRES esp_pm esp_ringbuf freertos soc hal esp_hw_support
+                           # for backward compatibility, the driver component needs to
+                           # have a public dependency on other "esp_driver_foo" components
+                                    esp_driver_gpio esp_driver_pcnt esp_driver_gptimer
+                           LDFRAGMENTS ${ldfragments}
+                          )
 endif()
 
 # If system needs to monitor USJ connection status, then usb_serial_jtag_connection_monitor object file has to be linked

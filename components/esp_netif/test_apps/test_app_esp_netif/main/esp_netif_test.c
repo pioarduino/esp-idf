@@ -129,6 +129,44 @@ TEST(esp_netif, create_delete_multiple_netifs)
 
 }
 
+static bool desc_matches_with(esp_netif_t *netif, void *ctx)
+{
+    return strcmp(ctx, esp_netif_get_desc(netif)) == 0;
+}
+
+TEST(esp_netif, find_netifs)
+{
+    // Create some interfaces
+    const char* if_keys[] = { "if1", "if2", "if3", "if4", "if5"};
+    const int nr_of_netifs = sizeof(if_keys)/sizeof(char*);
+    esp_netif_t *netifs[nr_of_netifs];
+
+    for (int i=0; i<nr_of_netifs; ++i) {
+        // Create all interfaces, the same string is used as a key and as description
+        esp_netif_inherent_config_t base_netif_config = { .if_key = if_keys[i], .if_desc = if_keys[i] };
+        esp_netif_config_t cfg = { .base = &base_netif_config, .stack = ESP_NETIF_NETSTACK_DEFAULT_WIFI_STA };
+        netifs[i] = esp_netif_new(&cfg);
+        TEST_ASSERT_NOT_NULL(netifs[i]);
+    }
+
+    // not found
+    esp_netif_t *found_netif = esp_netif_find_if(desc_matches_with, "not_present");
+    TEST_ASSERT_EQUAL(found_netif, NULL);
+
+    // should find the same netif, as returned from esp_netif_get_handle_from_ifkey(), as the key is the same as description
+    for (int i=0; i<nr_of_netifs; ++i) {
+        found_netif = esp_netif_find_if(desc_matches_with, (void*)if_keys[i]);
+        TEST_ASSERT_EQUAL(found_netif, esp_netif_get_handle_from_ifkey(if_keys[i]));
+    }
+
+    // destroy one by one and check it's cannot be find per its description
+    for (int i=0; i<nr_of_netifs; ++i) {
+        esp_netif_destroy(netifs[i]);
+        found_netif = esp_netif_find_if(desc_matches_with, (void*)if_keys[i]);
+        TEST_ASSERT_EQUAL(found_netif, NULL);
+    }
+}
+
 #ifdef CONFIG_ESP_WIFI_ENABLED
 TEST(esp_netif, dhcp_client_state_transitions_wifi_sta)
 {
@@ -325,6 +363,7 @@ TEST(esp_netif, create_destroy_default_wifi)
     // Helper constants to refer default STA and AP's params
     static const esp_netif_inherent_config_t default_sta_cfg = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
     static const esp_netif_inherent_config_t default_ap_cfg = ESP_NETIF_INHERENT_DEFAULT_WIFI_AP();
+    TEST_ESP_OK(esp_event_loop_create_default());
 
     // create default station
     esp_netif_t *sta = esp_netif_create_default_wifi_sta();
@@ -352,6 +391,7 @@ TEST(esp_netif, create_destroy_default_wifi)
     sta = esp_netif_create_default_wifi_sta();
     TEST_ASSERT_NOT_NULL(sta);
     esp_netif_destroy_default_wifi(sta);
+    TEST_ESP_OK(esp_event_loop_delete_default());
 }
 
 TEST(esp_netif, get_set_hostname)
@@ -461,6 +501,7 @@ TEST_GROUP_RUNNER(esp_netif)
     RUN_TEST_CASE(esp_netif, convert_ip_addresses)
     RUN_TEST_CASE(esp_netif, get_from_if_key)
     RUN_TEST_CASE(esp_netif, create_delete_multiple_netifs)
+    RUN_TEST_CASE(esp_netif, find_netifs)
 #ifdef CONFIG_ESP_WIFI_ENABLED
     RUN_TEST_CASE(esp_netif, create_custom_wifi_interfaces)
     RUN_TEST_CASE(esp_netif, create_destroy_default_wifi)

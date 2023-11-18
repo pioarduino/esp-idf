@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -309,7 +309,7 @@ extern "C" void nvs_close(nvs_handle_t handle)
 extern "C" esp_err_t nvs_erase_key(nvs_handle_t c_handle, const char* key)
 {
     Lock lock;
-    ESP_LOGD(TAG, "%s %s\r\n", __func__, key);
+    ESP_LOGD(TAG, "%s %s", __func__, key);
     NVSHandleSimple *handle;
     auto err = nvs_find_ns_handle(c_handle, &handle);
     if (err != ESP_OK) {
@@ -322,7 +322,7 @@ extern "C" esp_err_t nvs_erase_key(nvs_handle_t c_handle, const char* key)
 extern "C" esp_err_t nvs_erase_all(nvs_handle_t c_handle)
 {
     Lock lock;
-    ESP_LOGD(TAG, "%s\r\n", __func__);
+    ESP_LOGD(TAG, "%s", __func__);
     NVSHandleSimple *handle;
     auto err = nvs_find_ns_handle(c_handle, &handle);
     if (err != ESP_OK) {
@@ -524,10 +524,11 @@ extern "C" esp_err_t nvs_get_stats(const char* part_name, nvs_stats_t* nvs_stats
     if (nvs_stats == nullptr) {
         return ESP_ERR_INVALID_ARG;
     }
-    nvs_stats->used_entries     = 0;
-    nvs_stats->free_entries     = 0;
-    nvs_stats->total_entries    = 0;
-    nvs_stats->namespace_count  = 0;
+    nvs_stats->used_entries      = 0;
+    nvs_stats->free_entries      = 0;
+    nvs_stats->total_entries     = 0;
+    nvs_stats->available_entries = 0;
+    nvs_stats->namespace_count   = 0;
 
     pStorage = lookup_storage_from_name((part_name == nullptr) ? NVS_DEFAULT_PART_NAME : part_name);
     if (pStorage == nullptr) {
@@ -775,6 +776,46 @@ extern "C" esp_err_t nvs_entry_find(const char *part_name, const char *namespace
     }
 
     bool entryFound = pStorage->findEntry(it, namespace_name);
+    if (!entryFound) {
+        free(it);
+        *output_iterator = nullptr;
+        return ESP_ERR_NVS_NOT_FOUND;
+    }
+
+    *output_iterator = it;
+    return ESP_OK;
+}
+
+extern "C" esp_err_t nvs_entry_find_in_handle(nvs_handle_t handle, nvs_type_t type, nvs_iterator_t *output_iterator)
+{
+    if (output_iterator == nullptr) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t lock_result = Lock::init();
+    if (lock_result != ESP_OK) {
+        *output_iterator = nullptr;
+        return lock_result;
+    }
+
+    Lock lock;
+    nvs::Storage *pStorage;
+    NVSHandleSimple *handle_obj;
+
+    auto err = nvs_find_ns_handle(handle, &handle_obj);
+    if (err != ESP_OK) {
+        *output_iterator = nullptr;
+        return err;
+    }
+
+    pStorage = handle_obj->get_storage();
+    nvs_iterator_t it = create_iterator(pStorage, type);
+    if (it == nullptr) {
+        *output_iterator = nullptr;
+        return ESP_ERR_NO_MEM;
+    }
+
+    bool entryFound = handle_obj->findEntryNs(it);
     if (!entryFound) {
         free(it);
         *output_iterator = nullptr;

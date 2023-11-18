@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -13,7 +12,8 @@ from pathlib import Path
 from typing import List
 
 import pytest
-from test_build_system_helpers import EnvDict, IdfPyFunc, find_python, get_snapshot, replace_in_file, run_idf_py
+from test_build_system_helpers import (EnvDict, IdfPyFunc, append_to_file, file_contains, find_python, get_snapshot,
+                                       replace_in_file, run_idf_py)
 
 
 def get_subdirs_absolute_paths(path: Path) -> List[str]:
@@ -118,13 +118,6 @@ def test_python_clean(idf_py: IdfPyFunc) -> None:
     assert len(abs_paths_suffix) == 0
 
 
-@pytest.mark.usefixtures('test_app_copy')
-def test_partition_table(idf_py: IdfPyFunc) -> None:
-    logging.info('Displays partition table when executing target partition_table')
-    output = idf_py('partition-table')
-    assert re.search('# ESP-IDF.+Partition Table', output.stdout)
-
-
 @pytest.mark.skipif(sys.platform == 'win32', reason='Windows does not support executing bash script')
 def test_python_interpreter_unix(test_app_copy: Path) -> None:
     logging.info("Make sure idf.py never runs '/usr/bin/env python' or similar")
@@ -203,3 +196,109 @@ def test_subcommands_with_options(idf_py: IdfPyFunc, default_idf_env: EnvDict) -
         assert "'--print_filter', '*:I'" in ret.stdout
     finally:
         (idf_path / 'tools' / 'idf_monitor.py').write_text(monitor_backup)
+
+
+def test_fallback_to_build_system_target(idf_py: IdfPyFunc, test_app_copy: Path) -> None:
+    logging.info('idf.py fallback to build system target')
+    msg = 'Custom target is running'
+    append_to_file(test_app_copy / 'CMakeLists.txt',
+                   'add_custom_target(custom_target COMMAND ${{CMAKE_COMMAND}} -E echo "{}")'.format(msg))
+    ret = idf_py('custom_target')
+    assert msg in ret.stdout, 'Custom target did not produce expected output'
+
+
+def test_create_component_and_project_plus_build(idf_copy: Path) -> None:
+    logging.info('Create project and component using idf.py and build it')
+    run_idf_py('-C', 'projects', 'create-project', 'temp_test_project', workdir=idf_copy)
+    run_idf_py('-C', 'components', 'create-component', 'temp_test_component', workdir=idf_copy)
+    replace_in_file(idf_copy / 'projects' / 'temp_test_project' / 'main' / 'temp_test_project.c', '{\n\n}',
+                    '\n'.join(['{', '\tfunc();', '}']))
+    replace_in_file(idf_copy / 'projects' / 'temp_test_project' / 'main' / 'temp_test_project.c', '#include <stdio.h>',
+                    '\n'.join(['#include <stdio.h>', '#include "temp_test_component.h"']))
+    run_idf_py('build', workdir=(idf_copy / 'projects' / 'temp_test_project'))
+
+
+# In this test function, there are actually two logical tests in one test function.
+# It would be better to have every check in a separate
+# test case, but that would mean doing idf_copy each time, and copying takes most of the time
+def test_create_project(idf_py: IdfPyFunc, idf_copy: Path) -> None:
+    logging.info('Check that command for creating new project will fail if the target folder is not empty.')
+    (idf_copy / 'example_proj').mkdir()
+    (idf_copy / 'example_proj' / 'tmp_1').touch()
+    ret = idf_py('create-project', '--path', str(idf_copy / 'example_proj'), 'temp_test_project', check=False)
+    assert ret.returncode == 3, 'Command create-project exit value is wrong.'
+
+    # cleanup for the following test
+    shutil.rmtree(idf_copy / 'example_proj')
+
+    logging.info('Check that command for creating new project will fail if the target path is file.')
+    (idf_copy / 'example_proj_file').touch()
+    ret = idf_py('create-project', '--path', str(idf_copy / 'example_proj_file'), 'temp_test_project', check=False)
+    assert ret.returncode == 4, 'Command create-project exit value is wrong.'
+
+
+@pytest.mark.skipif(sys.platform == 'darwin', reason='macos runner is a shell executor, it would break the file system')
+def test_create_project_with_idf_readonly(idf_copy: Path) -> None:
+    def change_to_readonly(src: Path) -> None:
+        for root, dirs, files in os.walk(src):
+            for name in dirs:
+                os.chmod(os.path.join(root, name), 0o555)  # read & execute
+            for name in files:
+                path = os.path.join(root, name)
+                if '/bin/' in path:
+                    continue  # skip excutables
+                os.chmod(os.path.join(root, name), 0o444)  # readonly
+    logging.info('Check that command for creating new project will success if the IDF itself is readonly.')
+    change_to_readonly(idf_copy)
+    run_idf_py('create-project', '--path', str(idf_copy / 'example_proj'), 'temp_test_project')
+
+
+@pytest.mark.usefixtures('test_app_copy')
+def test_docs_command(idf_py: IdfPyFunc) -> None:
+    logging.info('Check docs command')
+    idf_py('set-target', 'esp32')
+    ret = idf_py('docs', '--no-browser')
+    assert 'https://docs.espressif.com/projects/esp-idf/en' in ret.stdout
+    ret = idf_py('docs', '--no-browser', '--language', 'en')
+    assert 'https://docs.espressif.com/projects/esp-idf/en' in ret.stdout
+    ret = idf_py('docs', '--no-browser', '--language', 'en', '--version', 'v4.2.1')
+    assert 'https://docs.espressif.com/projects/esp-idf/en/v4.2.1' in ret.stdout
+    ret = idf_py('docs', '--no-browser', '--language', 'en', '--version', 'v4.2.1', '--target', 'esp32')
+    assert 'https://docs.espressif.com/projects/esp-idf/en/v4.2.1/esp32' in ret.stdout
+    ret = idf_py('docs', '--no-browser', '--language', 'en', '--version', 'v4.2.1', '--target', 'esp32', '--starting-page', 'get-started')
+    assert 'https://docs.espressif.com/projects/esp-idf/en/v4.2.1/esp32/get-started' in ret.stdout
+
+
+@pytest.mark.usefixtures('test_app_copy')
+def test_deprecation_warning(idf_py: IdfPyFunc) -> None:
+    logging.info('Deprecation warning check')
+    ret = idf_py('post_debug', check=False)
+    # click warning
+    assert 'Error: Command "post_debug" is deprecated since v4.4 and was removed in v5.0.' in ret.stderr
+
+    ret = idf_py('efuse_common_table', check=False)
+    # cmake warning
+    assert 'Have you wanted to run "efuse-common-table" instead?' in ret.stdout
+
+
+def test_save_defconfig_check(idf_py: IdfPyFunc, test_app_copy: Path) -> None:
+    logging.info('Save-defconfig checks')
+    (test_app_copy / 'sdkconfig').write_text('\n'.join(['CONFIG_COMPILER_OPTIMIZATION_SIZE=y',
+                                                        'CONFIG_ESPTOOLPY_FLASHFREQ_80M=y']))
+    idf_py('save-defconfig')
+    assert not file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_IDF_TARGET'), \
+        'CONFIG_IDF_TARGET should not be in sdkconfig.defaults'
+    assert file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_COMPILER_OPTIMIZATION_SIZE=y'), \
+        'Missing CONFIG_COMPILER_OPTIMIZATION_SIZE=y in sdkconfig.defaults'
+    assert file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_ESPTOOLPY_FLASHFREQ_80M=y'), \
+        'Missing CONFIG_ESPTOOLPY_FLASHFREQ_80M=y in sdkconfig.defaults'
+    idf_py('fullclean')
+    (test_app_copy / 'sdkconfig').unlink()
+    (test_app_copy / 'sdkconfig.defaults').unlink()
+    idf_py('set-target', 'esp32c3')
+    (test_app_copy / 'sdkconfig').write_text('CONFIG_PARTITION_TABLE_OFFSET=0x8001')
+    idf_py('save-defconfig')
+    assert file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_IDF_TARGET="esp32c3"'), \
+        'Missing CONFIG_IDF_TARGET="esp32c3" in sdkconfig.defaults'
+    assert file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_PARTITION_TABLE_OFFSET=0x8001'), \
+        'Missing CONFIG_PARTITION_TABLE_OFFSET=0x8001 in sdkconfig.defaults'

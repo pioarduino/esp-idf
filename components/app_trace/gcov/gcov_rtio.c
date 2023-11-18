@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -76,7 +76,8 @@ gcov_exit:
 void gcov_create_task(void *arg)
 {
     ESP_EARLY_LOGV(TAG, "%s", __FUNCTION__);
-    xTaskCreatePinnedToCore(&gcov_dump_task, "gcov_dump_task", 2048, (void *)&s_gcov_task_running, configMAX_PRIORITIES - 1, NULL, 0);
+    xTaskCreatePinnedToCore(&gcov_dump_task, "gcov_dump_task", CONFIG_APPTRACE_GCOV_DUMP_TASK_STACK_SIZE,
+		(void *)&s_gcov_task_running, configMAX_PRIORITIES - 1, NULL, 0);
 }
 
 void gcov_create_task_tick_hook(void)
@@ -169,6 +170,13 @@ long gcov_rtio_ftell(void *stream)
 {
     long ret = esp_apptrace_ftell(ESP_APPTRACE_DEST_TRAX, stream);
     ESP_EARLY_LOGV(TAG, "%s(%p) = %ld", __FUNCTION__, stream, ret);
+    return ret;
+}
+
+int gcov_rtio_feof(void *stream)
+{
+    int ret = esp_apptrace_feof(ESP_APPTRACE_DEST_TRAX, stream);
+    ESP_EARLY_LOGV(TAG, "%s(%p) = %d", __FUNCTION__, stream, ret);
     return ret;
 }
 

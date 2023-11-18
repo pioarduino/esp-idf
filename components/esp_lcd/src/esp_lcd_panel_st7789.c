@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,11 +7,13 @@
 #include <stdlib.h>
 #include <sys/cdefs.h>
 #include "sdkconfig.h"
+
 #if CONFIG_LCD_ENABLE_DEBUG_LOG
 // The local log level must be defined before including esp_log.h
 // Set the maximum log level for this source file
 #define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 #endif
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_lcd_panel_interface.h"
@@ -23,17 +25,22 @@
 #include "esp_log.h"
 #include "esp_check.h"
 
+#define ST7789_CMD_RAMCTRL               0xb0
+#define ST7789_DATA_LITTLE_ENDIAN_BIT    (1 << 3)
+
 static const char *TAG = "lcd_panel.st7789";
 
 static esp_err_t panel_st7789_del(esp_lcd_panel_t *panel);
 static esp_err_t panel_st7789_reset(esp_lcd_panel_t *panel);
 static esp_err_t panel_st7789_init(esp_lcd_panel_t *panel);
-static esp_err_t panel_st7789_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end, const void *color_data);
+static esp_err_t panel_st7789_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end,
+                                          const void *color_data);
 static esp_err_t panel_st7789_invert_color(esp_lcd_panel_t *panel, bool invert_color_data);
 static esp_err_t panel_st7789_mirror(esp_lcd_panel_t *panel, bool mirror_x, bool mirror_y);
 static esp_err_t panel_st7789_swap_xy(esp_lcd_panel_t *panel, bool swap_axes);
 static esp_err_t panel_st7789_set_gap(esp_lcd_panel_t *panel, int x_gap, int y_gap);
 static esp_err_t panel_st7789_disp_on_off(esp_lcd_panel_t *panel, bool off);
+static esp_err_t panel_st7789_sleep(esp_lcd_panel_t *panel, bool sleep);
 
 typedef struct {
     esp_lcd_panel_t base;
@@ -43,11 +50,15 @@ typedef struct {
     int x_gap;
     int y_gap;
     uint8_t fb_bits_per_pixel;
-    uint8_t madctl_val; // save current value of LCD_CMD_MADCTL register
-    uint8_t colmod_cal; // save surrent value of LCD_CMD_COLMOD register
+    uint8_t madctl_val;    // save current value of LCD_CMD_MADCTL register
+    uint8_t colmod_val;    // save current value of LCD_CMD_COLMOD register
+    uint8_t ramctl_val_1;
+    uint8_t ramctl_val_2;
 } st7789_panel_t;
 
-esp_err_t esp_lcd_new_panel_st7789(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config, esp_lcd_panel_handle_t *ret_panel)
+esp_err_t
+esp_lcd_new_panel_st7789(const esp_lcd_panel_io_handle_t io, const esp_lcd_panel_dev_config_t *panel_dev_config,
+                         esp_lcd_panel_handle_t *ret_panel)
 {
 #if CONFIG_LCD_ENABLE_DEBUG_LOG
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
@@ -66,11 +77,11 @@ esp_err_t esp_lcd_new_panel_st7789(const esp_lcd_panel_io_handle_t io, const esp
         ESP_GOTO_ON_ERROR(gpio_config(&io_conf), err, TAG, "configure GPIO for RST line failed");
     }
 
-    switch (panel_dev_config->rgb_endian) {
-    case LCD_RGB_ENDIAN_RGB:
+    switch (panel_dev_config->rgb_ele_order) {
+    case LCD_RGB_ELEMENT_ORDER_RGB:
         st7789->madctl_val = 0;
         break;
-    case LCD_RGB_ENDIAN_BGR:
+    case LCD_RGB_ELEMENT_ORDER_BGR:
         st7789->madctl_val |= LCD_CMD_BGR_BIT;
         break;
     default:
@@ -81,17 +92,24 @@ esp_err_t esp_lcd_new_panel_st7789(const esp_lcd_panel_io_handle_t io, const esp
     uint8_t fb_bits_per_pixel = 0;
     switch (panel_dev_config->bits_per_pixel) {
     case 16: // RGB565
-        st7789->colmod_cal = 0x55;
+        st7789->colmod_val = 0x55;
         fb_bits_per_pixel = 16;
         break;
     case 18: // RGB666
-        st7789->colmod_cal = 0x66;
+        st7789->colmod_val = 0x66;
         // each color component (R/G/B) should occupy the 6 high bits of a byte, which means 3 full bytes are required for a pixel
         fb_bits_per_pixel = 24;
         break;
     default:
         ESP_GOTO_ON_FALSE(false, ESP_ERR_NOT_SUPPORTED, err, TAG, "unsupported pixel width");
         break;
+    }
+
+    st7789->ramctl_val_1 = 0x00;
+    st7789->ramctl_val_2 = 0xf0;    // Use big endian by default
+    if ((panel_dev_config->data_endian) == LCD_RGB_DATA_ENDIAN_LITTLE) {
+        // Use little endian
+        st7789->ramctl_val_2 |= ST7789_DATA_LITTLE_ENDIAN_BIT;
     }
 
     st7789->io = io;
@@ -107,6 +125,7 @@ esp_err_t esp_lcd_new_panel_st7789(const esp_lcd_panel_io_handle_t io, const esp
     st7789->base.mirror = panel_st7789_mirror;
     st7789->base.swap_xy = panel_st7789_swap_xy;
     st7789->base.disp_on_off = panel_st7789_disp_on_off;
+    st7789->base.disp_sleep = panel_st7789_sleep;
     *ret_panel = &(st7789->base);
     ESP_LOGD(TAG, "new st7789 panel @%p", st7789);
 
@@ -146,7 +165,8 @@ static esp_err_t panel_st7789_reset(esp_lcd_panel_t *panel)
         gpio_set_level(st7789->reset_gpio_num, !st7789->reset_level);
         vTaskDelay(pdMS_TO_TICKS(10));
     } else { // perform software reset
-        esp_lcd_panel_io_tx_param(io, LCD_CMD_SWRESET, NULL, 0);
+        ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_SWRESET, NULL, 0), TAG,
+                            "io tx param failed");
         vTaskDelay(pdMS_TO_TICKS(20)); // spec, wait at least 5m before sending new command
     }
 
@@ -158,19 +178,24 @@ static esp_err_t panel_st7789_init(esp_lcd_panel_t *panel)
     st7789_panel_t *st7789 = __containerof(panel, st7789_panel_t, base);
     esp_lcd_panel_io_handle_t io = st7789->io;
     // LCD goes into sleep mode and display will be turned off after power on reset, exit sleep mode first
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_SLPOUT, NULL, 0);
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_SLPOUT, NULL, 0), TAG,
+                        "io tx param failed");
     vTaskDelay(pdMS_TO_TICKS(100));
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
         st7789->madctl_val,
-    }, 1);
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_COLMOD, (uint8_t[]) {
-        st7789->colmod_cal,
-    }, 1);
+    }, 1), TAG, "io tx param failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_COLMOD, (uint8_t[]) {
+        st7789->colmod_val,
+    }, 1), TAG, "io tx param failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, ST7789_CMD_RAMCTRL, (uint8_t[]) {
+        st7789->ramctl_val_1, st7789->ramctl_val_2
+    }, 2), TAG, "io tx param failed");
 
     return ESP_OK;
 }
 
-static esp_err_t panel_st7789_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end, const void *color_data)
+static esp_err_t panel_st7789_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int y_start, int x_end, int y_end,
+                                          const void *color_data)
 {
     st7789_panel_t *st7789 = __containerof(panel, st7789_panel_t, base);
     assert((x_start < x_end) && (y_start < y_end) && "start position must be smaller than end position");
@@ -182,21 +207,21 @@ static esp_err_t panel_st7789_draw_bitmap(esp_lcd_panel_t *panel, int x_start, i
     y_end += st7789->y_gap;
 
     // define an area of frame memory where MCU can access
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_CASET, (uint8_t[]) {
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_CASET, (uint8_t[]) {
         (x_start >> 8) & 0xFF,
         x_start & 0xFF,
         ((x_end - 1) >> 8) & 0xFF,
         (x_end - 1) & 0xFF,
-    }, 4);
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_RASET, (uint8_t[]) {
+    }, 4), TAG, "io tx param failed");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_RASET, (uint8_t[]) {
         (y_start >> 8) & 0xFF,
         y_start & 0xFF,
         ((y_end - 1) >> 8) & 0xFF,
         (y_end - 1) & 0xFF,
-    }, 4);
+    }, 4), TAG, "io tx param failed");
     // transfer frame buffer
     size_t len = (x_end - x_start) * (y_end - y_start) * st7789->fb_bits_per_pixel / 8;
-    esp_lcd_panel_io_tx_color(io, LCD_CMD_RAMWR, color_data, len);
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_color(io, LCD_CMD_RAMWR, color_data, len), TAG, "io tx color failed");
 
     return ESP_OK;
 }
@@ -211,7 +236,8 @@ static esp_err_t panel_st7789_invert_color(esp_lcd_panel_t *panel, bool invert_c
     } else {
         command = LCD_CMD_INVOFF;
     }
-    esp_lcd_panel_io_tx_param(io, command, NULL, 0);
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, command, NULL, 0), TAG,
+                        "io tx param failed");
     return ESP_OK;
 }
 
@@ -229,9 +255,9 @@ static esp_err_t panel_st7789_mirror(esp_lcd_panel_t *panel, bool mirror_x, bool
     } else {
         st7789->madctl_val &= ~LCD_CMD_MY_BIT;
     }
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
         st7789->madctl_val
-    }, 1);
+    }, 1), TAG, "io tx param failed");
     return ESP_OK;
 }
 
@@ -244,9 +270,9 @@ static esp_err_t panel_st7789_swap_xy(esp_lcd_panel_t *panel, bool swap_axes)
     } else {
         st7789->madctl_val &= ~LCD_CMD_MV_BIT;
     }
-    esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, LCD_CMD_MADCTL, (uint8_t[]) {
         st7789->madctl_val
-    }, 1);
+    }, 1), TAG, "io tx param failed");
     return ESP_OK;
 }
 
@@ -268,6 +294,24 @@ static esp_err_t panel_st7789_disp_on_off(esp_lcd_panel_t *panel, bool on_off)
     } else {
         command = LCD_CMD_DISPOFF;
     }
-    esp_lcd_panel_io_tx_param(io, command, NULL, 0);
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, command, NULL, 0), TAG,
+                        "io tx param failed");
+    return ESP_OK;
+}
+
+static esp_err_t panel_st7789_sleep(esp_lcd_panel_t *panel, bool sleep)
+{
+    st7789_panel_t *st7789 = __containerof(panel, st7789_panel_t, base);
+    esp_lcd_panel_io_handle_t io = st7789->io;
+    int command = 0;
+    if (sleep) {
+        command = LCD_CMD_SLPIN;
+    } else {
+        command = LCD_CMD_SLPOUT;
+    }
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(io, command, NULL, 0), TAG,
+                        "io tx param failed");
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     return ESP_OK;
 }

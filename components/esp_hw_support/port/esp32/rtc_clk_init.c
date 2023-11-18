@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +13,6 @@
 #include "esp_cpu.h"
 #include "soc/rtc.h"
 #include "soc/rtc_periph.h"
-#include "soc/sens_periph.h"
 #include "hal/clk_tree_ll.h"
 #include "hal/regi2c_ctrl_ll.h"
 #include "esp_hw_log.h"
@@ -164,18 +163,18 @@ static rtc_xtal_freq_t rtc_clk_xtal_freq_estimate(void)
         xtal_freq = RTC_XTAL_FREQ_26M;
         break;
     case 32 ... 33:
-        ESP_HW_LOGW(TAG, "Potentially bogus XTAL frequency: %d MHz, guessing 26 MHz", freq_mhz);
+        ESP_HW_LOGW(TAG, "Potentially bogus XTAL frequency: %"PRIu32" MHz, guessing 26 MHz", freq_mhz);
         xtal_freq = RTC_XTAL_FREQ_26M;
         break;
     case 34 ... 35:
-        ESP_HW_LOGW(TAG, "Potentially bogus XTAL frequency: %d MHz, guessing 40 MHz", freq_mhz);
+        ESP_HW_LOGW(TAG, "Potentially bogus XTAL frequency: %"PRIu32" MHz, guessing 40 MHz", freq_mhz);
         xtal_freq = RTC_XTAL_FREQ_40M;
         break;
     case 36 ... 45:
         xtal_freq = RTC_XTAL_FREQ_40M;
         break;
     default:
-        ESP_HW_LOGW(TAG, "Bogus XTAL frequency: %d MHz", freq_mhz);
+        ESP_HW_LOGW(TAG, "Bogus XTAL frequency: %"PRIu32" MHz", freq_mhz);
         xtal_freq = RTC_XTAL_FREQ_AUTO;
         break;
     }

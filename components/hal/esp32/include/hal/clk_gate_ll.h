@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +13,10 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_attr.h"
+#include "hal/assert.h"
 #include "soc/periph_defs.h"
 #include "soc/dport_reg.h"
+#include "soc/soc_caps.h"
 
 static inline uint32_t periph_ll_get_clk_en_mask(periph_module_t periph)
 {

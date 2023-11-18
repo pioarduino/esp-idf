@@ -73,18 +73,18 @@ ESP-IDF 中集成的电源管理算法可以根据应用程序组件的需求，
 {IDF_TARGET_NAME} 电源管理算法
 --------------------------------
 
-下表列出了启用动态调频时如何切换 CPU 频率和 APB 频率。您可以使用 :cpp:func:`esp_pm_configure` 或者 :ref:`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ` 指定 CPU 最大频率。
+下表列出了启用动态调频时如何切换 CPU 频率和 APB 频率。可以使用 :cpp:func:`esp_pm_configure` 或 :ref:`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ` 指定 CPU 最大频率。
 
 .. include:: inc/power_management_{IDF_TARGET_PATH_NAME}.rst
 
-如果没有获取任何管理锁，调用 :cpp:func:`esp_pm_configure` 将启动 Light-sleep 模式。 Light-sleep 模式持续时间由以下因素决定：
+如果没有获取任何管理锁，调用 :cpp:func:`esp_pm_configure` 将启动 Light-sleep 模式。Light-sleep 模式持续时间由以下因素决定：
 
 - 处于阻塞状态的 FreeRTOS 任务数（有限超时）
 - :doc:`高分辨率定时器 <esp_timer>` API 注册的计数器数量
 
-您也可以设置 Light-sleep 模式在最近事件（任务解除阻塞，或计时器超时）之前持续多久才唤醒芯片。
+也可以设置 Light-sleep 模式在最近事件（任务解除阻塞，或计时器超时）之前的持续时间，在持续时间结束后再唤醒芯片。
 
-为了跳过不必要的唤醒，可以将 `skip_unhandled_events` 选项设置为 true 来初始化 esp_timer。带有此标志的定时器不会唤醒系统，有助于减少功耗。
+为了跳过不必要的唤醒，可以将 ``skip_unhandled_events`` 选项设置为 ``true`` 来初始化 ``esp_timer``。带有此标志的定时器不会唤醒系统，有助于减少功耗。
 
 
 动态调频和外设驱动
@@ -92,13 +92,7 @@ ESP-IDF 中集成的电源管理算法可以根据应用程序组件的需求，
 
 启用动态调频后，APB 频率可在一个 RTOS 滴答周期内多次更改。有些外设不受 APB 频率变更的影响，但有些外设可能会出现问题。例如，Timer Group 外设定时器会继续计数，但定时器计数的速度将随 APB 频率的变更而变更。
 
-以下外设不受 APB 频率变更的影响：
-
-- **UART**：如果 REF_TICK 或者 XTAL 用作时钟源，则 UART 不受 APB 频率变更影响。请查看 :cpp:member:`uart_config_t::source_clk`。
-- **LEDC**：如果 REF_TICK 用作时钟源，则 LEDC 不受 APB 频率变更影响。请查看 :cpp:func:`ledc_timer_config` 函数。
-- **RMT**：如果 REF_TICK 或者 XTAL 被用作时钟源，则 RMT 不受 APB 频率变更影响。请查看 :cpp:member:`rmt_config_t::flags` 以及 `RMT_CHANNEL_FLAGS_AWARE_DFS` 宏。
-- **GPTimer**：如果 XTAL 用作时钟源，则 GPTimer 不受 APB 频率变更影响。请查看 :cpp:member:`gptimer_config_t::clk_src`。
-- **TSENS**：XTAL 或 RTC_8M 用作时钟源，因此不受 APB 频率变化影响。
+时钟频率不受 APB 频率影响的外设时钟源通常有 ``REF_TICK``, ``XTAL``, ``RC_FAST`` (i.e., ``RTC_8M``)。因此，为了保证外设在 DFS 期间的所有行为一致，建议在上述时钟中选择其一作为外设的时钟源。如果想要了解更多详情可以浏览每个外设 ”API 参考 > 外设 API“ 页面的 “电源管理” 章节。
 
 目前以下外设驱动程序可感知动态调频，并在调频期间使用 ``ESP_PM_APB_FREQ_MAX`` 锁：
 
@@ -112,6 +106,7 @@ ESP-IDF 中集成的电源管理算法可以根据应用程序组件的需求，
 .. list::
 
     - **SPI slave**：从调用 :cpp:func:`spi_slave_initialize` 至 :cpp:func:`spi_slave_free` 期间。
+    - **GPTimer**：从调用 :cpp:func:`gptimer_enable` 至 :cpp:func:`gptimer_disable` 期间。
     - **Ethernet**：从调用 :cpp:func:`esp_eth_driver_install` 至 :cpp:func:`esp_eth_driver_uninstall` 期间。
     - **WiFi**：从调用 :cpp:func:`esp_wifi_start` 至 :cpp:func:`esp_wifi_stop` 期间。如果启用了调制解调器睡眠模式，广播关闭时将释放此管理锁。
     :SOC_TWAI_SUPPORTED: - **TWAI**：从调用 :cpp:func:`twai_driver_install` 至 :cpp:func:`twai_driver_uninstall` 期间 (只有在 TWAI 时钟源选择为 :cpp:enumerator:`TWAI_CLK_SRC_APB` 的时候生效)。
@@ -124,7 +119,7 @@ ESP-IDF 中集成的电源管理算法可以根据应用程序组件的需求，
 
     - PCNT
     - Sigma-delta
-    - 旧版定时器驱动（Timer Group)
+    - 旧版定时器驱动 (Timer Group)
     :SOC_MCPWM_SUPPORTED: - MCPWM
 
 
@@ -135,8 +130,7 @@ Light-sleep 外设下电
 
     {IDF_TARGET_NAME} 支持在 Light-sleep 时掉电外设的电源域.
 
-    如果在 menuconfig 中启用了 :ref:`CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP`，在初始化外设时，驱动会将外设工作的寄存器上下文注册到休眠备份链表中，
-    在进入休眠前，REG_DMA 外设会读取休眠备份链表中的配置，根据链表中的配置将外设的寄存器上下文备份至内存，REG_DMA 也会在唤醒时将上下文从内存恢复到外设寄存中。
+    如果在 menuconfig 中启用了 :ref:`CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP`，在初始化外设时，驱动会将外设工作的寄存器上下文注册到休眠备份链表中，在进入休眠前，``REG_DMA`` 外设会读取休眠备份链表中的配置，根据链表中的配置将外设的寄存器上下文备份至内存，``REG_DMA`` 也会在唤醒时将上下文从内存恢复到外设寄存中。
 
     目前 IDF 支持以下外设的 Light-sleep 上下文备份：
     - INT_MTX
@@ -168,7 +162,8 @@ Light-sleep 外设下电
     - PARL_IO
     - UART1
 
-    对于未支持 Light-sleep 上下文备份的外设，若启用了电源管理功能，应在外设工作时持有 `ESP_PM_NO_LIGHT_SLEEP` 锁以避免进入休眠导致外设工作上下文丢失。
+    对于未支持 Light-sleep 上下文备份的外设，若启用了电源管理功能，应在外设工作时持有 ``ESP_PM_NO_LIGHT_SLEEP`` 锁以避免进入休眠导致外设工作上下文丢失。
+
 
 API 参考
 -------------

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -267,7 +267,7 @@ static void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
         break;
     }
 
-#if (CONFIG_BT_SSP_ENABLED == true)
+#if (CONFIG_EXAMPLE_SSP_ENABLED == true)
     /* when Security Simple Pairing user confirmation requested, this event comes */
     case ESP_BT_GAP_CFM_REQ_EVT:
         ESP_LOGI(BT_AV_TAG, "ESP_BT_GAP_CFM_REQ_EVT Please compare the numeric value: %"PRIu32, param->cfm_req.num_val);
@@ -508,8 +508,8 @@ static void bt_app_av_media_proc(uint16_t event, void *param)
         if (event == BT_APP_HEART_BEAT_EVT) {
             /* stop media after 10 heart beat intervals */
             if (++s_intv_cnt >= 10) {
-                ESP_LOGI(BT_AV_TAG, "a2dp media stopping...");
-                esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_STOP);
+                ESP_LOGI(BT_AV_TAG, "a2dp media suspending...");
+                esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
                 s_media_state = APP_AV_MEDIA_STATE_STOPPING;
                 s_intv_cnt = 0;
             }
@@ -519,15 +519,15 @@ static void bt_app_av_media_proc(uint16_t event, void *param)
     case APP_AV_MEDIA_STATE_STOPPING: {
         if (event == ESP_A2D_MEDIA_CTRL_ACK_EVT) {
             a2d = (esp_a2d_cb_param_t *)(param);
-            if (a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_STOP &&
+            if (a2d->media_ctrl_stat.cmd == ESP_A2D_MEDIA_CTRL_SUSPEND &&
                     a2d->media_ctrl_stat.status == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
-                ESP_LOGI(BT_AV_TAG, "a2dp media stopped successfully, disconnecting...");
+                ESP_LOGI(BT_AV_TAG, "a2dp media suspend successfully, disconnecting...");
                 s_media_state = APP_AV_MEDIA_STATE_IDLE;
                 esp_a2d_source_disconnect(s_peer_bda);
                 s_a2d_state = APP_AV_STATE_DISCONNECTING;
             } else {
-                ESP_LOGI(BT_AV_TAG, "a2dp media stopping...");
-                esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_STOP);
+                ESP_LOGI(BT_AV_TAG, "a2dp media suspending...");
+                esp_a2d_media_ctrl(ESP_A2D_MEDIA_CTRL_SUSPEND);
             }
         }
         break;
@@ -743,23 +743,29 @@ void app_main(void)
 
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     if (esp_bt_controller_init(&bt_cfg) != ESP_OK) {
-        ESP_LOGE(BT_AV_TAG, "%s initialize controller failed\n", __func__);
+        ESP_LOGE(BT_AV_TAG, "%s initialize controller failed", __func__);
         return;
     }
     if (esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT) != ESP_OK) {
-        ESP_LOGE(BT_AV_TAG, "%s enable controller failed\n", __func__);
-        return;
-    }
-    if (esp_bluedroid_init() != ESP_OK) {
-        ESP_LOGE(BT_AV_TAG, "%s initialize bluedroid failed\n", __func__);
-        return;
-    }
-    if (esp_bluedroid_enable() != ESP_OK) {
-        ESP_LOGE(BT_AV_TAG, "%s enable bluedroid failed\n", __func__);
+        ESP_LOGE(BT_AV_TAG, "%s enable controller failed", __func__);
         return;
     }
 
-#if (CONFIG_BT_SSP_ENABLED == true)
+    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+#if (CONFIG_EXAMPLE_SSP_ENABLED == false)
+    bluedroid_cfg.ssp_en = false;
+#endif
+    if ((ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg)) != ESP_OK) {
+        ESP_LOGE(BT_AV_TAG, "%s initialize bluedroid failed: %s", __func__, esp_err_to_name(ret));
+        return;
+    }
+
+    if (esp_bluedroid_enable() != ESP_OK) {
+        ESP_LOGE(BT_AV_TAG, "%s enable bluedroid failed", __func__);
+        return;
+    }
+
+#if (CONFIG_EXAMPLE_SSP_ENABLED == true)
     /* set default parameters for Secure Simple Pairing */
     esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
     esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_IO;

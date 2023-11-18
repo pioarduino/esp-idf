@@ -9,7 +9,7 @@
 #include "soc/soc_caps.h"
 #include "sdkconfig.h"
 
-#if !CONFIG_IDF_TARGET_ESP32C6
+#if !CONFIG_IDF_TARGET_ESP32C6 && !CONFIG_IDF_TARGET_ESP32H2
 #include "soc/lp_aon_reg.h"
 #include "soc/extmem_reg.h"
 #endif
@@ -115,7 +115,7 @@ rv_core_critical_regs_save:
     csrr    t0, mscratch
     sw      t0, RV_SLP_CTX_T0(t3)
 
-#if !CONFIG_IDF_TARGET_ESP32C6
+#if !CONFIG_IDF_TARGET_ESP32C6 && !CONFIG_IDF_TARGET_ESP32H2
     /* writeback dcache is required here!!! */
     la      t0, EXTMEM_CACHE_SYNC_MAP_REG
     li      t1, 0x10
@@ -166,8 +166,15 @@ wait_sync_done:
 
     .section    .iram1,"ax"
     .global     rv_core_critical_regs_restore
+    .weak       rv_core_critical_regs_restore
     .type       rv_core_critical_regs_restore,@function
+    .global     _rv_core_critical_regs_restore
+    .type       _rv_core_critical_regs_restore,@function
     .align      4
+
+_rv_core_critical_regs_restore: /* export a strong symbol to jump to here, used
+                                 * for a static callback */
+    nop
 
 rv_core_critical_regs_restore:
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,15 +19,21 @@ void mmu_hal_init(void)
 #if CONFIG_ESP_ROM_RAM_APP_NEEDS_MMU_INIT
     ROM_Boot_Cache_Init();
 #endif
+
     mmu_ll_set_page_size(0, CONFIG_MMU_PAGE_SIZE);
     mmu_hal_unmap_all();
 }
 
 void mmu_hal_unmap_all(void)
 {
+#if MMU_LL_MMU_PER_TARGET
+    mmu_ll_unmap_all(MMU_LL_FLASH_MMU_ID);
+    mmu_ll_unmap_all(MMU_LL_PSRAM_MMU_ID);
+#else
     mmu_ll_unmap_all(0);
 #if !CONFIG_FREERTOS_UNICORE
     mmu_ll_unmap_all(1);
+#endif
 #endif
 }
 

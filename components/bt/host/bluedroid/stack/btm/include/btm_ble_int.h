@@ -84,8 +84,10 @@
 typedef UINT8   tBTM_BLE_SEC_REQ_ACT;
 
 #define BLE_STATIC_PRIVATE_MSB_MASK          0x3f
-#define BLE_RESOLVE_ADDR_MSB                 0x40   /*  most significant bit, bit7, bit6 is 01 to be resolvable random */
+#define BLE_NON_RESOLVE_ADDR_MSB             0x00   /* most significant bit, bit7, bit6 is 00 to be non-resolvable random */
+#define BLE_RESOLVE_ADDR_MSB                 0x40   /* most significant bit, bit7, bit6 is 01 to be resolvable random */
 #define BLE_RESOLVE_ADDR_MASK                0xc0   /* bit 6, and bit7 */
+#define BTM_BLE_IS_NON_RESLVE_BDA(x)        ((x[0] & BLE_RESOLVE_ADDR_MASK) == BLE_NON_RESOLVE_ADDR_MSB)
 #define BTM_BLE_IS_RESOLVE_BDA(x)           ((x[0] & BLE_RESOLVE_ADDR_MASK) == BLE_RESOLVE_ADDR_MSB)
 
 /* LE scan activity bit mask, continue with LE inquiry bits */
@@ -157,6 +159,7 @@ typedef struct {
     tBTM_BLE_SFP sfp; /* scanning filter policy */
     tBTM_START_ADV_CMPL_CBACK *p_adv_cb;
     tBTM_START_STOP_ADV_CMPL_CBACK *p_stop_adv_cb;
+    tBTM_CLEAR_ADV_CMPL_CBACK *p_clear_adv_cb;
     tBLE_ADDR_TYPE adv_addr_type;
     UINT8 evt_type;
     UINT8 adv_mode;
@@ -482,6 +485,7 @@ BOOLEAN btm_random_pseudo_to_identity_addr(BD_ADDR random_pseudo, UINT8 *p_stati
 void btm_ble_refresh_peer_resolvable_private_addr(BD_ADDR pseudo_bda, BD_ADDR rra, UINT8 rra_type);
 void btm_ble_refresh_local_resolvable_private_addr(BD_ADDR pseudo_addr, BD_ADDR local_rpa);
 void btm_ble_read_resolving_list_entry_complete(UINT8 *p, UINT16 evt_len) ;
+void btm_ble_set_addr_resolution_enable_complete(UINT8 *p, UINT16 evt_len) ;
 void btm_ble_remove_resolving_list_entry_complete(UINT8 *p, UINT16 evt_len);
 void btm_ble_add_resolving_list_entry_complete(UINT8 *p, UINT16 evt_len);
 void btm_ble_clear_resolving_list_complete(UINT8 *p, UINT16 evt_len);

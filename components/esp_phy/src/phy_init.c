@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -66,9 +66,6 @@ static DRAM_ATTR struct {
 #endif // !SOC_PMU_SUPPORTED
 #endif // SOC_PM_SUPPORT_MODEM_PD || SOC_PM_SUPPORT_WIFI_PD
 
-/* Reference count of enabling PHY */
-static uint8_t s_phy_access_ref = 0;
-
 #if CONFIG_IDF_TARGET_ESP32
 /* time stamp updated when the PHY/RF is turned on */
 static int64_t s_phy_rf_en_ts = 0;
@@ -85,8 +82,10 @@ static bool s_is_phy_calibrated = false;
 static bool s_is_phy_reg_stored = false;
 /* Memory to store PHY digital registers */
 static uint32_t* s_phy_digital_regs_mem = NULL;
-static uint8_t s_phy_modem_init_ref = 0;
 #endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
+#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA || CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+static uint8_t s_phy_modem_init_ref = 0;
+#endif
 
 
 #if CONFIG_ESP_PHY_MULTIPLE_INIT_DATA_BIN
@@ -231,11 +230,10 @@ static inline void phy_digital_regs_load(void)
 }
 #endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
 
-void esp_phy_enable(void)
+void esp_phy_enable(esp_phy_modem_t modem)
 {
     _lock_acquire(&s_phy_access_lock);
-
-    if (s_phy_access_ref == 0) {
+    if (phy_get_modem_flag() == 0) {
 #if CONFIG_IDF_TARGET_ESP32
         // Update time stamp
         s_phy_rf_en_ts = esp_timer_get_time();
@@ -251,7 +249,7 @@ void esp_phy_enable(void)
 #if SOC_PM_SUPPORT_PMU_MODEM_STATE && CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
             extern bool pm_mac_modem_rf_already_enabled(void);
             if (!pm_mac_modem_rf_already_enabled()) {
-                if (sleep_modem_wifi_modem_state_enabled()) {
+                if (sleep_modem_wifi_modem_state_enabled() && sleep_modem_wifi_modem_link_done()) {
                     sleep_modem_wifi_do_phy_retention(true);
                 } else {
                     phy_wakeup_init();
@@ -273,18 +271,27 @@ void esp_phy_enable(void)
 #if CONFIG_IDF_TARGET_ESP32
         coex_bt_high_prio();
 #endif
+
+// ESP32 will track pll in the wifi/BT modem interrupt handler.
+#if !CONFIG_IDF_TARGET_ESP32
+        phy_track_pll_init();
+#endif
     }
-    s_phy_access_ref++;
+    phy_set_modem_flag(modem);
 
     _lock_release(&s_phy_access_lock);
 }
 
-void esp_phy_disable(void)
+void esp_phy_disable(esp_phy_modem_t modem)
 {
     _lock_acquire(&s_phy_access_lock);
 
-    s_phy_access_ref--;
-    if (s_phy_access_ref == 0) {
+    phy_clr_modem_flag(modem);
+    if (phy_get_modem_flag() == 0) {
+// ESP32 will track pll in the wifi/BT modem interrupt handler.
+#if !CONFIG_IDF_TARGET_ESP32
+        phy_track_pll_deinit();
+#endif
 #if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
         phy_digital_regs_store();
 #endif
@@ -308,7 +315,6 @@ void esp_phy_disable(void)
         // Disable WiFi/BT common peripheral clock. Do not disable clock for hardware RNG
         esp_phy_common_clock_disable();
     }
-
     _lock_release(&s_phy_access_lock);
 }
 
@@ -349,23 +355,29 @@ void esp_wifi_bt_power_domain_off(void)
 
 void esp_phy_modem_init(void)
 {
-#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
+#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA || CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
     _lock_acquire(&s_phy_access_lock);
     s_phy_modem_init_ref++;
+#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
     if (s_phy_digital_regs_mem == NULL) {
         s_phy_digital_regs_mem = (uint32_t *)heap_caps_malloc(SOC_PHY_DIG_REGS_MEM_SIZE, MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
     }
-    _lock_release(&s_phy_access_lock);
 #endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
+#if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+    sleep_modem_wifi_modem_state_init();
+#endif // CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+    _lock_release(&s_phy_access_lock);
+#endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA || CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
 }
 
 void esp_phy_modem_deinit(void)
 {
-#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
+#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA || CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
     _lock_acquire(&s_phy_access_lock);
 
     s_phy_modem_init_ref--;
     if (s_phy_modem_init_ref == 0) {
+#if SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
         s_is_phy_reg_stored = false;
         free(s_phy_digital_regs_mem);
         s_phy_digital_regs_mem = NULL;
@@ -374,11 +386,14 @@ void esp_phy_modem_deinit(void)
         */
 #if CONFIG_IDF_TARGET_ESP32C3
         phy_init_flag();
-#endif
-    }
-
-    _lock_release(&s_phy_access_lock);
+#endif // CONFIG_IDF_TARGET_ESP32C3
 #endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
+#if CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+        sleep_modem_wifi_modem_state_deinit();
+#endif // CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
+    }
+    _lock_release(&s_phy_access_lock);
+#endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA || CONFIG_ESP_WIFI_ENHANCED_LIGHT_SLEEP
 }
 
 #if CONFIG_MAC_BB_PD
@@ -388,6 +403,8 @@ static uint32_t* s_mac_bb_pd_mem = NULL;
 static uint8_t s_macbb_backup_mem_ref = 0;
 /* Reference of powering down MAC and BB */
 static bool s_mac_bb_pu = true;
+#elif SOC_PM_MODEM_RETENTION_BY_REGDMA
+static void *s_mac_bb_tx_base = NULL;
 #endif // SOC_PM_MODEM_RETENTION_BY_BACKUPDMA
 
 void esp_mac_bb_pd_mem_init(void)
@@ -407,7 +424,13 @@ void esp_mac_bb_pd_mem_init(void)
         [3] = { .config = REGDMA_LINK_CONTINUOUS_INIT(0x0b03, 0x600a7c00, 0x600a7c00, 53,  0, 0), .owner = BIT(0) | BIT(1) }, /* BB */
         [4] = { .config = REGDMA_LINK_CONTINUOUS_INIT(0x0b05, 0x600a0000, 0x600a0000, 58,  0, 0), .owner = BIT(0) | BIT(1) }  /* FE COEX */
     };
-    esp_err_t err = sleep_retention_entries_create(bb_regs_retention, ARRAY_SIZE(bb_regs_retention), 3, SLEEP_RETENTION_MODULE_WIFI_BB);
+    esp_err_t err = ESP_OK;
+    _lock_acquire(&s_phy_access_lock);
+    s_mac_bb_tx_base = sleep_retention_find_link_by_id(0x0b01);
+    if (s_mac_bb_tx_base == NULL) {
+        err = sleep_retention_entries_create(bb_regs_retention, ARRAY_SIZE(bb_regs_retention), 3, SLEEP_RETENTION_MODULE_WIFI_BB);
+    }
+    _lock_release(&s_phy_access_lock);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "failed to allocate memory for WiFi baseband retention");
     }
@@ -425,7 +448,10 @@ void esp_mac_bb_pd_mem_deinit(void)
     }
     _lock_release(&s_phy_access_lock);
 #elif SOC_PM_MODEM_RETENTION_BY_REGDMA
+    _lock_acquire(&s_phy_access_lock);
     sleep_retention_entries_destroy(SLEEP_RETENTION_MODULE_WIFI_BB);
+    s_mac_bb_tx_base = NULL;
+    _lock_release(&s_phy_access_lock);
 #endif
 }
 
@@ -654,7 +680,7 @@ static esp_err_t load_cal_data_from_nvs_handle(nvs_handle_t handle,
         return err;
     }
     uint32_t cal_format_version = phy_get_rf_cal_version() & (~BIT(16));
-    ESP_LOGV(TAG, "phy_get_rf_cal_version: %" PRId32 "\n", cal_format_version);
+    ESP_LOGV(TAG, "phy_get_rf_cal_version: %" PRId32, cal_format_version);
     if (cal_data_version != cal_format_version) {
         ESP_LOGD(TAG, "%s: expected calibration data format %" PRId32 ", found %" PRId32 "",
                 __func__, cal_format_version, cal_data_version);
@@ -699,7 +725,7 @@ static esp_err_t store_cal_data_to_nvs_handle(nvs_handle_t handle,
 
     err = nvs_set_blob(handle, PHY_CAL_DATA_KEY, cal_data, sizeof(*cal_data));
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: store calibration data failed(0x%x)\n", __func__, err);
+        ESP_LOGE(TAG, "%s: store calibration data failed(0x%x)", __func__, err);
         return err;
     }
 
@@ -707,21 +733,21 @@ static esp_err_t store_cal_data_to_nvs_handle(nvs_handle_t handle,
     ESP_ERROR_CHECK(esp_efuse_mac_get_default(sta_mac));
     err = nvs_set_blob(handle, PHY_CAL_MAC_KEY, sta_mac, sizeof(sta_mac));
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: store calibration mac failed(0x%x)\n", __func__, err);
+        ESP_LOGE(TAG, "%s: store calibration mac failed(0x%x)", __func__, err);
         return err;
     }
 
     uint32_t cal_format_version = phy_get_rf_cal_version() & (~BIT(16));
-    ESP_LOGV(TAG, "phy_get_rf_cal_version: %" PRId32 "\n", cal_format_version);
+    ESP_LOGV(TAG, "phy_get_rf_cal_version: %" PRId32 "", cal_format_version);
     err = nvs_set_u32(handle, PHY_CAL_VERSION_KEY, cal_format_version);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: store calibration version failed(0x%x)\n", __func__, err);
+        ESP_LOGE(TAG, "%s: store calibration version failed(0x%x)", __func__, err);
         return err;
     }
 
     err = nvs_commit(handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "%s: store calibration nvs commit failed(0x%x)\n", __func__, err);
+        ESP_LOGE(TAG, "%s: store calibration nvs commit failed(0x%x)", __func__, err);
     }
 
     return err;
@@ -747,6 +773,13 @@ void esp_phy_load_cal_and_init(void)
 #if CONFIG_IDF_TARGET_ESP32S2
     phy_eco_version_sel(efuse_hal_chip_revision() / 100);
 #endif
+
+    // Set PHY whether in combo module
+    // For comode mode, phy enable will be not in WiFi RX state
+#if SOC_PHY_COMBO_MODULE
+    phy_init_param_set(0);
+#endif
+
     esp_phy_calibration_data_t* cal_data =
             (esp_phy_calibration_data_t*) calloc(sizeof(esp_phy_calibration_data_t), 1);
     if (cal_data == NULL) {
@@ -854,7 +887,7 @@ static uint8_t phy_find_bin_type_according_country(const char* country)
     {
         if (!memcmp(country, s_country_code_map_type_table[i].cc, sizeof(s_phy_current_country))) {
             phy_init_data_type = s_country_code_map_type_table[i].type;
-            ESP_LOGD(TAG, "Current country is %c%c, PHY init data type is %s\n", s_country_code_map_type_table[i].cc[0],
+            ESP_LOGD(TAG, "Current country is %c%c, PHY init data type is %s", s_country_code_map_type_table[i].cc[0],
                     s_country_code_map_type_table[i].cc[1], s_phy_type[s_country_code_map_type_table[i].type]);
             break;
         }
@@ -1080,3 +1113,8 @@ esp_err_t esp_phy_update_country_info(const char *country)
 
 void esp_wifi_power_domain_on(void) __attribute__((alias("esp_wifi_bt_power_domain_on")));
 void esp_wifi_power_domain_off(void) __attribute__((alias("esp_wifi_bt_power_domain_off")));
+
+_lock_t phy_get_lock(void)
+{
+    return s_phy_access_lock;
+}

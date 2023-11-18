@@ -1,11 +1,15 @@
 idf_build_get_property(idf_target IDF_TARGET)
 
+if(${idf_target} STREQUAL "linux")
+    return() # This component is not supported by the POSIX/Linux simulator
+endif()
+
 if(IDF_TARGET STREQUAL "esp32p4")
     # TODO: IDF-7460
     return()
 endif()
 
-set(srcs "src/phy_override.c" "src/lib_printf.c")
+set(srcs "src/phy_override.c" "src/lib_printf.c" "src/phy_common.c")
 
 if(CONFIG_APP_NO_BLOBS)
     set(link_binary_libs 0)

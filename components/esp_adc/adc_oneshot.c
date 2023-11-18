@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,6 +7,11 @@
 #include <esp_types.h>
 #include <sys/lock.h>
 #include "sdkconfig.h"
+#if CONFIG_ADC_ENABLE_DEBUG_LOG
+// The local log level must be defined before including esp_log.h
+// Set the maximum log level for this source file
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+#endif
 #include "stdatomic.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -19,11 +24,11 @@
 #include "esp_private/adc_private.h"
 #include "esp_private/adc_share_hw_ctrl.h"
 #include "esp_private/sar_periph_ctrl.h"
+#include "esp_private/esp_sleep_internal.h"
 #include "hal/adc_types.h"
 #include "hal/adc_oneshot_hal.h"
 #include "hal/adc_ll.h"
 #include "soc/adc_periph.h"
-
 
 #if CONFIG_ADC_ONESHOT_CTRL_FUNC_IN_IRAM
 #define ADC_MEM_ALLOC_CAPS   (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
@@ -31,10 +36,8 @@
 #define ADC_MEM_ALLOC_CAPS   MALLOC_CAP_DEFAULT
 #endif
 
-
 extern portMUX_TYPE rtc_spinlock;
 static const char *TAG = "adc_oneshot";
-
 
 typedef struct adc_oneshot_unit_ctx_t {
     adc_oneshot_hal_ctx_t hal;
@@ -48,32 +51,32 @@ typedef struct adc_oneshot_ctx_t {
     int apb_periph_ref_cnts;       //For the chips that ADC oneshot mode using APB_SARADC periph
 } adc_oneshot_ctx_t;
 
-
 static adc_oneshot_ctx_t s_ctx;    //ADC oneshot mode context
 static atomic_bool s_adc_unit_claimed[SOC_ADC_PERIPH_NUM] = {ATOMIC_VAR_INIT(false),
 #if (SOC_ADC_PERIPH_NUM >= 2)
-ATOMIC_VAR_INIT(false)
+                                                             ATOMIC_VAR_INIT(false)
 #endif
-};
-
+                                                            };
 
 static bool s_adc_unit_claim(adc_unit_t unit);
 static bool s_adc_unit_free(adc_unit_t unit);
 static esp_err_t s_adc_io_init(adc_unit_t unit, adc_channel_t channel);
 
-
-esp_err_t adc_oneshot_io_to_channel(int io_num, adc_unit_t *unit_id, adc_channel_t *channel)
+esp_err_t adc_oneshot_io_to_channel(int io_num, adc_unit_t * const unit_id, adc_channel_t * const channel)
 {
     return adc_io_to_channel(io_num, unit_id, channel);
 }
 
-esp_err_t adc_oneshot_channel_to_io(adc_unit_t unit_id, adc_channel_t channel, int *io_num)
+esp_err_t adc_oneshot_channel_to_io(adc_unit_t unit_id, adc_channel_t channel, int * const io_num)
 {
     return adc_channel_to_io(unit_id, channel, io_num);
 }
 
 esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, adc_oneshot_unit_handle_t *ret_unit)
 {
+#if CONFIG_ADC_ENABLE_DEBUG_LOG
+    esp_log_level_set(TAG, ESP_LOG_DEBUG);
+#endif
     esp_err_t ret = ESP_OK;
     adc_oneshot_unit_ctx_t *unit = NULL;
     ESP_GOTO_ON_FALSE(init_config && ret_unit, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument: null pointer");
@@ -124,6 +127,8 @@ esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, a
 
     if (init_config->ulp_mode == ADC_ULP_MODE_DISABLE) {
         sar_periph_ctrl_adc_oneshot_power_acquire();
+    } else {
+        esp_sleep_enable_adc_tsens_monitor(true);
     }
 
     ESP_LOGD(TAG, "new adc unit%"PRId32" is created", unit->unit_id);
@@ -223,6 +228,8 @@ esp_err_t adc_oneshot_del_unit(adc_oneshot_unit_handle_t handle)
 
     if (ulp_mode == ADC_ULP_MODE_DISABLE) {
         sar_periph_ctrl_adc_oneshot_power_release();
+    } else {
+        esp_sleep_enable_adc_tsens_monitor(false);
     }
 
 #if SOC_ADC_DIG_CTRL_SUPPORTED && !SOC_ADC_RTC_CTRL_SUPPORTED

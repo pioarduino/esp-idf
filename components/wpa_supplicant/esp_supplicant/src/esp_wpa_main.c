@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +28,7 @@
 #include "esp_wifi_driver.h"
 #include "esp_private/wifi.h"
 #include "esp_wpa3_i.h"
-#include "esp_wpa2.h"
+#include "esp_eap_client.h"
 #include "esp_common_i.h"
 #include "esp_owe_i.h"
 
@@ -38,6 +38,7 @@
 #include "ap/ieee802_1x.h"
 #include "ap/sta_info.h"
 #include "wps/wps_defs.h"
+#include "wps/wps.h"
 
 const wifi_osi_funcs_t *wifi_funcs;
 struct wpa_funcs *wpa_cb;
@@ -127,7 +128,7 @@ bool  wpa_attach(void)
     bool ret = true;
     ret = wpa_sm_init();
     if(ret) {
-        ret = (esp_wifi_register_tx_cb_internal(eapol_txcb, WIFI_TXCB_EAPOL_ID) == ESP_OK);
+        ret = (esp_wifi_register_eapol_txdonecb_internal(eapol_txcb) == ESP_OK);
     }
     esp_set_scan_ie();
     return ret;
@@ -179,16 +180,19 @@ void wpa_ap_get_peer_spp_msg(void *sm_data, bool *spp_cap, bool *spp_req)
     *spp_req = sm->spp_sup.require;
 }
 
-bool  wpa_deattach(void)
+bool wpa_deattach(void)
 {
     struct wpa_sm *sm = &gWpaSm;
     esp_wpa3_free_sae_data();
-    if (sm->wpa_sm_wpa2_ent_disable) {
-        sm->wpa_sm_wpa2_ent_disable();
+#ifdef CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
+    if (sm->wpa_sm_eap_disable) {
+        sm->wpa_sm_eap_disable();
     }
+#endif
     if (sm->wpa_sm_wps_disable) {
         sm->wpa_sm_wps_disable();
     }
+    esp_wifi_register_eapol_txdonecb_internal(NULL);
 
     wpa_sm_deinit();
     return true;
@@ -279,6 +283,13 @@ static int check_n_add_wps_sta(struct hostapd_data *hapd, struct sta_info *sta_i
         return 0;
     }
 
+    if (wps_type == WPS_TYPE_PBC) {
+        if (esp_wps_registrar_check_pbc_overlap(hapd->wps)) {
+            wpa_printf(MSG_DEBUG, "WPS: PBC session overlap detected");
+            return -1;
+        }
+    }
+
     sta_info->wps_ie = wps_ie;
     sta_info->eapol_sm = ieee802_1x_alloc_eapol_sm(hapd, sta_info);
 
@@ -304,7 +315,7 @@ static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len,u8 
     }
 
     if (*sta && !esp_wifi_ap_is_sta_sae_reauth_node(bssid)) {
-       ap_free_sta(hapd, *sta);
+        ap_free_sta(hapd, *sta);
     }
 
     sta_info = ap_sta_add(hapd, bssid);
@@ -312,10 +323,26 @@ static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len,u8 
         wpa_printf(MSG_ERROR, "failed to add station " MACSTR, MAC2STR(bssid));
         goto fail;
     }
+
+#ifdef CONFIG_SAE
+    if (sta_info->lock && os_semphr_take(sta_info->lock, 0) != TRUE) {
+        wpa_printf(MSG_INFO, "Ignore assoc request as softap is busy with sae calculation for station "MACSTR, MAC2STR(bssid));
+        if (esp_send_assoc_resp(hapd, sta_info, bssid, WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY, rsnxe ? false : true, subtype) != WLAN_STATUS_SUCCESS) {
+            goto fail;
+        }
+        return false;
+    }
+#endif /* CONFIG_SAE */
+
 #ifdef CONFIG_WPS_REGISTRAR
     if (check_n_add_wps_sta(hapd, sta_info, wpa_ie, wpa_ie_len, pmf_enable, subtype) == 0) {
         if (sta_info->eapol_sm) {
             *sta = sta_info;
+#ifdef CONFIG_SAE
+            if (sta_info->lock) {
+                os_semphr_give(sta_info->lock);
+            }
+#endif /* CONFIG_SAE */
             return true;
         }
     } else {
@@ -324,14 +351,16 @@ static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len,u8 
 #endif
     if (wpa_ap_join(sta_info, bssid, wpa_ie, wpa_ie_len, rsnxe, rsnxe_len, pmf_enable, subtype)) {
         *sta = sta_info;
+#ifdef CONFIG_SAE
+        if (sta_info->lock) {
+            os_semphr_give(sta_info->lock);
+        }
+#endif /* CONFIG_SAE */
         return true;
     }
 
 fail:
-    if (sta_info) {
-        ap_free_sta(hapd, sta_info);
-    }
-
+    esp_wifi_ap_deauth_internal(bssid, WLAN_REASON_PREV_AUTH_NOT_VALID);
     return false;
 }
 #endif
@@ -398,6 +427,7 @@ int esp_supplicant_init(void)
 int esp_supplicant_deinit(void)
 {
     esp_supplicant_common_deinit();
+    esp_supplicant_unset_all_appie();
     eloop_destroy();
     wpa_cb = NULL;
     return esp_wifi_unregister_wpa_cb_internal();

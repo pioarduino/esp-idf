@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -58,6 +58,14 @@ typedef struct {
         intptr_t rx_eof_desc_addr; /*!< EOF descriptor address of RX channel */
         intptr_t tx_eof_desc_addr; /*!< EOF descriptor address of TX channel */
     };
+    struct {
+        uint32_t abnormal_eof: 1;     /*!< 0: normal/success EOF;
+                                       *   1: abnormal/error EOF,
+                                       *      it doesn't mean GDMA goes into an error condition,
+                                       *      but the other peripheral goes into an abnormal state.
+                                       *      For GDMA, it's still a valid EOF
+                                       */
+    } flags;
 } gdma_event_data_t;
 
 /**
@@ -98,6 +106,7 @@ typedef struct {
 typedef struct {
     gdma_trigger_peripheral_t periph; /*!< Target peripheral which will trigger DMA operations */
     int instance_id;                  /*!< Peripheral instance ID. Supported IDs are listed in `soc/gdma_channel.h`, e.g. SOC_GDMA_TRIG_PERIPH_UHCI0 */
+    int bus_id;                       /*!< Which system bus should the DMA attached to */
 } gdma_trigger_t;
 
 /**
@@ -107,7 +116,7 @@ typedef struct {
  *
  */
 #define GDMA_MAKE_TRIGGER(peri, id) \
-    (gdma_trigger_t) { .periph = peri, .instance_id = SOC_##peri##id }
+    (gdma_trigger_t) { .periph = peri, .instance_id = SOC_##peri##id, .bus_id = SOC_##peri##id##_BUS }
 
 /**
  * @brief A collection of strategy item that each GDMA channel could apply
@@ -118,13 +127,13 @@ typedef struct {
     bool auto_update_desc; /*!< If set / clear, DMA channel enables / disables hardware to update descriptor automatically (TX channel only) */
 } gdma_strategy_config_t;
 
+/** @cond */
 /**
- * @brief Create GDMA channel
- * @note This API won't install interrupt service for the allocated channel.
- *       If interrupt service is needed, user has to register GDMA event callback by `gdma_register_tx_event_callbacks` or `gdma_register_rx_event_callbacks`.
+ * @brief Create GDMA channel (only create AHB GDMA channel)
+ * @note This API is going to be deprecated, please use `gdma_new_ahb_channel` or `gdma_new_axi_channel` instead.
  *
  * @param[in] config Pointer to a collection of configurations for allocating GDMA channel
- * @param[out] ret_chan Returnned channel handle
+ * @param[out] ret_chan Returned channel handle
  * @return
  *      - ESP_OK: Create DMA channel successfully
  *      - ESP_ERR_INVALID_ARG: Create DMA channel failed because of invalid argument
@@ -132,6 +141,37 @@ typedef struct {
  *      - ESP_FAIL: Create DMA channel failed because of other error
  */
 esp_err_t gdma_new_channel(const gdma_channel_alloc_config_t *config, gdma_channel_handle_t *ret_chan);
+/** @endcond */
+
+/**
+ * @brief Create AHB-GDMA channel
+ * @note This API won't install interrupt service for the allocated channel.
+ *       If interrupt service is needed, user has to register GDMA event callback by `gdma_register_tx_event_callbacks` or `gdma_register_rx_event_callbacks`.
+ *
+ * @param[in] config Pointer to a collection of configurations for allocating GDMA channel
+ * @param[out] ret_chan Returned channel handle
+ * @return
+ *      - ESP_OK: Create DMA channel successfully
+ *      - ESP_ERR_INVALID_ARG: Create DMA channel failed because of invalid argument
+ *      - ESP_ERR_NO_MEM: Create DMA channel failed because out of memory
+ *      - ESP_FAIL: Create DMA channel failed because of other error
+ */
+esp_err_t gdma_new_ahb_channel(const gdma_channel_alloc_config_t *config, gdma_channel_handle_t *ret_chan);
+
+/**
+ * @brief Create AXI-GDMA channel
+ * @note This API won't install interrupt service for the allocated channel.
+ *       If interrupt service is needed, user has to register GDMA event callback by `gdma_register_tx_event_callbacks` or `gdma_register_rx_event_callbacks`.
+ *
+ * @param[in] config Pointer to a collection of configurations for allocating GDMA channel
+ * @param[out] ret_chan Returned channel handle
+ * @return
+ *      - ESP_OK: Create DMA channel successfully
+ *      - ESP_ERR_INVALID_ARG: Create DMA channel failed because of invalid argument
+ *      - ESP_ERR_NO_MEM: Create DMA channel failed because out of memory
+ *      - ESP_FAIL: Create DMA channel failed because of other error
+ */
+esp_err_t gdma_new_axi_channel(const gdma_channel_alloc_config_t *config, gdma_channel_handle_t *ret_chan);
 
 /**
  * @brief Connect GDMA channel to trigger peripheral
@@ -314,6 +354,7 @@ esp_err_t gdma_append(gdma_channel_handle_t dma_chan);
  */
 esp_err_t gdma_reset(gdma_channel_handle_t dma_chan);
 
+#if SOC_GDMA_SUPPORT_ETM
 /**
  * @brief GDMA ETM event configuration
  */
@@ -360,6 +401,7 @@ typedef struct {
  *      - ESP_FAIL: Get ETM task failed because of other error
  */
 esp_err_t gdma_new_etm_task(gdma_channel_handle_t dma_chan, const gdma_etm_task_config_t *config, esp_etm_task_handle_t *out_task);
+#endif // SOC_GDMA_SUPPORT_ETM
 
 /**
  * @brief Get the mask of free M2M trigger IDs
@@ -376,6 +418,47 @@ esp_err_t gdma_new_etm_task(gdma_channel_handle_t dma_chan, const gdma_etm_task_
  *      - ESP_FAIL: Get free M2M trigger IDs failed because of other error
  */
 esp_err_t gdma_get_free_m2m_trig_id_mask(gdma_channel_handle_t dma_chan, uint32_t *mask);
+
+#if SOC_GDMA_SUPPORT_CRC
+/**
+ * @brief CRC Calculator configuration
+ */
+typedef struct {
+    uint32_t init_value;    /*!< CRC initial value */
+    uint32_t crc_bit_width; /*!< CRC bit width */
+    uint32_t poly_hex;      /*!< Polynomial Formula, in hex */
+    bool reverse_data_mask; /*!< Reverse data mask, used when you want to reverse the input data (a.k.a, refin) */
+} gdma_crc_calculator_config_t;
+
+/**
+ * @brief Configure CRC Calculator
+ *
+ * @note This function must be called before `gdma_start`.
+ * @note The CRC Calculator will reset itself automatically if the DMA stops and starts again.
+ *
+ * @param[in] dma_chan GDMA channel handle, allocated by `gdma_new_channel`
+ * @param[in] config CRC Calculator configuration
+ * @return
+ *      - ESP_OK: Configure CRC Calculator successfully
+ *      - ESP_ERR_INVALID_ARG: Configure CRC Calculator failed because of invalid argument
+ *      - ESP_FAIL: Configure CRC Calculator failed because of other error
+ */
+esp_err_t gdma_config_crc_calculator(gdma_channel_handle_t dma_chan, const gdma_crc_calculator_config_t *config);
+
+/**
+ * @brief Get CRC Calculator result
+ *
+ * @note You need to call this function before a new DMA transaction starts, otherwise the CRC results may be overridden.
+ *
+ * @param[in] dma_chan GDMA channel handle, allocated by `gdma_new_channel`
+ * @param[out] result Returned CRC result
+ * @return
+ *      - ESP_OK: Get CRC result successfully
+ *      - ESP_ERR_INVALID_ARG: Get CRC result failed because of invalid argument
+ *      - ESP_FAIL: Get CRC result failed because of other error
+ */
+esp_err_t gdma_crc_get_result(gdma_channel_handle_t dma_chan, uint32_t *result);
+#endif // SOC_GDMA_SUPPORT_CRC
 
 #ifdef __cplusplus
 }

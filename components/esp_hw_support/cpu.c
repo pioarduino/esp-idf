@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,6 +16,9 @@
 #include "soc/pcr_reg.h"
 #define SYSTEM_CPU_PER_CONF_REG PCR_CPU_WAITI_CONF_REG
 #define SYSTEM_CPU_WAIT_MODE_FORCE_ON PCR_CPU_WAIT_MODE_FORCE_ON
+#elif CONFIG_IDF_TARGET_ESP32P4
+#include "soc/lp_clkrst_reg.h"
+#include "soc/pmu_reg.h"
 #else
 #include "soc/rtc_cntl_reg.h"
 #endif
@@ -45,6 +48,10 @@ void esp_cpu_stall(int core_id)
 {
     assert(core_id >= 0 && core_id < SOC_CPU_CORES_NUM);
 #if SOC_CPU_CORES_NUM > 1   // We don't allow stalling of the current core
+#if CONFIG_IDF_TARGET_ESP32P4
+    //TODO: IDF-7848
+    REG_SET_FIELD(PMU_CPU_SW_STALL_REG, core_id ? PMU_HPCORE1_SW_STALL_CODE : PMU_HPCORE0_SW_STALL_CODE, 0x86);
+#else
     /*
     We need to write the value "0x86" to stall a particular core. The write location is split into two separate
     bit fields named "c0" and "c1", and the two fields are located in different registers. Each core has its own pair of
@@ -62,13 +69,18 @@ void esp_cpu_stall(int core_id)
     SET_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, 2 << rtc_cntl_c0_s);
     CLEAR_PERI_REG_MASK(RTC_CNTL_SW_CPU_STALL_REG, rtc_cntl_c1_m);
     SET_PERI_REG_MASK(RTC_CNTL_SW_CPU_STALL_REG, 0x21 << rtc_cntl_c1_s);
-#endif
+#endif // CONFIG_IDF_TARGET_ESP32P4
+#endif // SOC_CPU_CORES_NUM > 1
 }
 
 void esp_cpu_unstall(int core_id)
 {
     assert(core_id >= 0 && core_id < SOC_CPU_CORES_NUM);
 #if SOC_CPU_CORES_NUM > 1   // We don't allow stalling of the current core
+#if CONFIG_IDF_TARGET_ESP32P4
+    //TODO: IDF-7848
+    REG_SET_FIELD(PMU_CPU_SW_STALL_REG, core_id ? PMU_HPCORE1_SW_STALL_CODE : PMU_HPCORE0_SW_STALL_CODE, 0);
+#else
     /*
     We need to write clear the value "0x86" to unstall a particular core. The location of this value is split into
     two separate bit fields named "c0" and "c1", and the two fields are located in different registers. Each core has
@@ -82,11 +94,19 @@ void esp_cpu_unstall(int core_id)
     int rtc_cntl_c1_m = (core_id == 0) ? RTC_CNTL_SW_STALL_PROCPU_C1_M : RTC_CNTL_SW_STALL_APPCPU_C1_M;
     CLEAR_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, rtc_cntl_c0_m);
     CLEAR_PERI_REG_MASK(RTC_CNTL_SW_CPU_STALL_REG, rtc_cntl_c1_m);
-#endif
+#endif // CONFIG_IDF_TARGET_ESP32P4
+#endif // SOC_CPU_CORES_NUM > 1
 }
 
 void esp_cpu_reset(int core_id)
 {
+#if CONFIG_IDF_TARGET_ESP32P4
+    //TODO: IDF-7848
+    if (core_id == 0)
+        REG_SET_BIT(LP_CLKRST_HPCPU_RESET_CTRL0_REG, LP_CLKRST_HPCORE0_SW_RESET);
+    else
+        REG_SET_BIT(LP_CLKRST_HPCPU_RESET_CTRL0_REG, LP_CLKRST_HPCORE1_SW_RESET);
+#else
 #if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32H2// TODO: IDF-5645
     SET_PERI_REG_MASK(LP_AON_CPUCORE0_CFG_REG, LP_AON_CPU_CORE0_SW_RESET);
 #else
@@ -103,6 +123,7 @@ void esp_cpu_reset(int core_id)
 #endif // SOC_CPU_CORES_NUM > 1
     SET_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, rtc_cntl_rst_m);
 #endif
+#endif // CONFIG_IDF_TARGET_ESP32P4
 }
 
 void esp_cpu_wait_for_intr(void)
@@ -110,12 +131,15 @@ void esp_cpu_wait_for_intr(void)
 #if __XTENSA__
     xt_utils_wait_for_intr();
 #else
+//TODO: IDF-7848
+#if !CONFIG_IDF_TARGET_ESP32P4
     // TODO: IDF-5645 (better to implement with ll) C6 register names converted in the #include section at the top
     if (esp_cpu_dbgr_is_attached() && DPORT_REG_GET_BIT(SYSTEM_CPU_PER_CONF_REG, SYSTEM_CPU_WAIT_MODE_FORCE_ON) == 0) {
         /* when SYSTEM_CPU_WAIT_MODE_FORCE_ON is disabled in WFI mode SBA access to memory does not work for debugger,
            so do not enter that mode when debugger is connected */
         return;
     }
+#endif
     rv_utils_wait_for_intr();
 #endif // __XTENSA__
 }
@@ -132,13 +156,28 @@ void esp_cpu_wait_for_intr(void)
 
 #if SOC_CPU_HAS_FLEXIBLE_INTC
 
+
+#if SOC_INT_CLIC_SUPPORTED
+
+static bool is_intr_num_resv(int ext_intr_num) {
+    /* On targets that uses CLIC as the interrupt controller, the first 16 lines (0..15) are reserved for software
+     * interrupts, all the other lines starting from 16 and above can be used by external peripheral.
+     * in the case of this function, the parameter only refers to the external peripheral index, so if
+     * `ext_intr_num` is 0, it refers to interrupt index 16.
+     *
+     * Only interrupt line 6 is reserved at the moment since it is used for disabling interrupts */
+    return ext_intr_num == 6;
+}
+
+#else // !SOC_INT_CLIC_SUPPORTED
+
 static bool is_intr_num_resv(int intr_num)
 {
     // Workaround to reserve interrupt number 1 for Wi-Fi, 5,8 for Bluetooth, 6 for "permanently disabled interrupt"
     // [TODO: IDF-2465]
     uint32_t reserved = BIT(1) | BIT(5) | BIT(6) | BIT(8);
 
-    // int_num 0,3,4,7 are inavaliable for PULP cpu
+    // int_num 0,3,4,7 are unavailable for PULP cpu
 #if CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32H2// TODO: IDF-5728 replace with a better macro name
     reserved |= BIT(0) | BIT(3) | BIT(4) | BIT(7);
 #endif
@@ -156,6 +195,8 @@ static bool is_intr_num_resv(int intr_num)
 
     return destination != (intptr_t)&_interrupt_handler;
 }
+
+#endif // SOC_INT_CLIC_SUPPORTED
 
 void esp_cpu_intr_get_desc(int core_id, int intr_num, esp_cpu_intr_desc_t *intr_desc_ret)
 {
@@ -310,8 +351,9 @@ esp_err_t esp_cpu_set_breakpoint(int bp_num, const void *bp_addr)
         if (ret == 0) {
             return ESP_ERR_INVALID_RESPONSE;
         }
-    }
-    rv_utils_set_breakpoint(bp_num, (uint32_t)bp_addr);
+    } else {
+        rv_utils_set_breakpoint(bp_num, (uint32_t)bp_addr);
+	}
 #endif // __XTENSA__
     return ESP_OK;
 }
@@ -332,8 +374,9 @@ esp_err_t esp_cpu_clear_breakpoint(int bp_num)
         if (ret == 0) {
             return ESP_ERR_INVALID_RESPONSE;
         }
-    }
-    rv_utils_clear_breakpoint(bp_num);
+    } else {
+        rv_utils_clear_breakpoint(bp_num);
+	}
 #endif // __XTENSA__
     return ESP_OK;
 }
@@ -365,8 +408,9 @@ esp_err_t esp_cpu_set_watchpoint(int wp_num, const void *wp_addr, size_t size, e
         if (ret == 0) {
             return ESP_ERR_INVALID_RESPONSE;
         }
-    }
-    rv_utils_set_watchpoint(wp_num, (uint32_t)wp_addr, size, on_read, on_write);
+    } else {
+        rv_utils_set_watchpoint(wp_num, (uint32_t)wp_addr, size, on_read, on_write);
+	}
 #endif // __XTENSA__
     return ESP_OK;
 }
@@ -387,8 +431,9 @@ esp_err_t esp_cpu_clear_watchpoint(int wp_num)
         if (ret == 0) {
             return ESP_ERR_INVALID_RESPONSE;
         }
-    }
-    rv_utils_clear_watchpoint(wp_num);
+    } else {
+        rv_utils_clear_watchpoint(wp_num);
+	}
 #endif // __XTENSA__
     return ESP_OK;
 }
@@ -438,8 +483,8 @@ exit:
         ret = xt_utils_compare_and_set(addr, compare_value, new_value);
     }
     return ret;
-#else // __XTENSA__
-    // Single core targets don't have atomic CAS instruction. So access method is the same for internal and external RAM
+
+#else // __riscv
     return rv_utils_compare_and_set(addr, compare_value, new_value);
 #endif
 }

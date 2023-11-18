@@ -93,7 +93,7 @@ The main function also initializes the Bluetooth controller by first creating th
 ```c
 esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 if ((ret = esp_bt_controller_init(&bt_cfg)) != ESP_OK) {
-    ESP_LOGE(GAP_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
+    ESP_LOGE(GAP_TAG, "%s initialize controller failed: %s", __func__, esp_err_to_name(ret));
     return;
 }
 ```
@@ -102,7 +102,7 @@ Next, the controller is enabled in Classic Bluetooth Mode.
 
 ```c
 if ((ret = esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT)) != ESP_OK) {
-    ESP_LOGE(GAP_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
+    ESP_LOGE(GAP_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
     return;
 }
 ```
@@ -118,13 +118,14 @@ There are four Bluetooth modes supported:
 After the initialization of the Bluetooth controller, the Bluedroid stack, which includes the common definitions and APIs for both Bluetooth Classic and BLE, is initialized and enabled by using:
 
 ```c
-if ((ret = esp_bluedroid_init()) != ESP_OK) {
-    ESP_LOGE(GAP_TAG, "%s initialize bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
+esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+if ((ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg)) != ESP_OK) {
+    ESP_LOGE(GAP_TAG, "%s initialize bluedroid failed: %s", __func__, esp_err_to_name(ret));
     return;
 }
 
 if ((ret = esp_bluedroid_enable()) != ESP_OK) {
-    ESP_LOGE(GAP_TAG, "%s enable bluedroid failed: %s\n", __func__, esp_err_to_name(ret));
+    ESP_LOGE(GAP_TAG, "%s enable bluedroid failed: %s", __func__, esp_err_to_name(ret));
     return;
 }
 ```

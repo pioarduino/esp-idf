@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -652,7 +652,6 @@ static void btc_gap_bt_pin_reply(btc_gap_bt_args_t *arg){
     BTA_DmPinReply(arg->pin_reply.bda.address, arg->pin_reply.accept, arg->pin_reply.pin_code_len, arg->pin_reply.pin_code);
 }
 
-#if (BT_SSP_INCLUDED == TRUE)
 static esp_err_t btc_gap_bt_set_security_param(btc_gap_bt_args_t *arg)
 {
     esp_err_t ret;
@@ -681,14 +680,13 @@ static void btc_gap_bt_ssp_confirm(btc_gap_bt_args_t *arg)
     BTA_DmConfirm(arg->confirm_reply.bda.address, arg->confirm_reply.accept);
 }
 
-#endif ///BT_SSP_INCLUDED == TRUE
-
 static void btc_gap_bt_config_eir(btc_gap_bt_args_t *arg)
 {
     tBTA_DM_EIR_CONF eir_config;
     esp_bt_eir_data_t *eir_data = &arg->config_eir.eir_data;
 
     eir_config.bta_dm_eir_fec_required = eir_data->fec_required;
+    eir_config.bta_dm_eir_included_name = eir_data->include_name;
     eir_config.bta_dm_eir_included_tx_power = eir_data->include_txpower;
     eir_config.bta_dm_eir_included_uuid = eir_data->include_uuid;
     eir_config.bta_dm_eir_flags = eir_data->flag;
@@ -723,6 +721,53 @@ static void btc_gap_bt_set_afh_channels_cmpl_callback(void *p_data)
 static void btc_gap_bt_set_afh_channels(btc_gap_bt_args_t *arg)
 {
     BTA_DmSetAfhChannels(arg->set_afh_channels.channels, btc_gap_bt_set_afh_channels_cmpl_callback);
+}
+
+static void btc_gap_bt_set_page_timeout_cmpl_callback(void *p_data)
+{
+    tBTA_SET_PAGE_TIMEOUT_RESULTS *result = (tBTA_SET_PAGE_TIMEOUT_RESULTS *)p_data;
+    esp_bt_gap_cb_param_t param;
+    bt_status_t ret;
+    btc_msg_t msg;
+    msg.sig = BTC_SIG_API_CB;
+    msg.pid = BTC_PID_GAP_BT;
+    msg.act = BTC_GAP_BT_SET_PAGE_TO_EVT;
+
+    param.set_page_timeout.stat = btc_btm_status_to_esp_status(result->status);
+
+    ret = btc_transfer_context(&msg, &param, sizeof(esp_bt_gap_cb_param_t), NULL, NULL);
+    if (ret != BT_STATUS_SUCCESS) {
+        BTC_TRACE_ERROR("%s btc_transfer_context failed\n", __func__);
+    }
+}
+
+static void btc_gap_set_page_timeout(btc_gap_bt_args_t *arg)
+{
+    BTA_DmSetPageTimeout(arg->set_page_to.page_to, btc_gap_bt_set_page_timeout_cmpl_callback);
+}
+
+static void btc_gap_bt_get_page_timeout_cmpl_callback(void *p_data)
+{
+    tBTA_GET_PAGE_TIMEOUT_RESULTS *result = (tBTA_GET_PAGE_TIMEOUT_RESULTS *)p_data;
+    esp_bt_gap_cb_param_t param;
+    bt_status_t ret;
+    btc_msg_t msg;
+    msg.sig = BTC_SIG_API_CB;
+    msg.pid = BTC_PID_GAP_BT;
+    msg.act = BTC_GAP_BT_GET_PAGE_TO_EVT;
+
+    param.get_page_timeout.stat = btc_btm_status_to_esp_status(result->status);
+    param.get_page_timeout.page_to = result->page_to;
+
+    ret = btc_transfer_context(&msg, &param, sizeof(esp_bt_gap_cb_param_t), NULL, NULL);
+    if (ret != BT_STATUS_SUCCESS) {
+        BTC_TRACE_ERROR("%s btc_transfer_context failed\n", __func__);
+    }
+}
+
+static void btc_gap_get_page_timeout(void)
+{
+    BTA_DmGetPageTimeout(btc_gap_bt_get_page_timeout_cmpl_callback);
 }
 
 static void btc_gap_bt_read_remote_name_cmpl_callback(void *p_data)
@@ -797,8 +842,9 @@ void btc_gap_bt_arg_deep_copy(btc_msg_t *msg, void *p_dest, void *p_src)
     case BTC_GAP_BT_ACT_SET_AFH_CHANNELS:
     case BTC_GAP_BT_ACT_READ_REMOTE_NAME:
     case BTC_GAP_BT_ACT_SET_QOS:
+    case BTC_GAP_BT_ACT_SET_PAGE_TIMEOUT:
+    case BTC_GAP_BT_ACT_GET_PAGE_TIMEOUT:
         break;
-#if (BT_SSP_INCLUDED == TRUE)
     case BTC_GAP_BT_ACT_PASSKEY_REPLY:
     case BTC_GAP_BT_ACT_CONFIRM_REPLY:
         break;
@@ -815,7 +861,6 @@ void btc_gap_bt_arg_deep_copy(btc_msg_t *msg, void *p_dest, void *p_src)
         }
         break;
     }
-#endif ///BT_SSP_INCLUDED == TRUE
 
     case BTC_GAP_BT_ACT_CONFIG_EIR:{
         btc_gap_bt_args_t *src = (btc_gap_bt_args_t *)p_src;
@@ -863,8 +908,9 @@ void btc_gap_bt_arg_deep_free(btc_msg_t *msg)
     case BTC_GAP_BT_ACT_SET_AFH_CHANNELS:
     case BTC_GAP_BT_ACT_READ_REMOTE_NAME:
     case BTC_GAP_BT_ACT_SET_QOS:
+    case BTC_GAP_BT_ACT_SET_PAGE_TIMEOUT:
+    case BTC_GAP_BT_ACT_GET_PAGE_TIMEOUT:
         break;
-#if (BT_SSP_INCLUDED == TRUE)
     case BTC_GAP_BT_ACT_PASSKEY_REPLY:
     case BTC_GAP_BT_ACT_CONFIRM_REPLY:
         break;
@@ -873,7 +919,6 @@ void btc_gap_bt_arg_deep_free(btc_msg_t *msg)
             osi_free(arg->set_security_param.value);
         }
         break;
-#endif ///BT_SSP_INCLUDED == TRUE
 
     case BTC_GAP_BT_ACT_CONFIG_EIR:
         if (arg->config_eir.eir_data.p_manufacturer_data) {
@@ -934,7 +979,6 @@ void btc_gap_bt_call_handler(btc_msg_t *msg)
         btc_gap_bt_pin_reply(arg);
         break;
     }
-#if (BT_SSP_INCLUDED == TRUE)
     case BTC_GAP_BT_ACT_SET_SECURITY_PARAM:{
         btc_gap_bt_set_security_param(arg);
         break;
@@ -947,7 +991,6 @@ void btc_gap_bt_call_handler(btc_msg_t *msg)
         btc_gap_bt_ssp_confirm(arg);
         break;
     }
-#endif ///BT_SSP_INCLUDED == TRUE
     case BTC_GAP_BT_ACT_CONFIG_EIR: {
         btc_gap_bt_config_eir(arg);
         break;
@@ -963,6 +1006,14 @@ void btc_gap_bt_call_handler(btc_msg_t *msg)
     }
     case BTC_GAP_BT_ACT_SET_QOS: {
         btc_gap_bt_set_qos(arg);
+        break;
+    }
+    case BTC_GAP_BT_ACT_SET_PAGE_TIMEOUT: {
+        btc_gap_set_page_timeout(arg);
+        break;
+    }
+    case BTC_GAP_BT_ACT_GET_PAGE_TIMEOUT: {
+        btc_gap_get_page_timeout();
         break;
     }
     default:
@@ -1007,11 +1058,11 @@ void btc_gap_bt_cb_deep_free(btc_msg_t *msg)
     case BTC_GAP_BT_READ_REMOTE_NAME_EVT:
     case BTC_GAP_BT_REMOVE_BOND_DEV_COMPLETE_EVT:
     case BTC_GAP_BT_QOS_EVT:
-#if (BT_SSP_INCLUDED == TRUE)
+    case BTC_GAP_BT_SET_PAGE_TO_EVT:
+    case BTC_GAP_BT_GET_PAGE_TO_EVT:
     case BTC_GAP_BT_CFM_REQ_EVT:
     case BTC_GAP_BT_KEY_NOTIF_EVT:
     case BTC_GAP_BT_KEY_REQ_EVT:
-#endif ///BT_SSP_INCLUDED == TRUE
 #if (BTC_DM_PM_INCLUDED == TRUE)
     case BTC_GAP_BT_MODE_CHG_EVT:
 #endif /// BTC_DM_PM_INCLUDED == TRUE
@@ -1053,7 +1104,6 @@ void btc_gap_bt_cb_handler(btc_msg_t *msg)
         btc_gap_bt_cb_to_app(ESP_BT_GAP_PIN_REQ_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
         break;
     }
-#if (BT_SSP_INCLUDED == TRUE)
     case BTC_GAP_BT_CFM_REQ_EVT:{
         btc_gap_bt_cb_to_app(ESP_BT_GAP_CFM_REQ_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
         break;
@@ -1066,7 +1116,6 @@ void btc_gap_bt_cb_handler(btc_msg_t *msg)
         btc_gap_bt_cb_to_app(ESP_BT_GAP_KEY_REQ_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
         break;
     }
-#endif ///BT_SSP_INCLUDED == TRUE
     case BTC_GAP_BT_SET_AFH_CHANNELS_EVT:{
         btc_gap_bt_cb_to_app(ESP_BT_GAP_SET_AFH_CHANNELS_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
         break;
@@ -1090,6 +1139,14 @@ void btc_gap_bt_cb_handler(btc_msg_t *msg)
 
     case BTC_GAP_BT_QOS_EVT:{
         btc_gap_bt_cb_to_app(ESP_BT_GAP_QOS_CMPL_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
+        break;
+    }
+    case BTC_GAP_BT_SET_PAGE_TO_EVT: {
+        btc_gap_bt_cb_to_app(ESP_BT_GAP_SET_PAGE_TO_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
+        break;
+    }
+    case BTC_GAP_BT_GET_PAGE_TO_EVT: {
+        btc_gap_bt_cb_to_app(ESP_BT_GAP_GET_PAGE_TO_EVT, (esp_bt_gap_cb_param_t *)msg->arg);
         break;
     }
     default:

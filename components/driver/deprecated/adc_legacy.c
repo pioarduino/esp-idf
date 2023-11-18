@@ -24,6 +24,7 @@
 #include "adc1_private.h"
 #include "hal/adc_types.h"
 #include "hal/adc_hal.h"
+#include "hal/adc_ll.h"
 #include "hal/adc_hal_common.h"
 #include "esp_private/periph_ctrl.h"
 #include "driver/adc_types_legacy.h"
@@ -164,7 +165,7 @@ static void adc_rtc_chan_init(adc_unit_t adc_unit)
 #endif
     }
     if (adc_unit == ADC_UNIT_2) {
-        adc_hal_pwdet_set_cct(ADC_LL_PWDET_CCT_DEFAULT);
+        adc_ll_pwdet_set_cct(ADC_LL_PWDET_CCT_DEFAULT);
         adc_oneshot_ll_output_invert(ADC_UNIT_2, ADC_LL_DATA_INVERT_DEFAULT(ADC_UNIT_2));
         adc_ll_set_sar_clk_div(ADC_UNIT_2, ADC_LL_SAR_CLK_DIV_DEFAULT(ADC_UNIT_2));
     }
@@ -669,7 +670,7 @@ static adc_atten_t s_atten2_single[ADC2_CHANNEL_MAX];    //Array saving attenuat
 
 static int8_t adc_digi_get_io_num(adc_unit_t adc_unit, uint8_t adc_channel)
 {
-    assert(adc_unit <= SOC_ADC_PERIPH_NUM);
+    assert(adc_unit < SOC_ADC_PERIPH_NUM);
     uint8_t adc_n = (adc_unit == ADC_UNIT_1) ? 0 : 1;
     return adc_channel_io_map[adc_n][adc_channel];
 }
@@ -801,7 +802,7 @@ int adc1_get_raw(adc1_channel_t channel)
 esp_err_t adc2_config_channel_atten(adc2_channel_t channel, adc_atten_t atten)
 {
     ESP_RETURN_ON_FALSE(channel < SOC_ADC_CHANNEL_NUM(ADC_UNIT_2), ESP_ERR_INVALID_ARG, ADC_TAG, "ADC2 channel error");
-    ESP_RETURN_ON_FALSE((atten <= ADC_ATTEN_DB_11), ESP_ERR_INVALID_ARG, ADC_TAG, "ADC2 Atten Err");
+    ESP_RETURN_ON_FALSE((atten <= ADC_ATTEN_DB_12), ESP_ERR_INVALID_ARG, ADC_TAG, "ADC2 Atten Err");
 
     esp_err_t ret = ESP_OK;
     s_atten2_single[channel] = atten;

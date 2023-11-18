@@ -31,11 +31,7 @@ idf_build_get_property(target IDF_TARGET)
 if(CONFIG_FREERTOS_SMP)
     set(kernel_impl "FreeRTOS-Kernel-SMP")
 else()
-    if(CONFIG_FREERTOS_USE_KERNEL_10_5_1)
-        message(FATAL_ERROR "FreeRTOS v10.5.1 is not buildable yet. Still under development")
-    else()
-        set(kernel_impl "FreeRTOS-Kernel")
-    endif()
+    set(kernel_impl "FreeRTOS-Kernel")
 endif()
 
 if(CONFIG_IDF_TARGET_ARCH_XTENSA)
@@ -71,7 +67,6 @@ list(APPEND srcs
     "${kernel_impl}/queue.c"
     "${kernel_impl}/tasks.c"
     "${kernel_impl}/timers.c"
-    "${kernel_impl}/croutine.c"
     "${kernel_impl}/event_groups.c"
     "${kernel_impl}/stream_buffer.c")
 
@@ -99,12 +94,8 @@ endif()
 
 # Add ESP-additions source files
 list(APPEND srcs
+    "esp_additions/freertos_compatibility.c"
     "esp_additions/idf_additions.c")
-
-if(kernel_impl STREQUAL "FreeRTOS-Kernel")
-    list(APPEND srcs
-        "esp_additions/freertos_v8_compat.c")
-endif()
 
 if(arch STREQUAL "linux")
     # Check if we need to address the FreeRTOS EINTR coexistence with linux system calls if we're building without
@@ -250,7 +241,4 @@ else()
         idf_component_optional_requires(PRIVATE esp_pm)
     endif()
 
-    if(CONFIG_FREERTOS_ENABLE_STATIC_TASK_CLEAN_UP AND CONFIG_FREERTOS_SMP)
-        target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=vPortCleanUpTCB")
-    endif()
 endif()

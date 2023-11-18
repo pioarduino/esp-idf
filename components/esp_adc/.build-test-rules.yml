@@ -1,5 +1,0 @@
-# Documentation: .gitlab/ci/README.md#manifest-file-to-control-the-buildtest-apps
-
-components/esp_adc/test_apps/adc:
-  disable:
-    - if: SOC_ADC_SUPPORTED != 1

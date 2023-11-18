@@ -127,7 +127,7 @@ IROM（代码从 flash 中运行）
 
 .. only:: esp32
 
-    允许从 flash 中执行代码的 Flash MMU 机制可参考 {IDF_TARGET_NAME} 技术参考手册* > *存储器管理和保护单元 (MMU, MPU)* [`PDF <{IDF_TARGET_TRM_CN_URL}#mpummu>`__]。
+    允许从 flash 中执行代码的 flash MMU 机制可参考 {IDF_TARGET_NAME} 技术参考手册* > *存储器管理和保护单元 (MMU, MPU)* [`PDF <{IDF_TARGET_TRM_CN_URL}#mpummu>`__]。
 
 在 :doc:`启动 <startup>` 过程中，从 IRAM 中运行的引导加载程序配置 MMU flash 缓存，将应用程序的指令代码区域映射到指令空间。通过 MMU 访问的 flash 使用一些内部 SRAM 进行缓存，访问缓存的 flash 数据与访问其他类型的内部存储器一样快。
 
@@ -143,7 +143,7 @@ DROM（数据存储在 flash 中）
 
 唯一没有默认放入 DROM 的常量数据是被编译器嵌入到应用程序代码中的字面常量。这些被放置在周围函数的可执行指令中。
 
-``DRAM_ATTR`` 属性可以用来强制将常量从 DRAM 放入 :ref:`dram` 部分（见上文）。
+``DRAM_ATTR`` 属性可以用来强制将常量从 DROM 放入 :ref:`dram` 部分（见上文）。
 
 .. only:: SOC_RTC_SLOW_MEM_SUPPORTED
 
@@ -168,16 +168,16 @@ DROM（数据存储在 flash 中）
 
         .. note::
 
-            对于 {IDF_TARGET_NAME}， RTC 存储器已被重新重命名为 LP（低功耗）存储器。在与 {IDF_TARGET_NAME} 相关的 IDF 代码、文档以及技术参考手册中，可能会出现这两个术语混用的情况。
+            对于 {IDF_TARGET_NAME}，RTC 存储器已被重新重命名为 LP（低功耗）存储器。在与 {IDF_TARGET_NAME} 相关的 IDF 代码、文档以及技术参考手册中，可能会出现这两个术语混用的情况。
 
 
     RTC FAST memory 的同一区域既可以作为指令存储器也可以作为数据存储器进行访问。从深度睡眠模式唤醒后必须要运行的代码要放在 RTC 存储器中，更多信息请查阅文档 :doc:`深度睡眠 <deep-sleep-stub>`。
 
     .. only:: esp32
 
-        RTC FAST memory 只可以被 PRO CPU 访问。
+        在单核模式下 (:ref:`CONFIG_FREERTOS_UNICORE`)，除非禁用 :ref:`CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP` 选项，否则剩余的 RTC FAST memory 会被添加到堆中。该部分内存可以和 :ref:`DRAM` 互换使用，但是访问速度稍慢，且不具备 DMA 功能。
 
-        在单核模式下，除非禁用 :ref:`CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP` 选项，否则剩余的 RTC FAST memory 会被添加到堆中。该部分内存可以和 :ref:`DRAM` 互换使用，但是访问速度稍慢，且不具备 DMA 功能。
+        :ref:`CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP` 选项在双核模式下不可用，因为 {IDF_TARGET_NAME} 的 RTC FAST memory 只能由 PRO CPU 访问。
 
     .. only:: not esp32
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -156,7 +156,8 @@ void ble_ibeacon_appRegister(void)
 
 void ble_ibeacon_init(void)
 {
-    esp_bluedroid_init();
+    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+    esp_bluedroid_init_with_cfg(&bluedroid_cfg);
     esp_bluedroid_enable();
     ble_ibeacon_appRegister();
 }
@@ -182,7 +183,7 @@ void app_main(void)
         esp_ble_gap_config_adv_data_raw((uint8_t*)&ibeacon_adv_data, sizeof(ibeacon_adv_data));
     }
     else {
-        ESP_LOGE(DEMO_TAG, "Config iBeacon data failed: %s\n", esp_err_to_name(status));
+        ESP_LOGE(DEMO_TAG, "Config iBeacon data failed: %s", esp_err_to_name(status));
     }
 #endif
 }

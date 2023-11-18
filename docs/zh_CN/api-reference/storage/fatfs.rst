@@ -3,7 +3,7 @@ FAT 文件系统
 
 :link_to_translation:`en:[English]`
 
-ESP-IDF 使用 `FatFs <http://elm-chan.org/fsw/ff/00index_e.html>`_ 库来实现 FAT 文件系统。FatFs 库位于 ``fatfs`` 组件中，您可以直接使用，也可以借助 C 标准库和 POSIX API 通过 VFS（虚拟文件系统）使用 FatFs 库的大多数功能。
+ESP-IDF 使用 `FatFs <http://elm-chan.org/fsw/ff/00index_e.html>`_ 库来实现 FAT 文件系统。FatFs 库位于 ``fatfs`` 组件中，支持直接使用，也可以借助 C 标准库和 POSIX API 通过 VFS（虚拟文件系统）使用 FatFs 库的大多数功能。
 
 此外，我们对 FatFs 库进行了扩展，新增了支持可插拔磁盘 I/O 调度层，从而允许在运行时将 FatFs 驱动映射到物理磁盘。
 
@@ -26,26 +26,25 @@ FatFs 与 VFS 配合使用
 
 2. 调用 :cpp:func:`ff_diskio_register`，为步骤 1 中的驱动编号注册磁盘 I/O 驱动；
 
-3. 调用 FatFs 函数 ``f_mount``，随后调用 ``f_fdisk`` 或 ``f_mkfs``，并使用与传递到 :cpp:func:`esp_vfs_fat_register` 相同的驱动编号挂载文件系统。请参考 `FatFs 文档 <http://elm-chan.org/fsw/ff/doc/mount.html>`_，查看更多信息；
+3. 调用 FatFs 函数 :cpp:func:`f_mount`，随后调用 :cpp:func:`f_fdisk` 或 :cpp:func:`f_mkfs`，并使用与传递到 :cpp:func:`esp_vfs_fat_register` 相同的驱动编号挂载文件系统。请参考 `FatFs 文档 <http://elm-chan.org/fsw/ff/doc/mount.html>`_，查看更多信息；
 
-4. 调用 C 标准库和 POSIX API 对路径中带有步骤 1 中所述前缀的文件（例如，``"/sdcard/hello.txt"``）执行打开、读取、写入、擦除、复制等操作。文件系统默认使用 `8.3 文件名 <https://en.wikipedia.org/wiki/8.3_filename>`_ 格式 (SFN)。若您需要使用长文件名 (LFN)，启用 :ref:`CONFIG_FATFS_LONG_FILENAMES` 选项。请参考 `here <http://elm-chan.org/fsw/ff/doc/filename.html>`_，查看更多信息；
+4. 调用 C 标准库和 POSIX API 对路径中带有步骤 1 中所述前缀的文件（例如，``"/sdcard/hello.txt"``）执行打开、读取、写入、擦除、复制等操作。文件系统默认使用 `8.3 文件名 <https://en.wikipedia.org/wiki/8.3_filename>`_ 格式 (SFN)。如需使用长文件名 (LFN)，启用 :ref:`CONFIG_FATFS_LONG_FILENAMES` 选项。请参考 `here <http://elm-chan.org/fsw/ff/doc/filename.html>`_，查看更多信息；
 
-5. 您可以选择启用 :ref:`CONFIG_FATFS_USE_FASTSEEK` 选项，使用 POSIX lseek 来快速执行。快速查找不适用于编辑模式下的文件，所以，使用快速查找时，应在只读模式下打开（或者关闭然后重新打开）文件；
+5. 可以启用 :ref:`CONFIG_FATFS_USE_FASTSEEK` 选项，可以使用 POSIX lseek 实现快速执行。快速查找不适用于编辑模式下的文件，所以，使用快速查找时，应在只读模式下打开（或者关闭然后重新打开）文件；
 
-6. 您也可以选择直接调用 FatFs 库函数，但需要使用没有 VFS 前缀的路径（例如，``"/hello.txt"``）；
+6. 可以启用 :ref:`CONFIG_FATFS_IMMEDIATE_FSYNC` 选项，在每次调用 :cpp:func:`vfs_fat_write`、:cpp:func:`vfs_fat_pwrite`、:cpp:func:`vfs_fat_link`、:cpp:func:`vfs_fat_truncate` 和 :cpp:func:`vfs_fat_ftruncate` 函数之后，自动调用 :cpp:func:`f_sync` 以同步最近的文件改动。该功能可提高文件系统中文件的一致性和文件大小报告的准确性，但是由于需要频繁进行磁盘操作，性能将会受到影响；
 
-7. 关闭所有打开的文件；
+7. 可以直接调用 FatFs 库函数，但需要使用没有 VFS 前缀的路径，如 ``"/hello.txt"``；
 
-8. 调用 FatFs 函数 ``f_mount`` 并使用 NULL ``FATFS*`` 参数，为与上述编号相同的驱动卸载文件系统；
+8. 关闭所有打开的文件；
 
-9. 调用 FatFs 函数 :cpp:func:`ff_diskio_register` 并使用 NULL ``ff_diskio_impl_t*`` 参数和相同的驱动编号，来释放注册的磁盘 I/O 驱动；
+9. 调用 FatFs 函数 :cpp:func:`f_mount` 并使用 NULL ``FATFS*`` 参数，为与上述编号相同的驱动卸载文件系统；
 
-10. 调用 :cpp:func:`esp_vfs_fat_unregister_path` 并使用文件系统挂载的路径将 FatFs 从 VFS 中移除，并释放步骤 1 中分配的 ``FATFS`` 结构。
+10. 调用 FatFs 函数 :cpp:func:`ff_diskio_register` 并使用 NULL ``ff_diskio_impl_t*`` 参数和相同的驱动编号，来释放注册的磁盘 I/O 驱动；
 
-便捷函数 ``esp_vfs_fat_sdmmc_mount``、 ``esp_vfs_fat_sdspi_mount`` 和 ``esp_vfs_fat_sdmmc_unmount`` 对上述步骤进行了封装，并加入了对 SD 卡初始化的处理。我们将在下一章节详细介绍以上函数。
+11. 调用 :cpp:func:`esp_vfs_fat_unregister_path` 并使用文件系统挂载的路径将 FatFs 从 VFS 中移除，并释放步骤 1 中分配的 ``FATFS`` 结构。
 
-.. doxygenfunction:: esp_vfs_fat_register
-.. doxygenfunction:: esp_vfs_fat_unregister_path
+便捷函数 :cpp:func:`esp_vfs_fat_sdmmc_mount`、:cpp:func:`esp_vfs_fat_sdspi_mount` 和 :cpp:func:`esp_vfs_fat_sdcard_unmount` 对上述步骤进行了封装，并加入了对 SD 卡初始化的处理。我们将在下一章节详细介绍以上函数。
 
 
 FatFs 与 VFS 和 SD 卡配合使用
@@ -55,21 +54,11 @@ FatFs 与 VFS 和 SD 卡配合使用
 
 便捷函数 :cpp:func:`esp_vfs_fat_sdmmc_unmount` 用于卸载文件系统并释放从 :cpp:func:`esp_vfs_fat_sdmmc_mount` 函数获取的资源。
 
-.. doxygenfunction:: esp_vfs_fat_sdmmc_mount
-.. doxygenfunction:: esp_vfs_fat_sdmmc_unmount
-.. doxygenfunction:: esp_vfs_fat_sdspi_mount
-.. doxygenstruct:: esp_vfs_fat_mount_config_t
-    :members:
-.. doxygenfunction:: esp_vfs_fat_sdcard_unmount
-
 
 FatFs 与 VFS 配合使用（只读模式下）
 --------------------------------------
 
 头文件 :component_file:`fatfs/vfs/esp_vfs_fat.h` 也定义了两个便捷函数 :cpp:func:`esp_vfs_fat_spiflash_mount_ro` 和 :cpp:func:`esp_vfs_fat_spiflash_unmount_ro`。上述两个函数分别对 FAT 只读分区执行步骤 1-3 和步骤 7-9。有些数据分区仅在工厂配置时写入一次，之后在整个硬件生命周期内都不会再有任何改动。利用上述两个函数处理这种数据分区非常方便。
-
-.. doxygenfunction:: esp_vfs_fat_spiflash_mount_ro
-.. doxygenfunction:: esp_vfs_fat_spiflash_unmount_ro
 
 
 FatFs 磁盘 I/O 层
@@ -100,7 +89,7 @@ FatFs 分区生成器
 
 目前的最新版本支持短文件名、长文件名、FAT12 和 FAT16。长文件名的上限是 255 个字符，文件名中可以包含多个 ``.`` 字符以及其他字符，如 ``+``、``,``、``;``、``=``、``[`` and ``]`` 等。
 
-如您想进一步了解 FatFs 分区生成器或分区分析器，请查看 :doc:`Generating and parsing FAT partition on host <./fatfsgen>`。
+如需进一步了解 FatFs 分区生成器或分区分析器，请查看 :doc:`Generating and parsing FAT partition on host <./fatfsgen>`。
 
 构建系统中使用 FatFs 分区生成器
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -115,7 +104,7 @@ FatFs 分区生成器
 
 ``fatfs_create_spiflash_image`` 以及 ``fatfs_create_rawflash_image`` 必须从项目的 CMakeLists.txt 中调用。
 
-如果您决定使用 ``fatfs_create_rawflash_image`` （不支持磨损均衡），请注意它仅支持在设备中以只读模式安装。
+如果决定使用 ``fatfs_create_rawflash_image`` （不支持磨损均衡），请注意它仅支持在设备中以只读模式安装。
 
 
 该函数的参数如下：
@@ -145,6 +134,12 @@ FatFs 分区分析器
 
 该分析器为 FatFs 分区生成器 (:component_file:`fatfsgen.py<fatfs/fatfsgen.py>`) 的逆向工具，可以根据 FatFs 镜像在主机上生成文件夹结构。
 
-您可以使用::
+可以使用::
 
     ./fatfsparse.py [-h] [--wl-layer {detect,enabled,disabled}] fatfs_image.img
+
+
+高级 API 参考
+------------------------
+
+.. include-build-file:: inc/esp_vfs_fat.inc

@@ -21,10 +21,12 @@
 #include "soc/rmt_periph.h"
 #include "soc/rtc.h"
 #include "hal/rmt_ll.h"
+#include "hal/cache_hal.h"
 #include "hal/gpio_hal.h"
 #include "driver/gpio.h"
 #include "driver/rmt_rx.h"
 #include "rmt_private.h"
+#include "rom/cache.h"
 
 #define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
 
@@ -39,26 +41,26 @@ static void rmt_rx_default_isr(void *args);
 #if SOC_RMT_SUPPORT_DMA
 static bool rmt_dma_rx_eof_cb(gdma_channel_handle_t dma_chan, gdma_event_data_t *event_data, void *user_data);
 
-static void rmt_rx_mount_dma_buffer(dma_descriptor_t *desc_array, size_t array_size, const void *buffer, size_t buffer_size)
+static void rmt_rx_mount_dma_buffer(rmt_dma_descriptor_t *desc_array, rmt_dma_descriptor_t *desc_array_nc, size_t array_size, const void *buffer, size_t buffer_size)
 {
     size_t prepared_length = 0;
     uint8_t *data = (uint8_t *)buffer;
     int dma_node_i = 0;
-    dma_descriptor_t *desc = NULL;
+    rmt_dma_descriptor_t *desc = NULL;
     while (buffer_size > RMT_DMA_DESC_BUF_MAX_SIZE) {
-        desc = &desc_array[dma_node_i];
+        desc = &desc_array_nc[dma_node_i];
         desc->dw0.suc_eof = 0;
         desc->dw0.size = RMT_DMA_DESC_BUF_MAX_SIZE;
         desc->dw0.length = 0;
         desc->dw0.owner = DMA_DESCRIPTOR_BUFFER_OWNER_DMA;
         desc->buffer = &data[prepared_length];
-        desc->next = &desc_array[dma_node_i + 1];
+        desc->next = &desc_array[dma_node_i + 1]; // note, we must use the cache address for the "next" pointer
         prepared_length += RMT_DMA_DESC_BUF_MAX_SIZE;
         buffer_size -= RMT_DMA_DESC_BUF_MAX_SIZE;
         dma_node_i++;
     }
     if (buffer_size) {
-        desc = &desc_array[dma_node_i];
+        desc = &desc_array_nc[dma_node_i];
         desc->dw0.suc_eof = 0;
         desc->dw0.size = buffer_size;
         desc->dw0.length = 0;
@@ -74,12 +76,7 @@ static esp_err_t rmt_rx_init_dma_link(rmt_rx_channel_t *rx_channel, const rmt_rx
     gdma_channel_alloc_config_t dma_chan_config = {
         .direction = GDMA_CHANNEL_DIRECTION_RX,
     };
-    ESP_RETURN_ON_ERROR(gdma_new_channel(&dma_chan_config, &rx_channel->base.dma_chan), TAG, "allocate RX DMA channel failed");
-    gdma_strategy_config_t gdma_strategy_conf = {
-        .auto_update_desc = true,
-        .owner_check = true,
-    };
-    gdma_apply_strategy(rx_channel->base.dma_chan, &gdma_strategy_conf);
+    ESP_RETURN_ON_ERROR(gdma_new_ahb_channel(&dma_chan_config, &rx_channel->base.dma_chan), TAG, "allocate RX DMA channel failed");
     gdma_rx_event_callbacks_t cbs = {
         .on_recv_eof = rmt_dma_rx_eof_cb,
     };
@@ -171,6 +168,9 @@ static esp_err_t rmt_rx_destroy(rmt_rx_channel_t *rx_channel)
         // de-register channel from RMT group
         rmt_rx_unregister_from_group(&rx_channel->base, rx_channel->base.group);
     }
+    if (rx_channel->dma_nodes) {
+        free(rx_channel->dma_nodes);
+    }
     free(rx_channel);
     return ESP_OK;
 }
@@ -182,6 +182,11 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
 #endif
     esp_err_t ret = ESP_OK;
     rmt_rx_channel_t *rx_channel = NULL;
+    // Check if priority is valid
+    if (config->intr_priority) {
+        ESP_GOTO_ON_FALSE((config->intr_priority) > 0, ESP_ERR_INVALID_ARG, err, TAG, "invalid interrupt priority:%d", config->intr_priority);
+        ESP_GOTO_ON_FALSE(1 << (config->intr_priority) & RMT_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, err, TAG, "invalid interrupt priority:%d", config->intr_priority);
+    }
     ESP_GOTO_ON_FALSE(config && ret_chan && config->resolution_hz, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
     ESP_GOTO_ON_FALSE(GPIO_IS_VALID_GPIO(config->gpio_num), ESP_ERR_INVALID_ARG, err, TAG, "invalid GPIO number");
     ESP_GOTO_ON_FALSE((config->mem_block_symbols & 0x01) == 0 && config->mem_block_symbols >= SOC_RMT_MEM_WORDS_PER_CHANNEL,
@@ -190,18 +195,21 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
     ESP_GOTO_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, err, TAG, "DMA not supported");
 #endif // SOC_RMT_SUPPORT_DMA
 
-    size_t num_dma_nodes = 0;
-    if (config->flags.with_dma) {
-        num_dma_nodes = config->mem_block_symbols * sizeof(rmt_symbol_word_t) / RMT_DMA_DESC_BUF_MAX_SIZE + 1;
-    }
     // malloc channel memory
     uint32_t mem_caps = RMT_MEM_ALLOC_CAPS;
-    if (config->flags.with_dma) {
-        // DMA descriptors must be placed in internal SRAM
-        mem_caps |= MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
-    }
-    rx_channel = heap_caps_calloc(1, sizeof(rmt_rx_channel_t) + num_dma_nodes * sizeof(dma_descriptor_t), mem_caps);
+    rx_channel = heap_caps_calloc(1, sizeof(rmt_rx_channel_t), mem_caps);
     ESP_GOTO_ON_FALSE(rx_channel, ESP_ERR_NO_MEM, err, TAG, "no mem for rx channel");
+    // create DMA descriptor
+    size_t num_dma_nodes = 0;
+    if (config->flags.with_dma) {
+        mem_caps |= MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+        num_dma_nodes = config->mem_block_symbols * sizeof(rmt_symbol_word_t) / RMT_DMA_DESC_BUF_MAX_SIZE + 1;
+        // DMA descriptors must be placed in internal SRAM
+        rx_channel->dma_nodes = heap_caps_aligned_calloc(RMT_DMA_DESC_ALIGN, num_dma_nodes, sizeof(rmt_dma_descriptor_t), mem_caps);
+        ESP_GOTO_ON_FALSE(rx_channel->dma_nodes, ESP_ERR_NO_MEM, err, TAG, "no mem for rx channel DMA nodes");
+        // we will use the non-cached address to manipulate the DMA descriptor, for simplicity
+        rx_channel->dma_nodes_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(rx_channel->dma_nodes);
+    }
     rx_channel->num_dma_nodes = num_dma_nodes;
     // register the channel to group
     ESP_GOTO_ON_ERROR(rmt_rx_register_to_group(rx_channel, config), err, TAG, "register channel failed");
@@ -209,8 +217,6 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
     rmt_hal_context_t *hal = &group->hal;
     int channel_id = rx_channel->base.channel_id;
     int group_id = group->group_id;
-    // select the clock source
-    ESP_GOTO_ON_ERROR(rmt_select_periph_clock(&rx_channel->base, config->clk_src), err, TAG, "set group clock failed");
 
     // reset channel, make sure the RX engine is not working, and events are cleared
     portENTER_CRITICAL(&group->spinlock);
@@ -225,13 +231,22 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
 #endif // SOC_RMT_SUPPORT_DMA
     } else {
         // RMT interrupt is mandatory if the channel doesn't use DMA
-        int isr_flags = RMT_INTR_ALLOC_FLAG;
+        // --- install interrupt service
+        // interrupt is mandatory to run basic RMT transactions, so it's not lazy installed in `rmt_tx_register_event_callbacks()`
+        // 1-- Set user specified priority to `group->intr_priority`
+        bool priority_conflict = rmt_set_intr_priority_to_group(group, config->intr_priority);
+        ESP_GOTO_ON_FALSE(!priority_conflict, ESP_ERR_INVALID_ARG, err, TAG, "intr_priority conflict");
+        // 2-- Get interrupt allocation flag
+        int isr_flags = rmt_get_isr_flags(group);
+        // 3-- Allocate interrupt using isr_flag
         ret = esp_intr_alloc_intrstatus(rmt_periph_signals.groups[group_id].irq, isr_flags,
                                         (uint32_t)rmt_ll_get_interrupt_status_reg(hal->regs),
                                         RMT_LL_EVENT_RX_MASK(channel_id), rmt_rx_default_isr, rx_channel, &rx_channel->base.intr);
         ESP_GOTO_ON_ERROR(ret, err, TAG, "install rx interrupt failed");
     }
 
+    // select the clock source
+    ESP_GOTO_ON_ERROR(rmt_select_periph_clock(&rx_channel->base, config->clk_src), err, TAG, "set group clock failed");
     // set channel clock resolution
     uint32_t real_div = group->resolution_hz / config->resolution_hz;
     rmt_ll_rx_set_channel_clock_div(hal->regs, channel_id, real_div);
@@ -270,10 +285,10 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
     gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[config->gpio_num], PIN_FUNC_GPIO);
 
     // initialize other members of rx channel
+    portMUX_INITIALIZE(&rx_channel->base.spinlock);
+    atomic_init(&rx_channel->base.fsm, RMT_FSM_INIT);
     rx_channel->base.direction = RMT_CHANNEL_DIRECTION_RX;
-    rx_channel->base.fsm = RMT_FSM_INIT;
     rx_channel->base.hw_mem_base = &RMTMEM.channels[channel_id + RMT_RX_CHANNEL_OFFSET_IN_GROUP].symbols[0];
-    rx_channel->base.spinlock = (portMUX_TYPE)portMUX_INITIALIZER_UNLOCKED;
     // polymorphic methods
     rx_channel->base.del = rmt_del_rx_channel;
     rx_channel->base.set_carrier_action = rmt_rx_demodulate_carrier;
@@ -295,6 +310,8 @@ err:
 
 static esp_err_t rmt_del_rx_channel(rmt_channel_handle_t channel)
 {
+    ESP_RETURN_ON_FALSE(atomic_load(&channel->fsm) == RMT_FSM_INIT,
+                        ESP_ERR_INVALID_STATE, TAG, "channel not in init state");
     rmt_rx_channel_t *rx_chan = __containerof(channel, rmt_rx_channel_t, base);
     rmt_group_t *group = channel->group;
     int group_id = group->group_id;
@@ -327,17 +344,22 @@ esp_err_t rmt_rx_register_event_callbacks(rmt_channel_handle_t channel, const rm
 
 esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_size, const rmt_receive_config_t *config)
 {
-    ESP_RETURN_ON_FALSE(channel && buffer && buffer_size && config, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
-    ESP_RETURN_ON_FALSE(channel->direction == RMT_CHANNEL_DIRECTION_RX, ESP_ERR_INVALID_ARG, TAG, "invalid channel direction");
-    ESP_RETURN_ON_FALSE(channel->fsm == RMT_FSM_ENABLE, ESP_ERR_INVALID_STATE, TAG, "channel not in enable state");
+    ESP_RETURN_ON_FALSE_ISR(channel && buffer && buffer_size && config, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    ESP_RETURN_ON_FALSE_ISR(channel->direction == RMT_CHANNEL_DIRECTION_RX, ESP_ERR_INVALID_ARG, TAG, "invalid channel direction");
     rmt_rx_channel_t *rx_chan = __containerof(channel, rmt_rx_channel_t, base);
 
     if (channel->dma_chan) {
-        ESP_RETURN_ON_FALSE(esp_ptr_internal(buffer), ESP_ERR_INVALID_ARG, TAG, "buffer must locate in internal RAM for DMA use");
+        ESP_RETURN_ON_FALSE_ISR(esp_ptr_internal(buffer), ESP_ERR_INVALID_ARG, TAG, "buffer must locate in internal RAM for DMA use");
+
+#if CONFIG_IDF_TARGET_ESP32P4
+        uint32_t data_cache_line_mask = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA) - 1;
+        ESP_RETURN_ON_FALSE_ISR(((uintptr_t)buffer & data_cache_line_mask) == 0, ESP_ERR_INVALID_ARG, TAG, "buffer must be aligned to cache line size");
+        ESP_RETURN_ON_FALSE_ISR((buffer_size & data_cache_line_mask) == 0, ESP_ERR_INVALID_ARG, TAG, "buffer size must be aligned to cache line size");
+#endif
     }
     if (channel->dma_chan) {
-        ESP_RETURN_ON_FALSE(buffer_size <= rx_chan->num_dma_nodes * RMT_DMA_DESC_BUF_MAX_SIZE,
-                            ESP_ERR_INVALID_ARG, TAG, "buffer size exceeds DMA capacity");
+        ESP_RETURN_ON_FALSE_ISR(buffer_size <= rx_chan->num_dma_nodes * RMT_DMA_DESC_BUF_MAX_SIZE,
+                                ESP_ERR_INVALID_ARG, TAG, "buffer size exceeds DMA capacity");
     }
     rmt_group_t *group = channel->group;
     rmt_hal_context_t *hal = &group->hal;
@@ -345,8 +367,13 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
 
     uint32_t filter_reg_value = ((uint64_t)group->resolution_hz * config->signal_range_min_ns) / 1000000000UL;
     uint32_t idle_reg_value = ((uint64_t)channel->resolution_hz * config->signal_range_max_ns) / 1000000000UL;
-    ESP_RETURN_ON_FALSE(filter_reg_value <= RMT_LL_MAX_FILTER_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_min_ns too big");
-    ESP_RETURN_ON_FALSE(idle_reg_value <= RMT_LL_MAX_IDLE_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_max_ns too big");
+    ESP_RETURN_ON_FALSE_ISR(filter_reg_value <= RMT_LL_MAX_FILTER_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_min_ns too big");
+    ESP_RETURN_ON_FALSE_ISR(idle_reg_value <= RMT_LL_MAX_IDLE_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_max_ns too big");
+
+    // check if we're in a proper state to start the receiver
+    rmt_fsm_t expected_fsm = RMT_FSM_ENABLE;
+    ESP_RETURN_ON_FALSE_ISR(atomic_compare_exchange_strong(&channel->fsm, &expected_fsm, RMT_FSM_RUN_WAIT),
+                            ESP_ERR_INVALID_STATE, TAG, "channel not in enable state");
 
     // fill in the transaction descriptor
     rmt_rx_trans_desc_t *t = &rx_chan->trans_desc;
@@ -357,14 +384,14 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
 
     if (channel->dma_chan) {
 #if SOC_RMT_SUPPORT_DMA
-        rmt_rx_mount_dma_buffer(rx_chan->dma_nodes, rx_chan->num_dma_nodes, buffer, buffer_size);
+        rmt_rx_mount_dma_buffer(rx_chan->dma_nodes, rx_chan->dma_nodes_nc, rx_chan->num_dma_nodes, buffer, buffer_size);
         gdma_reset(channel->dma_chan);
-        gdma_start(channel->dma_chan, (intptr_t)rx_chan->dma_nodes);
+        gdma_start(channel->dma_chan, (intptr_t)rx_chan->dma_nodes); // note, we must use the cached descriptor address to start the DMA
 #endif
     }
 
     rx_chan->mem_off = 0;
-    portENTER_CRITICAL(&channel->spinlock);
+    portENTER_CRITICAL_SAFE(&channel->spinlock);
     // reset memory writer offset
     rmt_ll_rx_reset_pointer(hal->regs, channel_id);
     rmt_ll_rx_set_mem_owner(hal->regs, channel_id, RMT_LL_MEM_OWNER_HW);
@@ -374,7 +401,12 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
     rmt_ll_rx_set_idle_thres(hal->regs, channel_id, idle_reg_value);
     // turn on RMT RX machine
     rmt_ll_rx_enable(hal->regs, channel_id, true);
-    portEXIT_CRITICAL(&channel->spinlock);
+    portEXIT_CRITICAL_SAFE(&channel->spinlock);
+
+    // saying we're in running state, this state will last until the receiving is done
+    // i.e., we will switch back to the enable state in the receive done interrupt handler
+    atomic_store(&channel->fsm, RMT_FSM_RUN);
+
     return ESP_OK;
 }
 
@@ -419,13 +451,18 @@ static esp_err_t rmt_rx_demodulate_carrier(rmt_channel_handle_t channel, const r
 
 static esp_err_t rmt_rx_enable(rmt_channel_handle_t channel)
 {
+    // can only enable the channel when it's in "init" state
+    rmt_fsm_t expected_fsm = RMT_FSM_INIT;
+    ESP_RETURN_ON_FALSE(atomic_compare_exchange_strong(&channel->fsm, &expected_fsm, RMT_FSM_ENABLE_WAIT),
+                        ESP_ERR_INVALID_STATE, TAG, "channel not in init state");
+
     rmt_group_t *group = channel->group;
     rmt_hal_context_t *hal = &group->hal;
     int channel_id = channel->channel_id;
 
     // acquire power manager lock
     if (channel->pm_lock) {
-        ESP_RETURN_ON_ERROR(esp_pm_lock_acquire(channel->pm_lock), TAG, "acquire pm_lock failed");
+        esp_pm_lock_acquire(channel->pm_lock);
     }
     if (channel->dma_chan) {
 #if SOC_RMT_SUPPORT_DMA
@@ -441,12 +478,26 @@ static esp_err_t rmt_rx_enable(rmt_channel_handle_t channel)
         rmt_ll_enable_interrupt(hal->regs, RMT_LL_EVENT_RX_MASK(channel_id), true);
         portEXIT_CRITICAL(&group->spinlock);
     }
-    channel->fsm = RMT_FSM_ENABLE;
+
+    atomic_store(&channel->fsm, RMT_FSM_ENABLE);
+
     return ESP_OK;
 }
 
 static esp_err_t rmt_rx_disable(rmt_channel_handle_t channel)
 {
+    // can disable the channel when it's in `enable` or `run` state
+    bool valid_state = false;
+    rmt_fsm_t expected_fsm = RMT_FSM_ENABLE;
+    if (atomic_compare_exchange_strong(&channel->fsm, &expected_fsm, RMT_FSM_INIT_WAIT)) {
+        valid_state = true;
+    }
+    expected_fsm = RMT_FSM_RUN;
+    if (atomic_compare_exchange_strong(&channel->fsm, &expected_fsm, RMT_FSM_INIT_WAIT)) {
+        valid_state = true;
+    }
+    ESP_RETURN_ON_FALSE(valid_state, ESP_ERR_INVALID_STATE, TAG, "channel not in enable or run state");
+
     rmt_group_t *group = channel->group;
     rmt_hal_context_t *hal = &group->hal;
     int channel_id = channel->channel_id;
@@ -472,9 +523,11 @@ static esp_err_t rmt_rx_disable(rmt_channel_handle_t channel)
 
     // release power manager lock
     if (channel->pm_lock) {
-        ESP_RETURN_ON_ERROR(esp_pm_lock_release(channel->pm_lock), TAG, "release pm_lock failed");
+        esp_pm_lock_release(channel->pm_lock);
     }
-    channel->fsm = RMT_FSM_INIT;
+
+    // now we can switch the state to init
+    atomic_store(&channel->fsm, RMT_FSM_INIT);
     return ESP_OK;
 }
 
@@ -532,6 +585,9 @@ static bool IRAM_ATTR rmt_isr_handle_rx_done(rmt_rx_channel_t *rx_chan)
     }
     trans_desc->copy_dest_off += copy_size;
     trans_desc->received_symbol_num += copy_size / sizeof(rmt_symbol_word_t);
+    // switch back to the enable state, then user can call `rmt_receive` to start a new receive
+    atomic_store(&channel->fsm, RMT_FSM_ENABLE);
+
     // notify the user with receive RMT symbols
     if (rx_chan->on_recv_done) {
         rmt_rx_done_event_data_t edata = {
@@ -610,12 +666,12 @@ static void IRAM_ATTR rmt_rx_default_isr(void *args)
 }
 
 #if SOC_RMT_SUPPORT_DMA
-static size_t IRAM_ATTR rmt_rx_get_received_symbol_num_from_dma(dma_descriptor_t *desc)
+static size_t IRAM_ATTR rmt_rx_get_received_symbol_num_from_dma(rmt_dma_descriptor_t *desc_nc)
 {
     size_t received_bytes = 0;
-    while (desc) {
-        received_bytes += desc->dw0.length;
-        desc = desc->next;
+    while (desc_nc) {
+        received_bytes += desc_nc->dw0.length;
+        desc_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(desc_nc->next);
     }
     received_bytes = ALIGN_UP(received_bytes, sizeof(rmt_symbol_word_t));
     return received_bytes / sizeof(rmt_symbol_word_t);
@@ -636,15 +692,27 @@ static bool IRAM_ATTR rmt_dma_rx_eof_cb(gdma_channel_handle_t dma_chan, gdma_eve
     rmt_ll_rx_enable(hal->regs, channel_id, false);
     portEXIT_CRITICAL_ISR(&channel->spinlock);
 
+#if CONFIG_IDF_TARGET_ESP32P4
+    int invalidate_map = CACHE_MAP_L1_DCACHE;
+    if (esp_ptr_external_ram((const void *)trans_desc->buffer)) {
+        invalidate_map |= CACHE_MAP_L2_CACHE;
+    }
+    Cache_Invalidate_Addr(invalidate_map, (uint32_t)trans_desc->buffer, trans_desc->buffer_size);
+#endif
+
+    // switch back to the enable state, then user can call `rmt_receive` to start a new receive
+    atomic_store(&channel->fsm, RMT_FSM_ENABLE);
+
     if (rx_chan->on_recv_done) {
         rmt_rx_done_event_data_t edata = {
             .received_symbols = trans_desc->buffer,
-            .num_symbols = rmt_rx_get_received_symbol_num_from_dma(rx_chan->dma_nodes),
+            .num_symbols = rmt_rx_get_received_symbol_num_from_dma(rx_chan->dma_nodes_nc),
         };
         if (rx_chan->on_recv_done(channel, &edata, rx_chan->user_data)) {
             need_yield = true;
         }
     }
+
     return need_yield;
 }
 #endif // SOC_RMT_SUPPORT_DMA

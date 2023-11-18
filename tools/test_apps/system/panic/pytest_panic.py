@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: CC0-1.0
 
 import re
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pexpect
 import pytest
@@ -52,12 +52,31 @@ CONFIGS_EXTRAM_STACK = [
     pytest.param('coredump_extram_stack', marks=[pytest.mark.esp32, pytest.mark.esp32s2, pytest.mark.psram, pytest.mark.esp32s3, pytest.mark.quad_psram])
 ]
 
+TARGETS_HW_STACK_GUARD = [
+    pytest.mark.esp32c2,
+    pytest.mark.esp32c3,
+    pytest.mark.esp32c6,
+    pytest.mark.esp32h2,
+]
+
+CONFIGS_HW_STACK_GUARD = [
+    pytest.param('coredump_flash_bin_crc', marks=TARGETS_HW_STACK_GUARD),
+    pytest.param('coredump_uart_bin_crc', marks=TARGETS_HW_STACK_GUARD),
+    pytest.param('coredump_uart_elf_crc', marks=TARGETS_HW_STACK_GUARD),
+    pytest.param('gdbstub', marks=TARGETS_HW_STACK_GUARD),
+    pytest.param('panic', marks=TARGETS_HW_STACK_GUARD),
+]
+
+# Panic abort information will start with this string.
+PANIC_ABORT_PREFIX = 'Panic reason: '
+
 
 def get_default_backtrace(config: str) -> List[str]:
     return [config, 'app_main', 'main_task', 'vPortTaskWrapper']
 
 
-def common_test(dut: PanicTestDut, config: str, expected_backtrace: Optional[List[str]] = None) -> None:
+def common_test(dut: PanicTestDut, config: str, expected_backtrace: Optional[List[str]] = None, check_cpu_reset: Optional[bool] = True,
+                expected_coredump: Optional[List[Union[str, re.Pattern]]] = None) -> None:
     if 'gdbstub' in config:
         dut.expect_exact('Entering gdb stub now.')
         dut.start_gdb()
@@ -67,14 +86,21 @@ def common_test(dut: PanicTestDut, config: str, expected_backtrace: Optional[Lis
         dut.revert_log_level()
         return  # don't expect "Rebooting" output below
 
+    # We will only perform comparisons for ELF files, as we are not introducing any new fields to the binary file format.
+    if 'bin' in config:
+        expected_coredump = None
+
     if 'uart' in config:
-        dut.process_coredump_uart()
+        dut.process_coredump_uart(expected_coredump)
     elif 'flash' in config:
-        dut.process_coredump_flash()
+        dut.process_coredump_flash(expected_coredump)
     elif 'panic' in config:
         pass
 
     dut.expect('Rebooting...')
+
+    if check_cpu_reset:
+        dut.expect_cpu_reset()
 
 
 @pytest.mark.parametrize('config', CONFIGS, indirect=True)
@@ -178,6 +204,7 @@ def test_panic_extram_stack(dut: PanicTestDut, config: str, test_func_name: str)
     dut.expect_exact('Restoring stack')
     # The caller must be accessible after restoring the stack
     dut.expect_exact('Core dump has been saved to flash.')
+
     common_test(dut, config)
 
 
@@ -252,8 +279,9 @@ def test_cache_error(dut: PanicTestDut, config: str, test_func_name: str) -> Non
     if dut.target in ['esp32s2', 'esp32s3']:
         # 'test_cache_error' missing from GDB backtrace on ESP32-S2 and ESP-S3, IDF-6561
         expected_backtrace = ['die', 'app_main', 'main_task', 'vPortTaskWrapper']
+
     common_test(
-        dut, config, expected_backtrace=expected_backtrace
+        dut, config, expected_backtrace=expected_backtrace, check_cpu_reset=(dut.target != 'esp32')
     )
 
 
@@ -274,6 +302,7 @@ def test_stack_overflow(dut: PanicTestDut, config: str, test_func_name: str) -> 
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none('Guru Meditation')
+
     common_test(dut, config, expected_backtrace=get_default_backtrace(test_func_name))
 
 
@@ -298,6 +327,7 @@ def test_instr_fetch_prohibited(
 
     dut.expect_elf_sha256()
     dut.expect_none('Guru Meditation')
+
     common_test(
         dut,
         config,
@@ -322,6 +352,7 @@ def test_illegal_instruction(
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none('Guru Meditation')
+
     common_test(dut, config, expected_backtrace=get_default_backtrace(test_func_name))
 
 
@@ -340,6 +371,7 @@ def test_storeprohibited(dut: PanicTestDut, config: str, test_func_name: str) ->
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none('Guru Meditation')
+
     common_test(dut, config, expected_backtrace=get_default_backtrace(test_func_name))
 
 
@@ -347,7 +379,8 @@ def test_storeprohibited(dut: PanicTestDut, config: str, test_func_name: str) ->
 @pytest.mark.generic
 def test_abort(dut: PanicTestDut, config: str, test_func_name: str) -> None:
     dut.run_test_func(test_func_name)
-    dut.expect(r'abort\(\) was called at PC [0-9xa-f]+ on core 0')
+    regex_pattern = rb'abort\(\) was called at PC [0-9xa-f]+ on core 0'
+    dut.expect(regex_pattern)
     if dut.is_xtensa:
         dut.expect_backtrace()
     else:
@@ -355,6 +388,7 @@ def test_abort(dut: PanicTestDut, config: str, test_func_name: str) -> None:
     dut.expect_elf_sha256()
     dut.expect_none(['Guru Meditation', 'Re-entered core dump'])
 
+    coredump_pattern = re.compile(PANIC_ABORT_PREFIX + regex_pattern.decode('utf-8'))
     common_test(
         dut,
         config,
@@ -363,6 +397,7 @@ def test_abort(dut: PanicTestDut, config: str, test_func_name: str) -> None:
             'esp_system_abort',
             'abort'
         ] + get_default_backtrace(test_func_name),
+        expected_coredump=[coredump_pattern]
     )
 
 
@@ -370,7 +405,8 @@ def test_abort(dut: PanicTestDut, config: str, test_func_name: str) -> None:
 @pytest.mark.generic
 def test_ub(dut: PanicTestDut, config: str, test_func_name: str) -> None:
     dut.run_test_func(test_func_name)
-    dut.expect('Undefined behavior of type out_of_bounds')
+    regex_pattern = rb'Undefined behavior of type out_of_bounds'
+    dut.expect(regex_pattern)
     if dut.is_xtensa:
         dut.expect_backtrace()
     else:
@@ -378,6 +414,7 @@ def test_ub(dut: PanicTestDut, config: str, test_func_name: str) -> None:
     dut.expect_elf_sha256()
     dut.expect_none(['Guru Meditation', 'Re-entered core dump'])
 
+    coredump_pattern = re.compile(PANIC_ABORT_PREFIX + regex_pattern.decode('utf-8'))
     common_test(
         dut,
         config,
@@ -387,6 +424,7 @@ def test_ub(dut: PanicTestDut, config: str, test_func_name: str) -> None:
             '__ubsan_default_handler',
             '__ubsan_handle_out_of_bounds'
         ] + get_default_backtrace(test_func_name),
+        expected_coredump=[coredump_pattern]
     )
 
 
@@ -398,13 +436,16 @@ def test_abort_cache_disabled(
     if dut.target == 'esp32s2':
         pytest.xfail(reason='Crashes in itoa which is not in ROM, IDF-3572')
     dut.run_test_func(test_func_name)
-    dut.expect(r'abort\(\) was called at PC [0-9xa-f]+ on core 0')
+    regex_pattern = rb'abort\(\) was called at PC [0-9xa-f]+ on core 0'
+    dut.expect(regex_pattern)
     if dut.is_xtensa:
         dut.expect_backtrace()
     else:
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none(['Guru Meditation', 'Re-entered core dump'])
+
+    coredump_pattern = re.compile(PANIC_ABORT_PREFIX + regex_pattern.decode('utf-8'))
     common_test(
         dut,
         config,
@@ -413,6 +454,7 @@ def test_abort_cache_disabled(
             'esp_system_abort',
             'abort'
         ] + get_default_backtrace(test_func_name),
+        expected_coredump=[coredump_pattern]
     )
 
 
@@ -420,17 +462,16 @@ def test_abort_cache_disabled(
 @pytest.mark.generic
 def test_assert(dut: PanicTestDut, config: str, test_func_name: str) -> None:
     dut.run_test_func(test_func_name)
-    dut.expect(
-        re.compile(
-            rb'assert failed:[\s\w()]*?\s[.\w/]*\.(?:c|cpp|h|hpp):\d.*$', re.MULTILINE
-        )
-    )
+    regex_pattern = rb'assert failed:[\s\w()]*?\s[.\w/]*\.(?:c|cpp|h|hpp):\d.*$'
+    dut.expect(re.compile(regex_pattern, re.MULTILINE))
     if dut.is_xtensa:
         dut.expect_backtrace()
     else:
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none(['Guru Meditation', 'Re-entered core dump'])
+
+    coredump_pattern = re.compile(PANIC_ABORT_PREFIX + regex_pattern.decode('utf-8'), re.MULTILINE)
     common_test(
         dut,
         config,
@@ -438,7 +479,9 @@ def test_assert(dut: PanicTestDut, config: str, test_func_name: str) -> None:
             'panic_abort',
             'esp_system_abort',
             '__assert_func'
-        ] + get_default_backtrace(test_func_name))
+        ] + get_default_backtrace(test_func_name),
+        expected_coredump=[coredump_pattern]
+    )
 
 
 @pytest.mark.parametrize('config', CONFIGS, indirect=True)
@@ -449,13 +492,16 @@ def test_assert_cache_disabled(
     if dut.target == 'esp32s2':
         pytest.xfail(reason='Crashes in itoa which is not in ROM, IDF-3572')
     dut.run_test_func(test_func_name)
-    dut.expect(re.compile(rb'assert failed: [0-9xa-fA-F]+.*$', re.MULTILINE))
+    regex_pattern = rb'assert failed: [0-9xa-fA-F]+.*$'
+    dut.expect(re.compile(regex_pattern, re.MULTILINE))
     if dut.is_xtensa:
         dut.expect_backtrace()
     else:
         dut.expect_stack_dump()
     dut.expect_elf_sha256()
     dut.expect_none(['Guru Meditation', 'Re-entered core dump'])
+
+    coredump_pattern = re.compile(PANIC_ABORT_PREFIX + regex_pattern.decode('utf-8'), re.MULTILINE)
     common_test(
         dut,
         config,
@@ -463,7 +509,9 @@ def test_assert_cache_disabled(
             'panic_abort',
             'esp_system_abort',
             '__assert_func'
-        ] + get_default_backtrace(test_func_name))
+        ] + get_default_backtrace(test_func_name),
+        expected_coredump=[coredump_pattern]
+    )
 
 
 @pytest.mark.esp32
@@ -518,6 +566,7 @@ CONFIGS_MEMPROT_RTC_SLOW_MEM = [
 def test_dcache_read_violation(dut: PanicTestDut, test_func_name: str) -> None:
     dut.run_test_func(test_func_name)
     dut.expect_exact(r'Test error: Test function has returned')
+    dut.expect_cpu_reset()
 
 
 # TODO: IDF-6820: ESP32-S2 -> Fix multiple panic reasons in different runs
@@ -530,6 +579,7 @@ def test_dcache_write_violation(dut: PanicTestDut, test_func_name: str) -> None:
     dut.expect(r'Write operation at address [0-9xa-f]+ not permitted \((\S+)\)')
     dut.expect_reg_dump(0)
     dut.expect_backtrace()
+    dut.expect_cpu_reset()
 
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_IDRAM, indirect=True)
@@ -548,6 +598,8 @@ def test_iram_reg1_write_violation(dut: PanicTestDut, test_func_name: str) -> No
         dut.expect_gme('Store access fault')
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
+
+    dut.expect_cpu_reset()
 
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_IDRAM, indirect=True)
@@ -572,6 +624,8 @@ def test_iram_reg2_write_violation(dut: PanicTestDut, test_func_name: str) -> No
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
 
+    dut.expect_cpu_reset()
+
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_IDRAM, indirect=True)
 @pytest.mark.generic
@@ -594,6 +648,8 @@ def test_iram_reg3_write_violation(dut: PanicTestDut, test_func_name: str) -> No
         dut.expect_gme('Store access fault')
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
+
+    dut.expect_cpu_reset()
 
 
 # TODO: IDF-6820: ESP32-S2 -> Fix incorrect panic reason: Unhandled debug exception
@@ -620,6 +676,8 @@ def test_iram_reg4_write_violation(dut: PanicTestDut, test_func_name: str) -> No
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
 
+    dut.expect_cpu_reset()
+
 
 # TODO: IDF-6820: ESP32-S2 -> Fix multiple panic reasons in different runs
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_IDRAM, indirect=True)
@@ -638,6 +696,8 @@ def test_dram_reg1_execute_violation(dut: PanicTestDut, test_func_name: str) -> 
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
 
+    dut.expect_cpu_reset()
+
 
 # TODO: IDF-6820: ESP32-S2 -> Fix multiple panic reasons in different runs
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_IDRAM, indirect=True)
@@ -655,12 +715,15 @@ def test_dram_reg2_execute_violation(dut: PanicTestDut, test_func_name: str) -> 
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
 
+    dut.expect_cpu_reset()
+
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_RTC_FAST_MEM, indirect=True)
 @pytest.mark.generic
 def test_rtc_fast_reg1_execute_violation(dut: PanicTestDut, test_func_name: str) -> None:
     dut.run_test_func(test_func_name)
     dut.expect_exact(r'Test error: Test function has returned')
+    dut.expect_cpu_reset()
 
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_RTC_FAST_MEM, indirect=True)
@@ -680,6 +743,8 @@ def test_rtc_fast_reg2_execute_violation(dut: PanicTestDut, test_func_name: str)
         dut.expect(r'  operation type: (\S+)')
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
+
+    dut.expect_cpu_reset()
 
 
 # TODO: IDF-6820: ESP32-S2 -> Fix multiple panic reasons in different runs
@@ -706,6 +771,8 @@ def test_rtc_fast_reg3_execute_violation(dut: PanicTestDut, test_func_name: str)
         dut.expect_reg_dump(0)
         dut.expect_stack_dump()
 
+    dut.expect_cpu_reset()
+
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_RTC_SLOW_MEM, indirect=True)
 @pytest.mark.generic
@@ -715,6 +782,7 @@ def test_rtc_slow_reg1_execute_violation(dut: PanicTestDut, test_func_name: str)
     dut.expect(r'Read operation at address [0-9xa-f]+ not permitted \((\S+)\)')
     dut.expect_reg_dump(0)
     dut.expect_corrupted_backtrace()
+    dut.expect_cpu_reset()
 
 
 @pytest.mark.parametrize('config', CONFIGS_MEMPROT_RTC_SLOW_MEM, indirect=True)
@@ -725,6 +793,7 @@ def test_rtc_slow_reg2_execute_violation(dut: PanicTestDut, test_func_name: str)
     dut.expect(r'Read operation at address [0-9xa-f]+ not permitted \((\S+)\)')
     dut.expect_reg_dump(0)
     dut.expect_corrupted_backtrace()
+    dut.expect_cpu_reset()
 
 
 @pytest.mark.esp32
@@ -741,3 +810,29 @@ def test_gdbstub_coredump(dut: PanicTestDut) -> None:
     dut.verify_gdb_backtrace(frames, get_default_backtrace(test_func_name))
     dut.revert_log_level()
     return  # don't expect "Rebooting" output below
+
+
+@pytest.mark.parametrize('config', CONFIGS_HW_STACK_GUARD, indirect=True)
+@pytest.mark.generic
+def test_hw_stack_guard_cpu0(dut: PanicTestDut, config: str, test_func_name: str) -> None:
+    dut.run_test_func(test_func_name)
+    dut.expect_exact('Guru Meditation Error: Core  0 panic\'ed (Stack protection fault).')
+    dut.expect_none('ASSIST_DEBUG is not triggered BUT interrupt occured!')
+    dut.expect(r'Detected in task(.*)at 0x')
+    dut.expect_exact('Stack pointer: 0x')
+    dut.expect(r'Stack bounds: 0x(.*) - 0x')
+    common_test(dut, config)
+
+
+@pytest.mark.esp32
+@pytest.mark.parametrize('config', ['panic'], indirect=True)
+@pytest.mark.generic
+def test_illegal_access(dut: PanicTestDut, config: str, test_func_name: str) -> None:
+    dut.run_test_func(test_func_name)
+    if dut.is_xtensa:
+        dut.expect(r'\[1\] val: (-?\d+) at 0x80000000', timeout=30)
+        dut.expect_gme('LoadProhibited')
+        dut.expect_reg_dump(0)
+        dut.expect_backtrace()
+        dut.expect_elf_sha256()
+        dut.expect_none('Guru Meditation')

@@ -17,6 +17,8 @@ SECTIONS
   {
     . = ALIGN(4);
     _rtc_fast_start = ABSOLUTE(.);
+    _rtc_text_start = ABSOLUTE(.);
+    *(.rtc.entry.text)
 
     mapping[rtc_text]
 
@@ -145,6 +147,7 @@ SECTIONS
     _iram_start = ABSOLUTE(.);
     /* Vectors go to start of IRAM */
     ASSERT(ABSOLUTE(.) % 0x100 == 0, "vector address must be 256 byte aligned");
+    KEEP(*(.exception_vectors_table.text));
     KEEP(*(.exception_vectors.text));
     . = ALIGN(4);
 

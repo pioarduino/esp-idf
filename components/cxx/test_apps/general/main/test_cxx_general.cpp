@@ -63,20 +63,20 @@ class SlowInit
 {
 public:
     SlowInit(int arg) {
-        ESP_LOGD(TAG, "init obj=%d start, arg=%d\n", obj, arg);
+        ESP_LOGD(TAG, "init obj=%d start, arg=%d", obj, arg);
         vTaskDelay(300/portTICK_PERIOD_MS);
         TEST_ASSERT_EQUAL(-1, mInitBy);
         TEST_ASSERT_EQUAL(0, mInitCount);
         mInitBy = arg;
         ++mInitCount;
-        ESP_LOGD(TAG, "init obj=%d done\n", obj);
+        ESP_LOGD(TAG, "init obj=%d done", obj);
     }
 
     static void task(void* arg) {
         int taskId = reinterpret_cast<int>(arg);
-        ESP_LOGD(TAG, "obj=%d before static init, task=%d\n", obj, taskId);
+        ESP_LOGD(TAG, "obj=%d before static init, task=%d", obj, taskId);
         static SlowInit slowinit(taskId);
-        ESP_LOGD(TAG, "obj=%d after static init, task=%d\n", obj, taskId);
+        ESP_LOGD(TAG, "obj=%d after static init, task=%d", obj, taskId);
         xSemaphoreGive(s_slow_init_sem);
         vTaskDelete(NULL);
     }
@@ -318,5 +318,3 @@ template<typename T> __attribute__((unused)) static void test_binary_operators()
 }
 
 //Add more types here. If any flags cannot pass the build, use FLAG_ATTR in esp_attr.h
-#include "driver/timer_types_legacy.h"
-template void test_binary_operators<timer_intr_t>();

@@ -37,6 +37,8 @@
 #include "esp32c6/rtc.h"
 #elif CONFIG_IDF_TARGET_ESP32H2
 #include "esp32h2/rtc.h"
+#elif CONFIG_IDF_TARGET_ESP32P4
+#include "esp32p4/rtc.h"
 #endif
 
 #include "sdkconfig.h"
@@ -492,6 +494,7 @@ static void IRAM_ATTR timer_alarm_handler(void* arg)
     bool isr_timers_processed = false;
 
 #ifdef CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD
+    esp_timer_impl_try_to_set_next_alarm();
     // process timers with ISR dispatch method
     isr_timers_processed = timer_process_alarm(ESP_TIMER_ISR);
     xHigherPriorityTaskWoken = s_isr_dispatch_need_yield;

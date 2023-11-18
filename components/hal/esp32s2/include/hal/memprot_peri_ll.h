@@ -8,7 +8,10 @@
 
 #include <stdbool.h>
 #include "soc/memprot_defs.h"
+#include "soc/dport_access.h"
+#include "soc/periph_defs.h"
 #include "hal/memprot_types.h"
+#include "hal/memprot_ll.h"
 
 #ifdef __cplusplus
 extern "C" {

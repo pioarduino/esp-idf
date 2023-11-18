@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,6 +24,25 @@ extern "C" {
 #define CSR_PCMR_MACHINE    0x7e1
 #define CSR_PCCR_MACHINE    0x7e2
 
+#if SOC_CPU_HAS_FPU
+
+/* FPU bits in mstatus start at bit 13 */
+#define CSR_MSTATUS_FPU_SHIFT       13
+/* FPU registers are clean if bits are 0b10 */
+#define CSR_MSTATUS_FPU_CLEAN_STATE 2
+/* FPU status in mstatus are represented with two bits */
+#define CSR_MSTATUS_FPU_MASK        3
+/* FPU is enabled when writing 1 to FPU bits */
+#define CSR_MSTATUS_FPU_ENA         BIT(13)
+/* Set FPU registers state to clean (after being dirty) */
+#define CSR_MSTATUS_FPU_CLEAR       BIT(13)
+
+#endif /* SOC_CPU_HAS_FPU */
+
+/* SW defined level which the interrupt module will mask interrupt with priority less than threshold during critical sections
+   and spinlocks */
+#define RVHAL_EXCM_LEVEL    4
+
 /* --------------------------------------------------- CPU Control -----------------------------------------------------
  *
  * ------------------------------------------------------------------------------------------------------------------ */
@@ -31,6 +50,15 @@ extern "C" {
 FORCE_INLINE_ATTR void __attribute__((always_inline)) rv_utils_wait_for_intr(void)
 {
     asm volatile ("wfi\n");
+}
+
+/* ------------------------------------------------- Memory Barrier ----------------------------------------------------
+ *
+ * ------------------------------------------------------------------------------------------------------------------ */
+//TODO: IDF-7898
+FORCE_INLINE_ATTR void rv_utils_memory_barrier(void)
+{
+    asm volatile("fence iorw, iorw" : : : "memory");
 }
 
 /* -------------------------------------------------- CPU Registers ----------------------------------------------------
@@ -57,12 +85,22 @@ FORCE_INLINE_ATTR void *rv_utils_get_sp(void)
 
 FORCE_INLINE_ATTR uint32_t __attribute__((always_inline)) rv_utils_get_cycle_count(void)
 {
+#if SOC_INT_CLIC_SUPPORTED
+    //TODO: IDF-7848
+    return RV_READ_CSR(mcycle);
+#else
     return RV_READ_CSR(CSR_PCCR_MACHINE);
+#endif
 }
 
 FORCE_INLINE_ATTR void __attribute__((always_inline)) rv_utils_set_cycle_count(uint32_t ccount)
 {
+#if SOC_INT_CLIC_SUPPORTED
+    //TODO: IDF-7848
+    RV_WRITE_CSR(mcycle, ccount);
+#else
     RV_WRITE_CSR(CSR_PCCR_MACHINE, ccount);
+#endif
 }
 
 /* ------------------------------------------------- CPU Interrupts ----------------------------------------------------
@@ -72,12 +110,37 @@ FORCE_INLINE_ATTR void __attribute__((always_inline)) rv_utils_set_cycle_count(u
 // ---------------- Interrupt Descriptors ------------------
 
 // --------------- Interrupt Configuration -----------------
+#if SOC_INT_CLIC_SUPPORTED
+FORCE_INLINE_ATTR void rv_utils_set_mtvt(uint32_t mtvt_val)
+{
+#define MTVT 0x307
+    RV_WRITE_CSR(MTVT, mtvt_val);
+}
+#endif
 
 FORCE_INLINE_ATTR void rv_utils_set_mtvec(uint32_t mtvec_val)
 {
+#if SOC_INT_CLIC_SUPPORTED
+    mtvec_val |= 3; // Set MODE field to 3 to treat MTVT + 4*interrupt_id as the service entry address for HW vectored interrupts
+#else
     mtvec_val |= 1; // Set MODE field to treat MTVEC as a vector base address
+#endif
     RV_WRITE_CSR(mtvec, mtvec_val);
 }
+
+#if SOC_INT_CLIC_SUPPORTED
+ FORCE_INLINE_ATTR __attribute__((pure)) uint32_t rv_utils_get_interrupt_level(void)
+{
+#if CONFIG_IDF_TARGET_ESP32P4
+    // As per CLIC specs, mintstatus CSR should be at 0xFB1, however esp32p4 implements it at 0x346
+    #define MINTSTATUS 0x346
+#else
+    #error "rv_utils_get_mintstatus() is not implemented. Check for correct mintstatus register address."
+#endif /* CONFIG_IDF_TARGET_ESP32P4 */
+    uint32_t mintstatus = RV_READ_CSR(MINTSTATUS);
+    return ((mintstatus >> 24) & 0xFF); // Return the mintstatus[31:24] bits to get the mil field
+}
+#endif /* SOC_INT_CLIC_SUPPORTED */
 
 // ------------------ Interrupt Control --------------------
 
@@ -97,14 +160,71 @@ FORCE_INLINE_ATTR void rv_utils_intr_disable(uint32_t intr_mask)
     RV_SET_CSR(mstatus, old_mstatus & MSTATUS_MIE);
 }
 
+
+#if SOC_INT_CLIC_SUPPORTED
+
+FORCE_INLINE_ATTR void __attribute__((always_inline)) rv_utils_restore_intlevel(uint32_t restoreval)
+{
+    REG_SET_FIELD(CLIC_INT_THRESH_REG, CLIC_CPU_INT_THRESH, ((restoreval << (8 - NLBITS))) | 0x1f);
+}
+
+FORCE_INLINE_ATTR uint32_t __attribute__((always_inline)) rv_utils_set_intlevel(uint32_t intlevel)
+{
+    uint32_t old_mstatus = RV_CLEAR_CSR(mstatus, MSTATUS_MIE);
+    uint32_t old_thresh;
+
+    old_thresh = REG_GET_FIELD(CLIC_INT_THRESH_REG, CLIC_CPU_INT_THRESH);
+    old_thresh = (old_thresh >> (8 - NLBITS));
+    /* Upper bits should already be 0, but let's be safe and keep NLBITS */
+    old_thresh &= BIT(NLBITS) - 1;
+
+    REG_SET_FIELD(CLIC_INT_THRESH_REG, CLIC_CPU_INT_THRESH, ((intlevel << (8 - NLBITS))) | 0x1f);
+    /**
+     * TODO: IDF-7898
+     * Here is an issue that,
+     * 1. Set the CLIC_INT_THRESH_REG to mask off interrupts whose level is lower than `intlevel`.
+     * 2. Set MSTATUS_MIE (global interrupt), then program may jump to interrupt vector.
+     * 3. The register value change in Step 1 may happen during Step 2.
+     *
+     * To prevent this, here a fence is used
+     */
+    rv_utils_memory_barrier();
+    RV_SET_CSR(mstatus, old_mstatus & MSTATUS_MIE);
+
+    return old_thresh;
+}
+
+FORCE_INLINE_ATTR uint32_t __attribute__((always_inline)) rv_utils_mask_int_level_lower_than(uint32_t intlevel)
+{
+    /* CLIC's set interrupt level is inclusive, i.e. it does mask the set level  */
+    return rv_utils_set_intlevel(intlevel - 1);
+}
+
+#endif /* SOC_INT_CLIC_SUPPORTED */
+
+
 FORCE_INLINE_ATTR uint32_t rv_utils_intr_get_enabled_mask(void)
 {
+#if SOC_INT_CLIC_SUPPORTED
+    unsigned intr_ena_mask = 0;
+    unsigned intr_num;
+    for (intr_num = 0; intr_num < 32; intr_num++) {
+        if (REG_GET_BIT(CLIC_INT_CTRL_REG(intr_num + CLIC_EXT_INTR_NUM_OFFSET), CLIC_INT_IE))
+            intr_ena_mask |= BIT(intr_num);
+    }
+    return intr_ena_mask;
+#else
     return REG_READ(INTERRUPT_CORE0_CPU_INT_ENABLE_REG);
+#endif
 }
 
 FORCE_INLINE_ATTR void rv_utils_intr_edge_ack(unsigned int intr_num)
 {
+#if SOC_INT_CLIC_SUPPORTED
+    REG_SET_BIT(CLIC_INT_CTRL_REG(intr_num + CLIC_EXT_INTR_NUM_OFFSET) , CLIC_INT_IP);
+#else
     REG_SET_BIT(INTERRUPT_CORE0_CPU_INT_CLEAR_REG, intr_num);
+#endif
 }
 
 FORCE_INLINE_ATTR void rv_utils_intr_global_enable(void)
@@ -116,6 +236,37 @@ FORCE_INLINE_ATTR void rv_utils_intr_global_disable(void)
 {
     RV_CLEAR_CSR(mstatus, MSTATUS_MIE);
 }
+
+
+#if SOC_CPU_HAS_FPU
+
+/* ------------------------------------------------- FPU Related ----------------------------------------------------
+ *
+ * ------------------------------------------------------------------------------------------------------------------ */
+
+FORCE_INLINE_ATTR bool rv_utils_enable_fpu(void)
+{
+    /* Set mstatus[14:13] to 0b01 to start the floating-point unit initialization */
+    RV_SET_CSR(mstatus, CSR_MSTATUS_FPU_ENA);
+    /* On the ESP32-P4, the FPU can be used directly after setting `mstatus` bit 13.
+     * Since the interrupt handler expects the FPU states to be either 0b10 or 0b11,
+     * let's write the FPU CSR and clear the dirty bit afterwards. */
+    RV_WRITE_CSR(fcsr, 1);
+    RV_CLEAR_CSR(mstatus, CSR_MSTATUS_FPU_CLEAR);
+    const uint32_t mstatus = RV_READ_CSR(mstatus);
+    /* Make sure the FPU state is 0b10 (clean registers) */
+    return ((mstatus >> CSR_MSTATUS_FPU_SHIFT) & CSR_MSTATUS_FPU_MASK) == CSR_MSTATUS_FPU_CLEAN_STATE;
+}
+
+
+FORCE_INLINE_ATTR void rv_utils_disable_fpu(void)
+{
+    /* Clear mstatus[14:13] bits to disable the floating-point unit */
+    RV_CLEAR_CSR(mstatus, CSR_MSTATUS_FPU_MASK << CSR_MSTATUS_FPU_SHIFT);
+}
+
+#endif /* SOC_CPU_HAS_FPU */
+
 
 /* -------------------------------------------------- Memory Ports -----------------------------------------------------
  *
@@ -212,9 +363,22 @@ FORCE_INLINE_ATTR void rv_utils_dbgr_break(void)
 
 FORCE_INLINE_ATTR bool rv_utils_compare_and_set(volatile uint32_t *addr, uint32_t compare_value, uint32_t new_value)
 {
-    // ESP32C6 starts to support atomic CAS instructions, but it is still a single core target, no need to implement
-    // through lr and sc instructions for now
-    // For an RV target has no atomic CAS instruction, we can achieve atomicity by disabling interrupts
+#if __riscv_atomic
+    uint32_t old_value = 0;
+    int error = 0;
+
+    /* Based on sample code for CAS from RISCV specs v2.2, atomic instructions */
+    __asm__ __volatile__(
+        "cas: lr.w %0, 0(%2)     \n"                        // load 4 bytes from addr (%2) into old_value (%0)
+        "     bne  %0, %3, fail  \n"                        // fail if old_value if not equal to compare_value (%3)
+        "     sc.w %1, %4, 0(%2) \n"                        // store new_value (%4) into addr,
+        "     bnez %1, cas       \n"                        // if we failed to store the new value then retry the operation
+        "fail:                   \n"
+        : "+r" (old_value), "+r" (error)                    // output parameters
+        : "r" (addr), "r" (compare_value), "r" (new_value)  // input parameters
+    );
+#else
+    // For a single core RV target has no atomic CAS instruction, we can achieve atomicity by disabling interrupts
     unsigned old_mstatus;
     old_mstatus = RV_CLEAR_CSR(mstatus, MSTATUS_MIE);
     // Compare and set
@@ -226,8 +390,20 @@ FORCE_INLINE_ATTR bool rv_utils_compare_and_set(volatile uint32_t *addr, uint32_
     // Restore interrupts
     RV_SET_CSR(mstatus, old_mstatus & MSTATUS_MIE);
 
+#endif //__riscv_atomic
     return (old_value == compare_value);
 }
+
+#if SOC_BRANCH_PREDICTOR_SUPPORTED
+FORCE_INLINE_ATTR void rv_utils_en_branch_predictor(void)
+{
+#define MHCR 0x7c1
+#define MHCR_RS (1<<4)   /* R/W, address return stack set bit */
+#define MHCR_BFE (1<<5)  /* R/W, allow predictive jump set bit */
+#define MHCR_BTB (1<<12) /* R/W, branch target prediction enable bit */
+    RV_SET_CSR(MHCR, MHCR_RS|MHCR_BFE|MHCR_BTB);
+}
+#endif
 
 #ifdef __cplusplus
 }

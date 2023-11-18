@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,7 +32,7 @@
  * When defined to 1, the platform MUST implement the otPlatFlash* APIs instead of the otPlatSettings* APIs.
  *
  */
-#define OPENTHREAD_CONFIG_PLATFORM_FLASH_API_ENABLE 1
+#define OPENTHREAD_CONFIG_PLATFORM_FLASH_API_ENABLE 0
 
 /**
  * @def OPENTHREAD_CONFIG_LOG_OUTPUT
@@ -121,6 +121,16 @@
  */
 #ifndef OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
 #define OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE 1
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
+ *
+ * Define to 1 to enable Border Agent ID support.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
+#define OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE 1
 #endif
 
 /**
@@ -351,7 +361,7 @@
  * `RadioSpinel` platform is used.
  *
  */
-#define OPENTHREAD_CONFIG_PLATFORM_RADIO_SPINEL_RX_FRAME_BUFFER_SIZE 1024
+#define OPENTHREAD_CONFIG_PLATFORM_RADIO_SPINEL_RX_FRAME_BUFFER_SIZE CONFIG_OPENTHREAD_SPINEL_RX_FRAME_BUFFER_SIZE
 
 /**
  * @def OPENTHREAD_CONFIG_PLATFORM_USEC_TIMER_ENABLE
@@ -370,6 +380,22 @@
  *
  */
 #define OPENTHREAD_CONFIG_PING_SENDER_ENABLE 1
+
+/**
+ * @def OPENTHREAD_CONFIG_MLE_MAX_CHILDREN
+ *
+ * The maximum number of children.
+ *
+ */
+#define OPENTHREAD_CONFIG_MLE_MAX_CHILDREN CONFIG_OPENTHREAD_MLE_MAX_CHILDREN
+
+/**
+ * @def OPENTHREAD_CONFIG_TMF_ADDRESS_CACHE_ENTRIES
+ *
+ * The number of EID-to-RLOC cache entries.
+ *
+ */
+#define OPENTHREAD_CONFIG_TMF_ADDRESS_CACHE_ENTRIES CONFIG_OPENTHREAD_TMF_ADDR_CACHE_ENTRIES
 
 #if CONFIG_OPENTHREAD_DUA_ENABLE
 /**
@@ -408,6 +434,14 @@
  */
 #if CONFIG_OPENTHREAD_COMMISSIONER
 #define OPENTHREAD_CONFIG_COMMISSIONER_ENABLE 1
+
+/**
+ * @def OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES
+ *
+ * The maximum number of Joiner entries maintained by the Commissioner
+ *
+ */
+#define OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES CONFIG_OPENTHREAD_COMM_MAX_JOINER_ENTRIES
 #endif
 
 #if CONFIG_OPENTHREAD_MACFILTER_ENABLE
@@ -430,6 +464,16 @@
 #ifndef OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
 #define OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE 1
 #endif
+
+/**
+ * @def OPENTHREAD_CONFIG_SRP_CLIENT_BUFFERS_MAX_SERVICES
+ *
+ * Specifies number of service entries in the SRP client service pool.
+ *
+ * This config is applicable only when `OPENTHREAD_CONFIG_SRP_CLIENT_BUFFERS_ENABLE` is enabled.
+ *
+ */
+#define OPENTHREAD_CONFIG_SRP_CLIENT_BUFFERS_MAX_SERVICES CONFIG_OPENTHREAD_SRP_CLIENT_MAX_SERVICES
 #endif
 
 /**
@@ -496,5 +540,54 @@
 #define OPENTHREAD_CONFIG_MLE_LINK_METRICS_INITIATOR_ENABLE 1
 #endif
 #endif //CONFIG_OPENTHREAD_LINK_METRICS
+
+/**
+ * @def OPENTHREAD_CONFIG_OPERATIONAL_DATASET_AUTO_INIT
+ *
+ * Define as 1 to enable support for locally initializing an Active Operational Dataset.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_OPERATIONAL_DATASET_AUTO_INIT
+#define OPENTHREAD_CONFIG_OPERATIONAL_DATASET_AUTO_INIT 1
+#endif
+
+/**
+ *
+ * Define as 1 to enable support for allocating message pool buffer in PSRAM
+ *
+ */
+#if CONFIG_OPENTHREAD_PLATFORM_MSGPOOL_MANAGEMENT
+
+/**
+ * @def OPENTHREAD_CONFIG_PLATFORM_MESSAGE_MANAGEMENT
+ *
+ * The message pool is managed by platform defined logic when this flag is set.
+ * This feature would typically be used when operating in a multi-threaded system
+ * and multiple threads need to access the message pool.
+ *
+ */
+#define OPENTHREAD_CONFIG_PLATFORM_MESSAGE_MANAGEMENT 1
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
+ *
+ * Define as 1 to enable the time synchronization service feature.
+ *
+ */
+#if CONFIG_OPENTHREAD_TIME_SYNC
+#define OPENTHREAD_CONFIG_TIME_SYNC_ENABLE 1
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_RADIO_STATS_ENABLE
+ *
+ * Set to 1 to enable support for Radio Statistics. Note that this option only works for OPENTHREAD_FTD and
+ * OPENTHREAD_MTD.
+ *
+ */
+#if CONFIG_OPENTHREAD_RADIO_STATS_ENABLE
+#define OPENTHREAD_CONFIG_RADIO_STATS_ENABLE 1
+#endif
 
 #define OPENTHREAD_FTD 1

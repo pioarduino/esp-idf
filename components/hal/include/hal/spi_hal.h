@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,11 +26,26 @@
 // field comments.
 
 #pragma once
-#include "hal/spi_ll.h"
-#include <esp_err.h>
-#include "soc/lldesc.h"
+#include "esp_err.h"
 #include "soc/soc_caps.h"
 #include "hal/spi_types.h"
+#include "hal/dma_types.h"
+#include "soc/gdma_channel.h"
+#if SOC_GPSPI_SUPPORTED
+#include "hal/spi_ll.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if SOC_GPSPI_SUPPORTED
+
+#if SOC_GDMA_TRIG_PERIPH_SPI2_BUS == SOC_GDMA_BUS_AHB
+typedef dma_descriptor_align4_t spi_dma_desc_t;
+#else
+typedef dma_descriptor_align8_t spi_dma_desc_t;
+#endif
 
 /**
  * Input parameters to the ``spi_hal_cal_clock_conf`` to calculate the timing configuration
@@ -68,11 +83,11 @@ typedef struct {
     spi_dma_dev_t *dma_in;              ///< Input  DMA(DMA -> RAM) peripheral register address
     spi_dma_dev_t *dma_out;             ///< Output DMA(RAM -> DMA) peripheral register address
     bool dma_enabled;                   ///< Whether the DMA is enabled, do not update after initialization
-    lldesc_t  *dmadesc_tx;              /**< Array of DMA descriptor used by the TX DMA.
+    spi_dma_desc_t *dmadesc_tx;        /**< Array of DMA descriptor used by the TX DMA.
                                          *   The amount should be larger than dmadesc_n. The driver should ensure that
                                          *   the data to be sent is shorter than the descriptors can hold.
                                          */
-    lldesc_t *dmadesc_rx;               /**< Array of DMA descriptor used by the RX DMA.
+    spi_dma_desc_t *dmadesc_rx;         /**< Array of DMA descriptor used by the RX DMA.
                                          *   The amount should be larger than dmadesc_n. The driver should ensure that
                                          *   the data to be sent is shorter than the descriptors can hold.
                                          */
@@ -104,11 +119,11 @@ typedef struct {
  */
 typedef struct {
     /* These two need to be malloced by the driver first */
-    lldesc_t  *dmadesc_tx;              /**< Array of DMA descriptor used by the TX DMA.
+    spi_dma_desc_t *dmadesc_tx;        /**< Array of DMA descriptor used by the TX DMA.
                                          *   The amount should be larger than dmadesc_n. The driver should ensure that
                                          *   the data to be sent is shorter than the descriptors can hold.
                                          */
-    lldesc_t *dmadesc_rx;               /**< Array of DMA descriptor used by the RX DMA.
+    spi_dma_desc_t *dmadesc_rx;         /**< Array of DMA descriptor used by the RX DMA.
                                          *   The amount should be larger than dmadesc_n. The driver should ensure that
                                          *   the data to be sent is shorter than the descriptors can hold.
                                          */
@@ -264,3 +279,9 @@ void spi_hal_cal_timing(int source_freq_hz, int eff_clk, bool gpio_is_used, int 
  *                       allowed. Left 0 if not known.
  */
 int spi_hal_get_freq_limit(bool gpio_is_used, int input_delay_ns);
+
+#endif  //#if SOC_GPSPI_SUPPORTED
+
+#ifdef __cplusplus
+}
+#endif

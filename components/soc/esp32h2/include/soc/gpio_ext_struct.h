@@ -140,15 +140,15 @@ typedef union {
  */
 typedef union {
     struct {
-        /** etm_ch0_event_sel : R/W; bitpos: [4:0]; default: 0;
+        /** etm_chn_event_sel : R/W; bitpos: [4:0]; default: 0;
          *  Etm event channel select gpio.
          */
-        uint32_t etm_ch0_event_sel:5;
+        uint32_t etm_chn_event_sel:5;
         uint32_t reserved_5:2;
-        /** etm_ch0_event_en : R/W; bitpos: [7]; default: 0;
+        /** etm_chn_event_en : R/W; bitpos: [7]; default: 0;
          *  Etm event send enable bit.
          */
-        uint32_t etm_ch0_event_en:1;
+        uint32_t etm_chn_event_en:1;
         uint32_t reserved_8:24;
     };
     uint32_t val;
@@ -305,15 +305,10 @@ typedef struct {
     volatile gpio_ext_version_reg_t version;
 } gpio_ext_dev_t;
 
-// analog comparator is a stand alone peripheral, but it is connected to GPIO
-// so we rename it to analog_cmpr_dev_t from user's perspective
-typedef gpio_ext_dev_t analog_cmpr_dev_t;
-
 extern gpio_sd_dev_t SDM;
 extern gpio_glitch_filter_dev_t GLITCH_FILTER;
 extern gpio_etm_dev_t GPIO_ETM;
 extern gpio_ext_dev_t GPIO_EXT;
-extern analog_cmpr_dev_t ANALOG_CMPR;
 
 #ifndef __cplusplus
 _Static_assert(sizeof(gpio_ext_dev_t) == 0x100, "Invalid size of gpio_ext_dev_t structure");

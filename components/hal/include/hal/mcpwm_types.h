@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,6 +29,15 @@ typedef int mcpwm_timer_clock_source_t;
 typedef soc_periph_mcpwm_capture_clk_src_t mcpwm_capture_clock_source_t;
 #else
 typedef int mcpwm_capture_clock_source_t;
+#endif // SOC_MCPWM_SUPPORTED
+
+/**
+ * @brief MCPWM carrier clock source
+ */
+#if SOC_MCPWM_SUPPORTED
+typedef soc_periph_mcpwm_carrier_clk_src_t mcpwm_carrier_clock_source_t;
+#else
+typedef int mcpwm_carrier_clock_source_t;
 #endif // SOC_MCPWM_SUPPORTED
 
 /**
@@ -84,7 +93,7 @@ typedef enum {
  */
 typedef enum {
     MCPWM_OPER_BRAKE_MODE_CBC,     /*!< Brake mode: CBC (cycle by cycle)*/
-    MCPWM_OPER_BRAKE_MODE_OST,     /*!< Brake mode, OST (one shot) */
+    MCPWM_OPER_BRAKE_MODE_OST,     /*!< Brake mode: OST (one shot) */
     MCPWM_OPER_BRAKE_MODE_INVALID, /*!< MCPWM operator invalid brake mode */
 } mcpwm_operator_brake_mode_t;
 
@@ -95,6 +104,14 @@ typedef enum {
     MCPWM_CAP_EDGE_POS, /*!< Capture on the positive edge */
     MCPWM_CAP_EDGE_NEG, /*!< Capture on the negative edge */
 } mcpwm_capture_edge_t;
+
+/**
+ * @brief MCPWM comparator specific events that supported by the ETM module
+ */
+typedef enum {
+    MCPWM_CMPR_ETM_EVENT_EQUAL, /*!< The count value equals the value of comparator */
+    MCPWM_CMPR_ETM_EVENT_MAX,   /*!< Maximum number of comparator events */
+} mcpwm_comparator_etm_event_type_t;
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,17 @@
 #pragma once
 
 #include "sdkconfig.h"
+
+/* Macros used instead ofsetoff() for better performance of interrupt handler */
+#define PORT_OFFSET_PX_STACK 0x30
+#define PORT_OFFSET_PX_END_OF_STACK (PORT_OFFSET_PX_STACK + \
+                                     /* void * pxDummy6 */ 4 + \
+                                     /* BaseType_t xDummy23[ 2 ] */ 8 + \
+                                     /* uint8_t ucDummy7[ configMAX_TASK_NAME_LEN ] */ CONFIG_FREERTOS_MAX_TASK_NAME_LEN + \
+                                     /* BaseType_t xDummy24 */ 4)
+
+#ifndef __ASSEMBLER__
+
 #include <stdint.h>
 #include "spinlock.h"
 #include "soc/interrupt_reg.h"
@@ -132,9 +143,19 @@ void vPortYieldFromISR(void);
 
 static inline BaseType_t __attribute__((always_inline)) xPortGetCoreID( void );
 
-// ----------------------- TCB Cleanup --------------------------
+// --------------------- TCB Cleanup -----------------------
 
-void vPortCleanUpTCB ( void *pxTCB );
+/**
+ * @brief TCB cleanup hook
+ *
+ * The portCLEAN_UP_TCB() macro is called in prvDeleteTCB() right before a
+ * deleted task's memory is freed. We map that macro to this internal function
+ * so that IDF FreeRTOS ports can inject some task pre-deletion operations.
+ *
+ * @note We can't use vPortCleanUpTCB() due to API compatibility issues. See
+ * CONFIG_FREERTOS_ENABLE_STATIC_TASK_CLEAN_UP. Todo: IDF-8097
+ */
+void vPortTCBPreDeleteHook( void *pxTCB );
 
 /* ------------------------------------------- FreeRTOS Porting Interface ----------------------------------------------
  * - Contains all the mappings of the macros required by FreeRTOS
@@ -172,7 +193,7 @@ extern void vTaskExitCritical( void );
 
 #define portSET_INTERRUPT_MASK_FROM_ISR() ({ \
     unsigned int cur_level; \
-    cur_level = REG_READ(INTERRUPT_CORE0_CPU_INT_THRESH_REG); \
+    cur_level = REG_READ(INTERRUPT_CURRENT_CORE_INT_THRESH_REG); \
     vTaskEnterCritical(); \
     cur_level; \
 })
@@ -207,7 +228,8 @@ extern void vTaskExitCritical( void );
 
 // --------------------- TCB Cleanup -----------------------
 
-#define portCLEAN_UP_TCB( pxTCB )                   vPortCleanUpTCB( pxTCB )
+#define portCLEAN_UP_TCB( pxTCB )                   vPortTCBPreDeleteHook( pxTCB )
+
 
 /* --------------------------------------------- Inline Implementations ------------------------------------------------
  * - Implementation of inline functions of the forward declares
@@ -271,7 +293,16 @@ void vPortExitCritical(void);
 
 static inline bool IRAM_ATTR xPortCanYield(void)
 {
-    uint32_t threshold = REG_READ(INTERRUPT_CORE0_CPU_INT_THRESH_REG);
+    uint32_t threshold = REG_READ(INTERRUPT_CURRENT_CORE_INT_THRESH_REG);
+#if SOC_INT_CLIC_SUPPORTED
+    threshold = threshold >> (CLIC_CPU_INT_THRESH_S + (8 - NLBITS));
+
+    /* When CLIC is supported, the lowest interrupt threshold level is 0.
+     * Therefore, an interrupt threshold level above 0 would mean that we
+     * are either in a critical section or in an ISR.
+     */
+    return (threshold == 0);
+#endif /* SOC_INT_CLIC_SUPPORTED */
     /* when enter critical code, FreeRTOS will mask threshold to RVHAL_EXCM_LEVEL
      * and exit critical code, will recover threshold value (1). so threshold <= 1
      * means not in critical code
@@ -355,3 +386,5 @@ portmacro.h. Therefore, we need to keep these headers around for now to allow th
 #ifdef __cplusplus
 }
 #endif
+
+#endif // __ASSEMBLER__

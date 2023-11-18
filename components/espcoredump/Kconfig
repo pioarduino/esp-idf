@@ -14,11 +14,9 @@ menu "Core dump"
 
         config ESP_COREDUMP_ENABLE_TO_FLASH
             bool "Flash"
-            select FREERTOS_ENABLE_TASK_SNAPSHOT
             select ESP_COREDUMP_ENABLE
         config ESP_COREDUMP_ENABLE_TO_UART
             bool "UART"
-            select FREERTOS_ENABLE_TASK_SNAPSHOT
             select ESP_COREDUMP_ENABLE
         config ESP_COREDUMP_ENABLE_TO_NONE
             bool "None"
@@ -63,6 +61,14 @@ menu "Core dump"
         help
             Enables/disable core dump module.
 
+    config ESP_COREDUMP_LOGS
+        bool "Enable coredump logs for debugging"
+        depends on ESP_COREDUMP_ENABLE
+        default y
+        help
+            Enable/disable coredump logs. Logs strings from espcoredump component are
+            placed in DRAM. Disabling these helps to save ~5KB of internal memory.
+
     config ESP_COREDUMP_MAX_TASKS_NUM
         int "Maximum number of tasks"
         depends on ESP_COREDUMP_ENABLE
@@ -78,6 +84,16 @@ menu "Core dump"
             Config delay (in ms) before printing core dump to UART.
             Delay can be interrupted by pressing Enter key.
 
+    config ESP_COREDUMP_FLASH_NO_OVERWRITE
+        bool "Don't overwrite existing core dump"
+        depends on ESP_COREDUMP_ENABLE_TO_FLASH
+        default n
+        help
+            Don't overwrite an existing core dump already present in flash.
+            Enable this option to only keep the first of multiple core dumps.
+
+            If enabled, the core dump partition must be erased before the first
+            core dump can be written.
 
     config ESP_COREDUMP_USE_STACK_SIZE
         bool

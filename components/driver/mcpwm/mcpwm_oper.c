@@ -90,6 +90,10 @@ esp_err_t mcpwm_new_operator(const mcpwm_operator_config_t *config, mcpwm_oper_h
     ESP_GOTO_ON_FALSE(config && ret_oper, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
     ESP_GOTO_ON_FALSE(config->group_id < SOC_MCPWM_GROUPS && config->group_id >= 0, ESP_ERR_INVALID_ARG,
                       err, TAG, "invalid group ID:%d", config->group_id);
+    if (config->intr_priority) {
+        ESP_GOTO_ON_FALSE(1 << (config->intr_priority) & MCPWM_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, err,
+                          TAG, "invalid interrupt priority:%d", config->intr_priority);
+    }
 
     oper = heap_caps_calloc(1, sizeof(mcpwm_oper_t), MCPWM_MEM_ALLOC_CAPS);
     ESP_GOTO_ON_FALSE(oper, ESP_ERR_NO_MEM, err, TAG, "no mem for operator");
@@ -99,6 +103,10 @@ esp_err_t mcpwm_new_operator(const mcpwm_operator_config_t *config, mcpwm_oper_h
     int group_id = group->group_id;
     mcpwm_hal_context_t *hal = &group->hal;
     int oper_id = oper->oper_id;
+
+    // if interrupt priority specified before, it cannot be changed until the group is released
+    // check if the new priority specified consistents with the old one
+    ESP_GOTO_ON_ERROR(mcpwm_check_intr_priority(group, config->intr_priority), err, TAG, "set group intrrupt priority failed");
 
     // reset MCPWM operator
     mcpwm_hal_operator_reset(hal, oper_id);
@@ -138,6 +146,11 @@ esp_err_t mcpwm_del_operator(mcpwm_oper_handle_t oper)
         ESP_RETURN_ON_FALSE(!oper->generators[i], ESP_ERR_INVALID_STATE, TAG, "generator still in working");
     }
     ESP_RETURN_ON_FALSE(!oper->soft_fault, ESP_ERR_INVALID_STATE, TAG, "soft fault still in working");
+#if SOC_MCPWM_SUPPORT_EVENT_COMPARATOR
+    for (int i = 0; i < SOC_MCPWM_EVENT_COMPARATORS_PER_OPERATOR; i++) {
+        ESP_RETURN_ON_FALSE(!oper->event_comparators[i], ESP_ERR_INVALID_STATE, TAG, "event comparator still in working");
+    }
+#endif
     mcpwm_group_t *group = oper->group;
     int oper_id = oper->oper_id;
     mcpwm_hal_context_t *hal = &group->hal;
@@ -182,9 +195,17 @@ esp_err_t mcpwm_operator_apply_carrier(mcpwm_oper_handle_t oper, const mcpwm_car
     float real_duty = 0.0;
 
     if (config && config->frequency_hz) {
-        uint8_t pre_scale = group->resolution_hz / 8 / config->frequency_hz;
-        mcpwm_ll_carrier_set_prescale(hal->dev, oper_id, pre_scale);
-        real_frequency = group->resolution_hz / 8 / pre_scale;
+        // select the clock source
+        mcpwm_carrier_clock_source_t clk_src = config->clk_src ? config->clk_src : MCPWM_CARRIER_CLK_SRC_DEFAULT;
+        ESP_RETURN_ON_ERROR(mcpwm_select_periph_clock(group, (soc_module_clk_t)clk_src), TAG, "set group clock failed");
+
+        uint32_t prescale = 0;
+        ESP_RETURN_ON_ERROR(mcpwm_set_prescale(group, config->frequency_hz, MCPWM_LL_MAX_CARRIER_PRESCALE * 8, &prescale), TAG, "set prescale failed");
+        // here div 8 because the duty has 3 register bits
+        prescale /= 8;
+        ESP_RETURN_ON_FALSE(prescale > 0 && prescale <= MCPWM_LL_MAX_CARRIER_PRESCALE, ESP_ERR_INVALID_STATE, TAG, "group clock cannot match the frequency");
+        mcpwm_ll_carrier_set_prescale(hal->dev, oper_id, prescale);
+        real_frequency = group->resolution_hz / 8 / prescale;
 
         uint8_t duty = (uint8_t)(config->duty_cycle * 8);
         mcpwm_ll_carrier_set_duty(hal->dev, oper_id, duty);
@@ -235,6 +256,7 @@ esp_err_t mcpwm_operator_register_event_callbacks(mcpwm_oper_handle_t oper, cons
     if (!oper->intr) {
         // we want the interrupt service to be enabled after allocation successfully
         int isr_flags = MCPWM_INTR_ALLOC_FLAG & ~ ESP_INTR_FLAG_INTRDISABLED;
+        isr_flags |= mcpwm_get_intr_priority_flag(group);
         ESP_RETURN_ON_ERROR(esp_intr_alloc_intrstatus(mcpwm_periph_signals.groups[group_id].irq_id, isr_flags,
                             (uint32_t)mcpwm_ll_intr_get_status_reg(hal->dev), MCPWM_LL_EVENT_OPER_MASK(oper_id),
                             mcpwm_operator_default_isr, oper, &oper->intr), TAG, "install interrupt service for operator failed");

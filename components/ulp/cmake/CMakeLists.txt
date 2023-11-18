@@ -76,6 +76,7 @@ if(ULP_COCPU_IS_RISCV)
     target_link_options(${ULP_APP_NAME} PRIVATE SHELL:-T ${IDF_PATH}/components/ulp/ld/${IDF_TARGET}.peripherals.ld)
     target_link_options(${ULP_APP_NAME} PRIVATE "-Wl,--no-warn-rwx-segments")
     target_compile_definitions(${ULP_APP_NAME} PRIVATE IS_ULP_COCPU)
+    target_compile_definitions(${ULP_APP_NAME} PRIVATE ULP_RISCV_REGISTER_OPS)
 
 elseif(ULP_COCPU_IS_LP_CORE)
     list(APPEND ULP_S_SOURCES
@@ -85,7 +86,11 @@ elseif(ULP_COCPU_IS_LP_CORE)
     "${IDF_PATH}/components/ulp/lp_core/shared/ulp_lp_core_lp_timer_shared.c"
     "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_startup.c"
     "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_utils.c"
-    "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_i2c.c")
+    "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_i2c.c"
+    "${IDF_PATH}/components/hal/uart_hal_iram.c"
+    "${IDF_PATH}/components/hal/uart_hal.c"
+    "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_uart.c"
+    "${IDF_PATH}/components/ulp/lp_core/lp_core/lp_core_print.c")
 
     target_link_options(${ULP_APP_NAME} PRIVATE "-nostartfiles")
     target_link_options(${ULP_APP_NAME} PRIVATE "-Wl,--no-warn-rwx-segments")
@@ -96,6 +101,7 @@ elseif(ULP_COCPU_IS_LP_CORE)
     target_sources(${ULP_APP_NAME} PRIVATE ${ULP_S_SOURCES})
     target_include_directories(${ULP_APP_NAME} PRIVATE "${IDF_PATH}/components/ulp/lp_core/lp_core/include"
                                                        "${IDF_PATH}/components/ulp/lp_core/shared/include")
+    target_compile_definitions(${ULP_APP_NAME} PRIVATE IS_ULP_COCPU)
 
 else()
     foreach(ulp_s_source ${ULP_S_SOURCES})

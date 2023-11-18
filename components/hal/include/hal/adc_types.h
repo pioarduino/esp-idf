@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,6 +11,10 @@
 #include "soc/soc_caps.h"
 #include "soc/clk_tree_defs.h"
 #include "esp_attr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * @brief ADC unit
@@ -41,9 +45,10 @@ typedef enum {
  */
 typedef enum {
     ADC_ATTEN_DB_0   = 0,  ///<No input attenuation, ADC can measure up to approx.
-    ADC_ATTEN_DB_2_5 = 1,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 2.5 dB (1.33 x)
-    ADC_ATTEN_DB_6   = 2,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 6 dB (2 x)
-    ADC_ATTEN_DB_11  = 3,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 11 dB (3.55 x)
+    ADC_ATTEN_DB_2_5 = 1,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 2.5 dB
+    ADC_ATTEN_DB_6   = 2,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 6 dB
+    ADC_ATTEN_DB_12  = 3,  ///<The input voltage of ADC will be attenuated extending the range of measurement by about 12 dB
+    ADC_ATTEN_DB_11 __attribute__((deprecated)) = ADC_ATTEN_DB_12,  ///<This is deprecated, it behaves the same as `ADC_ATTEN_DB_12`
 } adc_atten_t;
 
 typedef enum {
@@ -85,6 +90,9 @@ typedef soc_periph_adc_digi_clk_src_t    adc_continuous_clk_src_t;  ///< Clock s
 #elif SOC_ADC_RTC_CTRL_SUPPORTED
 typedef soc_periph_adc_rtc_clk_src_t     adc_oneshot_clk_src_t;     ///< Clock source type of oneshot mode which uses RTC controller
 typedef soc_periph_adc_digi_clk_src_t    adc_continuous_clk_src_t;  ///< Clock source type of continuous mode which uses digital controller
+#else
+typedef int                              adc_oneshot_clk_src_t;     ///< Default type
+typedef int                              adc_continuous_clk_src_t;  ///< Default type
 #endif
 
 /**
@@ -240,4 +248,8 @@ typedef struct {
     uint32_t div_b;     /*!<Division factor. Range: 1 ~ 63. */
     uint32_t div_a;     /*!<Division factor. Range: 0 ~ 63. */
 } adc_digi_clk_t;
+#endif
+
+#ifdef __cplusplus
+}
 #endif

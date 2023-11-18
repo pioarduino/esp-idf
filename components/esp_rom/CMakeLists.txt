@@ -23,10 +23,14 @@ else()
 
     # Override regi2c implementation in ROM
     if(CONFIG_ESP_ROM_HAS_REGI2C_BUG OR CONFIG_ESP_ROM_WITHOUT_REGI2C)
-        list(APPEND sources "patches/esp_rom_regi2c_${target}.c")
+        if(target STREQUAL "esp32c6")
+            list(APPEND sources "patches/esp_rom_hp_regi2c_${target}.c")
+        else()
+            list(APPEND sources "patches/esp_rom_regi2c_${target}.c")
+        endif()
     endif()
 
-    if(CONFIG_HEAP_TLSF_USE_ROM_IMPL AND CONFIG_ESP_ROM_TLSF_CHECK_PATCH)
+    if(CONFIG_HEAP_TLSF_USE_ROM_IMPL AND (CONFIG_ESP_ROM_TLSF_CHECK_PATCH OR CONFIG_HEAP_TLSF_CHECK_PATCH))
         # This file shall be included in the build if TLSF in ROM is activated
         list(APPEND sources "patches/esp_rom_tlsf.c")
     endif()
@@ -44,6 +48,14 @@ endif()
 
 if(CONFIG_HAL_WDT_USE_ROM_IMPL)
     list(APPEND sources "patches/esp_rom_wdt.c")
+endif()
+
+if(CONFIG_ESP_ROM_HAS_FLASH_COUNT_PAGES_BUG OR CONFIG_ESP_ROM_HAS_CACHE_WRITEBACK_BUG)
+    list(APPEND sources "patches/esp_rom_cache_esp32s2_esp32s3.c")
+endif()
+
+if(CONFIG_ESP_ROM_HAS_CACHE_WRITEBACK_BUG)
+    list(APPEND sources "patches/esp_rom_cache_writeback_esp32s3.S")
 endif()
 
 idf_component_register(SRCS ${sources}
@@ -102,7 +114,6 @@ if(BOOTLOADER_BUILD)
 
     elseif(target STREQUAL "esp32c2")
         rom_linker_script("newlib")
-        rom_linker_script("mbedtls")
 
     elseif(target STREQUAL "esp32c6")
         rom_linker_script("newlib")
@@ -118,6 +129,13 @@ if(BOOTLOADER_BUILD)
         if(CONFIG_HAL_WDT_USE_ROM_IMPL)
             rom_linker_script("wdt")
         endif()
+
+    elseif(target STREQUAL "esp32p4")
+        rom_linker_script("newlib")
+        if(CONFIG_HAL_WDT_USE_ROM_IMPL)
+            rom_linker_script("wdt")
+        endif()
+        rom_linker_script("version")
     endif()
 
 else() # Regular app build
@@ -204,10 +222,17 @@ else() # Regular app build
             rom_linker_script("eco3")
         endif()
 
+        if(CONFIG_ESP32C3_REV_MIN_FULL GREATER_EQUAL 101)
+            rom_linker_script("eco7")
+        endif()
+
     elseif(target STREQUAL "esp32c2")
         rom_linker_script("newlib")
         rom_linker_script("version")
-        rom_linker_script("mbedtls")
+
+        if(CONFIG_MBEDTLS_USE_CRYPTO_ROM_IMPL)
+            rom_linker_script("mbedtls")
+        endif()
 
         if(CONFIG_NEWLIB_NANO_FORMAT)
             # nano formatting functions in ROM are also built for 64-bit time_t.
@@ -254,6 +279,21 @@ else() # Regular app build
             rom_linker_script("newlib-nano")
         endif()
 
+    elseif(target STREQUAL "esp32p4")
+        rom_linker_script("newlib")
+        rom_linker_script("version")
+
+        # esp32p4 rom doesn't have esp_flash driver
+
+        if(CONFIG_HAL_WDT_USE_ROM_IMPL)
+            rom_linker_script("wdt")
+        endif()
+
+        if(CONFIG_NEWLIB_NANO_FORMAT)
+            # nano formatting functions in ROM are also built for 64-bit time_t.
+            rom_linker_script("newlib-nano")
+        endif()
+
     endif()
 
     if(CONFIG_HEAP_TLSF_USE_ROM_IMPL)
@@ -261,7 +301,7 @@ else() # Regular app build
         # to force the linker to integrate the whole `esp_rom_tlsf.c` object file inside the
         # final binary. This is necessary because tlsf_set_rom_patches is a constructor, thus,
         # there as no explicit reference/call to it in IDF.
-        if(CONFIG_ESP_ROM_TLSF_CHECK_PATCH)
+        if((CONFIG_ESP_ROM_TLSF_CHECK_PATCH OR CONFIG_HEAP_TLSF_CHECK_PATCH))
             target_link_libraries(${COMPONENT_LIB} PRIVATE "-u tlsf_set_rom_patches")
         endif()
 

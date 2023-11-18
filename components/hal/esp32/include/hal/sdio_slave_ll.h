@@ -16,13 +16,17 @@
 
 #pragma once
 
-#include "hal/sdio_slave_hal.h"
+#include "hal/sdio_slave_types.h"
 #include "soc/slc_struct.h"
 #include "soc/slc_reg.h"
 #include "soc/host_struct.h"
 #include "soc/host_reg.h"
 #include "soc/hinf_struct.h"
 #include "soc/lldesc.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /// Get address of the only SLC registers for ESP32
 #define sdio_slave_ll_get_slc(ID)   (&SLC)
@@ -447,7 +451,7 @@ static inline void sdio_slave_ll_host_set_reg(host_dev_t* host, int pos, uint8_t
  */
 static inline sdio_slave_hostint_t sdio_slave_ll_host_get_intena(host_dev_t* host)
 {
-    return host->slc0_func1_int_ena.val;
+    return (sdio_slave_hostint_t)host->slc0_func1_int_ena.val;
 }
 
 /**
@@ -503,7 +507,11 @@ static inline void sdio_slave_ll_slvint_set_ena(slc_dev_t *slc, const sdio_slave
  */
 static inline void sdio_slave_ll_slvint_fetch_clear(slc_dev_t *slc, sdio_slave_ll_slvint_t *out_slv_int)
 {
-    sdio_slave_ll_slvint_t slv_int = slc->slc0_int_st.val & 0xff;
+    sdio_slave_ll_slvint_t slv_int = (sdio_slave_ll_slvint_t)(slc->slc0_int_st.val & 0xff);
     *out_slv_int = slv_int;
     slc->slc0_int_clr.val = slv_int;
 }
+
+#ifdef __cplusplus
+}
+#endif

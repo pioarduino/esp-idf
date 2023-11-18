@@ -13,13 +13,15 @@ from __future__ import print_function, unicode_literals
 
 import os.path
 import re
+from pathlib import Path
 
 from esp_docs.conf_docs import *  # noqa: F403,F401
 
 if os.environ.get('IDF_PATH') is None:
     raise RuntimeError('IDF_PATH should be set, run export.sh before building docs')
 
-BT_DOCS = ['api-reference/bluetooth/bt_le.rst',
+BT_DOCS = ['api-guides/bluetooth.rst',
+           'api-reference/bluetooth/bt_le.rst',
            'api-reference/bluetooth/esp_bt_defs.rst',
            'api-reference/bluetooth/esp_bt_device.rst',
            'api-reference/bluetooth/esp_bt_main.rst',
@@ -45,6 +47,7 @@ CLASSIC_BT_DOCS = ['api-reference/bluetooth/classic_bt.rst',
                    'api-reference/bluetooth/esp_a2dp.rst',
                    'api-reference/bluetooth/esp_avrc.rst',
                    'api-reference/bluetooth/esp_hidd.rst',
+                   'api-reference/bluetooth/esp_hidh.rst',
                    'api-reference/bluetooth/esp_l2cap_bt.rst',
                    'api-reference/bluetooth/esp_sdp.rst',
                    'api-reference/bluetooth/esp_hf_defs.rst',
@@ -59,12 +62,20 @@ BLUFI_DOCS = ['api-guides/blufi.rst',
 
 WIFI_DOCS = ['api-guides/wifi.rst',
              'api-guides/wifi-security.rst',
-             'api-guides/wireshark-user-guide.rst']
+             'api-guides/wireshark-user-guide.rst',
+             'api-reference/network/esp_now.rst',
+             'api-reference/network/esp_smartconfig.rst',
+             'api-reference/network/esp_wifi.rst',
+             'api-reference/network/esp_dpp.rst']
+
+NAN_DOCS = ['api-reference/network/esp_nan.rst']
 
 WIFI_MESH_DOCS = ['api-guides/esp-wifi-mesh.rst',
                   'api-reference/network/esp-wifi-mesh.rst']
 
 COEXISTENCE_DOCS = ['api-guides/coexist.rst']
+
+MM_SYNC_DOCS = ['api-reference/system/mm_sync.rst']
 
 SDMMC_DOCS = ['api-reference/peripherals/sdmmc_host.rst']
 
@@ -167,6 +178,11 @@ ESP32C2_DOCS = ['api-guides/RF_calibration.rst']
 ESP32C6_DOCS = ['api-guides/RF_calibration.rst',
                 'api-reference/peripherals/sd_pullup_requirements.rst']
 
+ESP32H2_DOCS = ['api-guides/RF_calibration.rst']
+
+ESP32P4_DOCS = ['api-reference/system/ipc.rst',
+                'api-reference/peripherals/sd_pullup_requirements.rst']
+
 # format: {tag needed to include: documents to included}, tags are parsed from sdkconfig and peripheral_caps.h headers
 conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_BLE_SUPPORTED':BLE_DOCS,
@@ -175,6 +191,8 @@ conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_WIFI_SUPPORTED':WIFI_DOCS,
                             'SOC_BT_CLASSIC_SUPPORTED':CLASSIC_BT_DOCS,
                             'SOC_SUPPORT_COEXISTENCE':COEXISTENCE_DOCS,
+                            'SOC_PSRAM_DMA_CAPABLE':MM_SYNC_DOCS,
+                            'SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE':MM_SYNC_DOCS,
                             'SOC_SDMMC_HOST_SUPPORTED':SDMMC_DOCS,
                             'SOC_SDIO_SLAVE_SUPPORTED':SDIO_SLAVE_DOCS,
                             'SOC_MCPWM_SUPPORTED':MCPWM_DOCS,
@@ -206,12 +224,15 @@ conditional_include_dict = {'SOC_BT_SUPPORTED':BT_DOCS,
                             'SOC_SDM_SUPPORTED':SDM_DOCS,
                             'SOC_WIFI_MESH_SUPPORT':WIFI_MESH_DOCS,
                             'SOC_SPI_SUPPORT_SLAVE_HD_VER2':SPI_SLAVE_HD_DOCS,
+                            'SOC_WIFI_NAN_SUPPORT':NAN_DOCS,
                             'esp32':ESP32_DOCS,
                             'esp32s2':ESP32S2_DOCS,
                             'esp32s3':ESP32S3_DOCS,
                             'esp32c2':ESP32C2_DOCS,
                             'esp32c3':ESP32C3_DOCS,
-                            'esp32c6':ESP32C6_DOCS}
+                            'esp32c6':ESP32C6_DOCS,
+                            'esp32h2':ESP32H2_DOCS,
+                            'esp32p4':ESP32P4_DOCS}
 
 extensions += ['sphinx_copybutton',
                'sphinxcontrib.wavedrom',
@@ -241,7 +262,7 @@ html_context['github_repo'] = 'esp-idf'
 project_slug = 'esp-idf'
 versions_url = 'https://dl.espressif.com/dl/esp-idf/idf_versions.js'
 
-idf_targets = ['esp32', 'esp32s2', 'esp32s3', 'esp32c3', 'esp32c2', 'esp32c6']
+idf_targets = ['esp32', 'esp32s2', 'esp32s3', 'esp32c3', 'esp32c2', 'esp32c6', 'esp32p4']
 languages = ['en', 'zh_CN']
 
 google_analytics_id = os.environ.get('CI_GOOGLE_ANALYTICS_ID', None)
@@ -276,6 +297,8 @@ with open('../page_redirects.txt') as f:
 html_redirect_pages = [tuple(line.split(' ')) for line in lines]
 
 html_static_path = ['../_static']
+
+idf_build_system = {'doxygen_component_info': True, 'component_info_ignore_file': Path(os.environ['IDF_PATH']) / 'docs' / 'component_info_ignore_file.txt'}
 
 
 # Callback function for user setup that needs be done after `config-init`-event

@@ -1,9 +1,17 @@
-if(CONFIG_OPENTHREAD_ENABLED)
-    idf_build_get_property(idf_target IDF_TARGET)
+idf_build_get_property(idf_target IDF_TARGET)
+
+if(${idf_target} STREQUAL "linux")
+    return() # This component is not supported by the POSIX/Linux simulator
+endif()
+
+if(CONFIG_OPENTHREAD_ENABLED OR CONFIG_IDF_DOC_BUILD)
 
     set(public_include_dirs
         "include"
         "openthread/include")
+endif()
+
+if(CONFIG_OPENTHREAD_ENABLED)
 
     set(private_include_dirs
         "openthread/examples/platforms"
@@ -58,6 +66,7 @@ if(CONFIG_OPENTHREAD_ENABLED)
             "openthread/examples/apps/ncp")
 
         list(APPEND exclude_srcs
+            "src/port/esp_openthread_state.c"
             "openthread/examples/apps/ncp/main.c"
             "openthread/src/core/api/backbone_router_api.cpp"
             "openthread/src/core/api/child_supervision_api.cpp"
@@ -72,6 +81,7 @@ if(CONFIG_OPENTHREAD_ENABLED)
             "openthread/src/core/api/message_api.cpp"
             "openthread/src/core/api/nat64_api.cpp"
             "openthread/src/core/api/netdata_api.cpp"
+            "openthread/src/core/api/netdiag_api.cpp"
             "openthread/src/core/api/random_crypto_api.cpp"
             "openthread/src/core/api/tcp_api.cpp"
             "openthread/src/core/api/udp_api.cpp"
@@ -99,12 +109,14 @@ if(CONFIG_OPENTHREAD_ENABLED)
             "openthread/src/core/thread/mesh_forwarder_ftd.cpp"
             "openthread/src/core/thread/mesh_forwarder_mtd.cpp"
             "openthread/src/core/thread/mle.cpp"
+            "openthread/src/core/thread/mle_types.cpp"
             "openthread/src/core/thread/neighbor_table.cpp"
             "openthread/src/core/thread/network_data.cpp"
             "openthread/src/core/thread/network_data_leader.cpp"
             "openthread/src/core/thread/network_data_leader_ftd.cpp"
             "openthread/src/core/thread/network_data_types.cpp"
             "openthread/src/core/thread/network_data_service.cpp"
+            "openthread/src/core/thread/network_diagnostic.cpp"
             "openthread/src/core/thread/panid_query_server.cpp"
             "openthread/src/core/thread/thread_netif.cpp"
             "openthread/src/core/thread/tmf.cpp"
@@ -120,7 +132,8 @@ if(CONFIG_OPENTHREAD_ENABLED)
             )
     elseif(CONFIG_OPENTHREAD_RADIO_SPINEL_UART OR CONFIG_OPENTHREAD_RADIO_SPINEL_SPI)
         list(APPEND exclude_srcs
-            "src/port/esp_openthread_radio.c")
+            "src/port/esp_openthread_radio.c"
+            "src/port/esp_openthread_sleep.c")
     endif()
 
     if(CONFIG_OPENTHREAD_BORDER_ROUTER)
@@ -137,6 +150,16 @@ if(CONFIG_OPENTHREAD_ENABLED)
     if(NOT CONFIG_OPENTHREAD_DNS64_CLIENT)
         list(APPEND exclude_srcs
             "src/esp_openthread_dns64.c")
+    endif()
+
+    if(NOT CONFIG_FREERTOS_USE_TICKLESS_IDLE)
+        list(APPEND exclude_srcs
+            "src/port/esp_openthread_sleep.c")
+    endif()
+
+    if(NOT CONFIG_OPENTHREAD_PLATFORM_MSGPOOL_MANAGEMENT)
+        list(APPEND exclude_srcs
+            "src/port/esp_openthread_messagepool.c")
     endif()
 
     if(CONFIG_OPENTHREAD_FTD)
@@ -174,7 +197,7 @@ idf_component_register(SRC_DIRS "${src_dirs}"
                        REQUIRES esp_netif lwip driver
                        LDFRAGMENTS linker.lf
                        PRIV_REQUIRES console esp_event esp_partition esp_timer
-                                     ieee802154 mbedtls spi_flash)
+                                     ieee802154 mbedtls nvs_flash)
 
 if(CONFIG_OPENTHREAD_ENABLED)
     if(CONFIG_OPENTHREAD_RADIO)

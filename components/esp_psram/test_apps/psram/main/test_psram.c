@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,8 +22,7 @@
 
 __attribute__((unused)) const static char *TAG = "PSRAM";
 
-
-TEST_CASE("test psram heap allocable","[psram]")
+TEST_CASE("test psram heap allocable", "[psram]")
 {
     size_t largest_size = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
     ESP_LOGI(TAG, "largest size is %zu", largest_size);
@@ -46,7 +45,6 @@ TEST_CASE("test psram heap allocable","[psram]")
 
     free(ext_buffer);
 }
-
 
 #if CONFIG_SPIRAM_FETCH_INSTRUCTIONS && CONFIG_SPIRAM_RODATA
 #include "esp_partition.h"
@@ -132,7 +130,6 @@ TEST_CASE("test spi1 flash operation after putting .text and .rodata into psram"
 }
 #endif  //CONFIG_SPIRAM_FETCH_INSTRUCTIONS && CONFIG_SPIRAM_RODATA
 
-
 TEST_CASE("test psram unaligned access", "[psram]")
 {
     size_t largest_size = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -174,7 +171,6 @@ TEST_CASE("test psram unaligned access", "[psram]")
             uint32_t val_32bit = *(uint32_t *)unaligned_ptr;
             ESP_LOGV(TAG, "i is %d, j is %d, val_32bit val  is 0x%"PRIx32, i, j, val_32bit);
 
-
             uint8_t second_byte = ((i + j) & 0xff) + 1;
             uint8_t third_byte = ((i + j) & 0xff) + 2;
             uint8_t fourth_byte = ((i + j) & 0xff) + 3;
@@ -183,7 +179,7 @@ TEST_CASE("test psram unaligned access", "[psram]")
             ESP_LOGV(TAG, "i is %d, j is %d, expected_val_16bit val  is 0x%"PRIx16, i, j, expected_val_16bit);
             TEST_ASSERT(val_16bit == expected_val_16bit);
             uint32_t expected_val_32bit = (fourth_byte << 24) | (third_byte << 16) | (second_byte << 8) | first_byte;
-            ESP_LOGV(TAG, "i is %d, j is %d, expected_val_32bit val  is 0x%"PRIx32"\n", i, j, expected_val_32bit);
+            ESP_LOGV(TAG, "i is %d, j is %d, expected_val_32bit val  is 0x%" PRIx32, i, j, expected_val_32bit);
             TEST_ASSERT(val_32bit == expected_val_32bit);
         }
     }

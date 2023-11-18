@@ -65,6 +65,8 @@ config BT_NIMBLE_LOG_LEVEL
 config BT_NIMBLE_MAX_CONNECTIONS
     int "Maximum number of concurrent connections"
     range 1 2 if IDF_TARGET_ESP32C2
+    range 1 70 if IDF_TARGET_ESP32C6
+    range 1 35 if IDF_TARGET_ESP32H2
     range 1 9
     default 2 if IDF_TARGET_ESP32C2
     default 3
@@ -206,6 +208,13 @@ config BT_NIMBLE_DEBUG
     help
         This enables extra runtime asserts and host debugging
 
+config BT_NIMBLE_DYNAMIC_SERVICE
+    bool "Enable dynamic services"
+    depends on BT_NIMBLE_ENABLED
+    help
+        This enables user to add/remove Gatt services at runtime
+
+
 config BT_NIMBLE_SVC_GAP_DEVICE_NAME
     string "BLE GAP default device name"
     depends on BT_NIMBLE_ENABLED
@@ -266,6 +275,15 @@ menu "Memory Settings"
         default 320
         help
                 Dynamic memory size of block 2
+
+    config BT_NIMBLE_MSYS_BUF_FROM_HEAP
+        bool "Get Msys Mbuf from heap"
+        default y
+        depends on BT_LE_MSYS_INIT_IN_CONTROLLER
+        help
+            This option sets the source of the shared msys mbuf memory between
+            the Host and the Controller. Allocate the memory from the heap if
+            this option is sets, from the mempool otherwise.
 
     config BT_NIMBLE_TRANSPORT_ACL_FROM_LL_COUNT
         int "ACL Buffer count"
@@ -596,31 +614,11 @@ config BT_NIMBLE_BLE_POWER_CONTROL
     help
         Set this option to enable the Power Control feature
 
-choice BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM
-    prompt "Coexistence: limit on MAX Tx/Rx time for coded-PHY connection"
-    default BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_DIS
-    depends on ESP_WIFI_SW_COEXIST_ENABLE && BT_NIMBLE_ENABLED
+config BT_NIMBLE_PERIODIC_ADV_ENH
+    bool "Periodic adv enhancements(adi support)"
+    depends on BT_NIMBLE_ENABLE_PERIODIC_ADV && BT_NIMBLE_50_FEATURE_SUPPORT && SOC_BLE_PERIODIC_ADV_ENH_SUPPORTED
     help
-            When using PHY-Coded in BLE connection, limitation on max tx/rx time can be applied to
-            better avoid dramatic performance deterioration of Wi-Fi.
-
-        config BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_EN
-            bool "Force Enable"
-            help
-                Always enable the limitation on max tx/rx time for Coded-PHY connection
-
-        config BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_DIS
-            bool "Force Disable"
-            help
-                Disable the limitation on max tx/rx time for Coded-PHY connection
-endchoice
-
-config BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_EFF
-    int
-    default 0 if !(ESP_WIFI_SW_COEXIST_ENABLE && BT_NIMBLE_ENABLED)
-    default 1 if BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_EN
-    default 0 if BT_NIMBLE_COEX_PHY_CODED_TX_RX_TLIM_DIS
-
+        Enable the periodic advertising enhancements
 
 config BT_NIMBLE_WHITELIST_SIZE
     int "BLE white list size"
@@ -661,3 +659,206 @@ config BT_NIMBLE_BLE_GATT_BLOB_TRANSFER
     help
         This option is used when data to be sent is more than 512 bytes. For peripheral role,
         BT_NIMBLE_MSYS_1_BLOCK_COUNT needs to be increased according to the need.
+
+menu "GAP Service"
+    menu "GAP Appearance write permissions"
+        config BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+            bool "Write"
+            default n
+            help
+                Enable write permission (BLE_GATT_CHR_F_WRITE)
+
+        config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_ENC
+            depends on BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+            bool "Write with encryption"
+            default n
+            help
+                Enable write with encryption permission (BLE_GATT_CHR_F_WRITE_ENC)
+
+        config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHEN
+            depends on BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+            bool "Write with authentication"
+            default n
+            help
+                Enable write with authentication permission (BLE_GATT_CHR_F_WRITE_AUTHEN)
+
+        config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHOR
+            depends on BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+            bool "Write with authorisation"
+            default n
+            help
+                Enable write with authorisation permission (BLE_GATT_CHR_F_WRITE_AUTHOR)
+    endmenu
+
+    config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_PERM
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+        default 8 if BT_NIMBLE_SVC_GAP_APPEAR_WRITE
+
+    config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_PERM_ENC
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_APPEAR_WRITE_ENC
+        default 4096 if BT_NIMBLE_SVC_GAP_APPEAR_WRITE_ENC
+
+    config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_PERM_ATHN
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHEN
+        default 8192 if BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHEN
+
+    config BT_NIMBLE_SVC_GAP_APPEAR_WRITE_PERM_ATHR
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHOR
+        default 16384 if BT_NIMBLE_SVC_GAP_APPEAR_WRITE_AUTHOR
+
+    choice BT_NIMBLE_SVC_GAP_CENT_ADDR_RESOLUTION
+        prompt "GAP Characteristic - Central Address Resolution"
+        default BT_NIMBLE_SVC_GAP_CAR_CHAR_NOT_SUPP
+        help
+            Weather or not Central Address Resolution characteristic is supported on
+            the device, and if supported, weather or not Central Address Resolution
+            is supported.
+
+            - Central Address Resolution characteristic not supported
+            - Central Address Resolution not supported
+            - Central Address Resolution supported
+
+        config BT_NIMBLE_SVC_GAP_CAR_CHAR_NOT_SUPP
+            bool "Characteristic not supported"
+
+        config BT_NIMBLE_SVC_GAP_CAR_NOT_SUPP
+            bool "Central Address Resolution not supported"
+
+        config BT_NIMBLE_SVC_GAP_CAR_SUPP
+            bool "Central Address Resolution supported"
+    endchoice
+
+    config BT_NIMBLE_SVC_GAP_CENT_ADDR_RESOLUTION
+        int
+        default -1 if BT_NIMBLE_SVC_GAP_CAR_CHAR_NOT_SUPP
+        default 0 if BT_NIMBLE_SVC_GAP_CAR_NOT_SUPP
+        default 1 if BT_NIMBLE_SVC_GAP_CAR_SUPP
+
+    menu "GAP device name write permissions"
+        config BT_NIMBLE_SVC_GAP_NAME_WRITE
+            bool "Write"
+            default n
+            help
+                Enable write permission (BLE_GATT_CHR_F_WRITE)
+
+        config BT_NIMBLE_SVC_GAP_NAME_WRITE_ENC
+            depends on BT_NIMBLE_SVC_GAP_NAME_WRITE
+            bool "Write with encryption"
+            default n
+            help
+                Enable write with encryption permission (BLE_GATT_CHR_F_WRITE_ENC)
+
+        config BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHEN
+            depends on BT_NIMBLE_SVC_GAP_NAME_WRITE
+            bool "Write with authentication"
+            default n
+            help
+                Enable write with authentication permission (BLE_GATT_CHR_F_WRITE_AUTHEN)
+
+        config BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHOR
+            depends on BT_NIMBLE_SVC_GAP_NAME_WRITE
+            bool "Write with authorisation"
+            default n
+            help
+                Enable write with authorisation permission (BLE_GATT_CHR_F_WRITE_AUTHOR)
+    endmenu
+
+    config BT_NIMBLE_SVC_GAP_NAME_WRITE_PERM
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_NAME_WRITE
+        default 8 if BT_NIMBLE_SVC_GAP_NAME_WRITE
+
+    config BT_NIMBLE_SVC_GAP_NAME_WRITE_PERM_ENC
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_NAME_WRITE_ENC
+        default 4096 if BT_NIMBLE_SVC_GAP_NAME_WRITE_ENC
+
+    config BT_NIMBLE_SVC_GAP_NAME_WRITE_PERM_AUTHEN
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHEN
+        default 8192 if BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHEN
+
+    config BT_NIMBLE_SVC_GAP_NAME_WRITE_PERM_AUTHOR
+        int
+        default 0 if !BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHOR
+        default 16384 if BT_NIMBLE_SVC_GAP_NAME_WRITE_AUTHOR
+
+    config BT_NIMBLE_SVC_GAP_PPCP_MAX_CONN_INTERVAL
+        int "PPCP Connection Interval Max (Unit: 1.25 ms)"
+        depends on BT_NIMBLE_ROLE_PERIPHERAL
+        default 0
+        help
+            Peripheral Preferred Connection Parameter: Connection Interval maximum value
+            Interval Max = value * 1.25 ms
+
+    config BT_NIMBLE_SVC_GAP_PPCP_MIN_CONN_INTERVAL
+        int "PPCP Connection Interval Min (Unit: 1.25 ms)"
+        depends on BT_NIMBLE_ROLE_PERIPHERAL
+        default 0
+        help
+            Peripheral Preferred Connection Parameter: Connection Interval minimum value
+            Interval Min = value * 1.25 ms
+
+    config BT_NIMBLE_SVC_GAP_PPCP_SLAVE_LATENCY
+        int "PPCP Slave Latency"
+        default 0
+        help
+            Peripheral Preferred Connection Parameter: Slave Latency
+
+    config BT_NIMBLE_SVC_GAP_PPCP_SUPERVISION_TMO
+        int "PPCP Supervision Timeout (Uint: 10 ms)"
+        default 0
+        help
+            Peripheral Preferred Connection Parameter: Supervision Timeout
+            Timeout = Value * 10 ms
+
+endmenu
+
+config BT_NIMBLE_VS_SUPPORT
+    bool "Enable support for VSC and VSE"
+    help
+        This option is used to enable support for sending Vendor Specific HCI commands and handling
+        Vendor Specific HCI Events.
+
+config BT_NIMBLE_OPTIMIZE_MULTI_CONN
+    bool "Enable the optimization of multi-connection"
+    depends on SOC_BLE_MULTI_CONN_OPTIMIZATION
+    select BT_NIMBLE_VS_SUPPORT
+    default n
+    help
+        This option enables the use of vendor-specific APIs for multi-connections, which can
+        greatly enhance the stability of coexistence between numerous central and peripheral
+        devices. It will prohibit the usage of standard APIs.
+
+config BT_NIMBLE_ENC_ADV_DATA
+    bool "Encrypted Advertising Data"
+    depends on SOC_ESP_NIMBLE_CONTROLLER
+    select BT_NIMBLE_EXT_ADV
+    help
+        This option is used to enable encrypted advertising data.
+
+config BT_NIMBLE_MAX_EADS
+    int "Maximum number of EAD devices to save across reboots"
+    default 10
+    depends on BT_NIMBLE_ENABLED && BT_NIMBLE_ENC_ADV_DATA
+    help
+        Defines maximum number of encrypted advertising data key material to save
+
+config BT_NIMBLE_HIGH_DUTY_ADV_ITVL
+    bool "Enable BLE high duty advertising interval feature"
+    depends on BT_NIMBLE_ENABLED
+    help
+        This enable BLE high duty advertising interval feature
+
+config BT_NIMBLE_HOST_QUEUE_CONG_CHECK
+    bool "BLE queue congestion check"
+    depends on BT_NIMBLE_ENABLED
+    default n
+    help
+        When scanning and scan duplicate is not enabled, if there are a lot of adv packets around
+        or application layer handling adv packets is slow, it will cause the controller memory
+        to run out. if enabled, adv packets will be lost when host queue is congested.

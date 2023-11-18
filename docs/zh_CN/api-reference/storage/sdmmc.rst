@@ -54,7 +54,7 @@ ESP-IDF :example:`storage/sd_card` 目录下提供了 SDMMC 驱动与 FatFs 库�
     用于 eMMC 芯片的 API
     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    从协议层的角度而言，eMMC 存储芯片与 SD 存储卡相同。尽管 eMMC 是芯片，不具备卡的外形，但由于协议相似 (`sdmmc_card_t`, `sdmmc_card_init`)，用于 SD 卡的一些概念同样适用于 eMMC 芯片。注意，eMMC 芯片不可通过 SPI 使用，因此它与 SD API 主机驱动不兼容。
+    从协议层的角度而言，eMMC 存储芯片与 SD 存储卡相同。尽管 eMMC 是芯片，不具备卡的外形，但由于协议相似 (`sdmmc_card_t`, `sdmmc_card_init`)，用于 SD 卡的一些概念同样适用于 eMMC 芯片。注意，eMMC 芯片不可通过 SPI 使用，因此它与 SD SPI 主机驱动不兼容。
 
     如需初始化 eMMC 内存并执行读/写操作，请参照上一章节 SD 卡操作步骤。
 
@@ -68,11 +68,11 @@ ESP-IDF :example:`storage/sd_card` 目录下提供了 SDMMC 驱动与 FatFs 库�
 
     1. I/O 中止 (0x06) 寄存器：在该寄存器中设置 RES 位可重置卡的 IO 部分；
     2. 总线接口控制 (0x07) 寄存器：如果主机和插槽配置中启用 4 线模式，则驱动程序会尝试在该寄存器中设置总线宽度字段。如果字段设置成功，则从机支持 4 线模式，主机也切换至 4 线模式；
-    3. 高速（0x13）寄存器：如果主机配置中启用高速模式，则该寄存器的 SHS 位会被设置。
+    3. 高速 (0x13) 寄存器：如果主机配置中启用高速模式，则该寄存器的 SHS 位会被设置。
 
     注意，驱动程序不会在 (1) I/O 使能寄存器和 Int 使能寄存器，及 (2) I/O 块大小中，设置任何位。应用程序可通过调用 :cpp:func:`sdmmc_io_write_byte` 来设置相关位。
 
-    如需卡配置或传输数据，请根据您的具体情况选择下表中的函数：
+    如需卡配置或传输数据，请根据具体情况，选择下表函数：
 
     .. list-table::
        :widths: 55 25 20
@@ -93,11 +93,11 @@ ESP-IDF :example:`storage/sd_card` 目录下提供了 SDMMC 驱动与 FatFs 库�
 
     使用 :cpp:func:`sdmmc_io_enable_int` 函数，应用程序可启用 SDIO 中断。在单线模式下使用 SDIO 时，还需要连接 D1 线来启用 SDIO 中断。
 
-    如果您需要应用程序保持等待直至发生 SDIO 中断，请使用 :cpp:func:`sdmmc_io_wait_int` 函数。
+    如果需要应用程序保持等待直至发生 SDIO 中断，请使用 :cpp:func:`sdmmc_io_wait_int` 函数。
 
     .. only:: esp32
 
-    如果您需要与 ESP32 的 SDIO 从设备通信，请使用 ESSL 组件（ESP 串行从设备链接）。请参阅 :doc:`/api-reference/protocols/esp_serial_slave_link` 和 :example:`peripherals/sdio/host`。
+    如果需要与 ESP32 的 SDIO 从设备通信，请使用 ESSL 组件（ESP 串行从设备链接）。请参阅 :doc:`/api-reference/protocols/esp_serial_slave_link` 和 :example:`peripherals/sdio/host`。
 
 复合卡（存储 + IO）
 ^^^^^^^^^^^^^^^^^^^^^^^^^

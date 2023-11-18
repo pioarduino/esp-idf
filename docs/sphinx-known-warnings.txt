@@ -9,6 +9,10 @@
 idf-component-manager.rst: WARNING: Badly formated string substitution: {IDF_TARGET}
 esp_ble_mesh_defs.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/bluetooth/esp-ble-mesh:line.
 Declaration is '.. cpp:member:: uint16_t model_id'.
+esp_ble_mesh_cm_data_api.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/bluetooth/esp-ble-mesh:line.
+Declaration is '.. cpp:member:: int8_t element_offset'.
+esp_ble_mesh_cm_data_api.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/bluetooth/esp-ble-mesh:line.
+Declaration is '.. cpp:member:: int8_t model_item_idx'.
 mqtt_client.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/protocols/mqtt:line.
 Declaration is '.. cpp:type:: struct esp_mqtt_event_t esp_mqtt_event_t'.
 mqtt_client.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/protocols/mqtt:line.
@@ -23,16 +27,6 @@ mqtt_client.inc:line: WARNING: Duplicate C++ declaration, also defined at api-re
 Declaration is '.. cpp:enum:: esp_mqtt_transport_t'.
 mqtt_client.inc:line: WARNING: Duplicate C++ declaration, also defined at api-reference/protocols/mqtt:line.
 Declaration is '.. cpp:enum:: esp_mqtt_protocol_ver_t'.
-wear-levelling.rst:line: WARNING: Duplicate C++ declaration, also defined at api-reference/storage/fatfs:line.
-Declaration is '.. cpp:struct:: esp_vfs_fat_mount_config_t'.
-wear-levelling.rst:line: WARNING: Duplicate C++ declaration, also defined at api-reference/storage/fatfs:line.
-Declaration is '.. cpp:member:: bool format_if_mount_failed'.
-wear-levelling.rst:line: WARNING: Duplicate C++ declaration, also defined at api-reference/storage/fatfs:line.
-Declaration is '.. cpp:member:: int max_files'.
-wear-levelling.rst:line: WARNING: Duplicate C++ declaration, also defined at api-reference/storage/fatfs:line.
-Declaration is '.. cpp:member:: size_t allocation_unit_size'.
-wear-levelling.rst:line: WARNING: Duplicate C++ declaration, also defined at api-reference/storage/fatfs:line.
-Declaration is '.. cpp:member:: bool disk_status_check_enable'.
 esp_heap_trace.inc:line: WARNING: Error when parsing function declaration.
 If the function has no return type:
   Invalid C++ declaration: Expected end of definition or ;. [error at 34]

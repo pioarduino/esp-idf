@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -19,7 +19,7 @@
 #define MSG_BUFF_SIZE   (256)
 
 
-static const char *TAG = "ICMPv6_PING";
+static const char *TAG = "icmpv6_ping";
 
 /* types of ipv6 addresses to be displayed on ipv6 events */
 static const char *s_ipv6_addr_types[] = {
@@ -53,7 +53,7 @@ static socklen_t resolve_v6addr(char *addr_str_i, struct sockaddr_in6 *addr_o)
 
     // Resolve source using getaddrinfo().
     if (0 != getaddrinfo(addr_str_i, NULL, &hints, &res)) {
-        ESP_LOGE(TAG, "getaddrinfo(): Could not resolve address, got error: %d\n", errno);
+        ESP_LOGE(TAG, "getaddrinfo(): Could not resolve address, got error: %d", errno);
         return 0;
     }
 
@@ -94,13 +94,13 @@ static void send_ping(char *src_addr_str, char *dst_addr_str, char *interface)
 
     // Resolve source address.
     if (0 == (srclen = resolve_v6addr(src_addr_str, &src))) {
-        ESP_LOGE(TAG, "resolve_v6addr(): Source address error\n");
+        ESP_LOGE(TAG, "resolve_v6addr(): Source address error");
         return;
     }
 
     // Resolve destination address.
     if (0 == resolve_v6addr(dst_addr_str, &dst)) {
-        ESP_LOGE(TAG, "resolve_v6addr(): Destination address error\n");
+        ESP_LOGE(TAG, "resolve_v6addr(): Destination address error");
         return;
     }
 
@@ -145,34 +145,34 @@ static void send_ping(char *src_addr_str, char *dst_addr_str, char *interface)
 
     // Request a socket descriptor sd.
     if ((sd = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6)) < 0) {
-        ESP_LOGE(TAG, "Failed to get socket descriptor.: %d\n", errno);
+        ESP_LOGE(TAG, "Failed to get socket descriptor.: %d", errno);
         return;
     }
 
     // Bind the socket descriptor to the source address.
     if (bind(sd, (struct sockaddr *)&src, srclen) != 0) {
-        ESP_LOGE(TAG, "Failed to bind the socket descriptor to the source address.: %d\n", errno);
+        ESP_LOGE(TAG, "Failed to bind the socket descriptor to the source address.: %d", errno);
         return;
     }
 
     // Bind socket to interface index.
     strcpy(ifr.ifr_name, interface);
     if (setsockopt(sd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) < 0) {
-        ESP_LOGE(TAG, "setsockopt() failed to bind to interface: %d\n", errno);
+        ESP_LOGE(TAG, "setsockopt() failed to bind to interface: %d", errno);
         return;
     }
 
     // Send packet.
     int ret = 0;
     if ((ret = sendmsg(sd, &msghdr, 0)) < 0) {
-        ESP_LOGE(TAG, "sendmsg() failed: %d\n", errno);
+        ESP_LOGE(TAG, "sendmsg() failed: %d", errno);
         return;
     }
     free(msghdr.msg_control);
 
     ESP_LOGI(TAG, "ICMPv6 msg payload:");
     ESP_LOG_BUFFER_HEXDUMP(TAG, &(psdhdr[IP6_HLEN]), ICMP6_HLEN + datalen, ESP_LOG_INFO);
-    ESP_LOGI(TAG, "Sent ICMPv6 msg: type: %d, code: %d, id: %d, seqno: %d\n",
+    ESP_LOGI(TAG, "Sent ICMPv6 msg: type: %d, code: %d, id: %d, seqno: %d",
              icmphdr->type,
              icmphdr->code,
              icmphdr->id,
@@ -199,13 +199,13 @@ static void send_ping(char *src_addr_str, char *dst_addr_str, char *interface)
     icmphdr = (struct icmp6_echo_hdr *)(inpack + IP6_HLEN);
     while (ICMP6_TYPE_EREP != icmphdr->type) {
         if ((len = recvmsg(sd, &msghdr, 0)) < 0) {
-            ESP_LOGE(TAG, "recvmsg() failed: %d\n", errno);
+            ESP_LOGE(TAG, "recvmsg() failed: %d", errno);
             return;
         }
 
         ESP_LOGI(TAG, "ICMPv6 msg payload:");
         ESP_LOG_BUFFER_HEXDUMP(TAG, inpack, IP6_HLEN + ICMP6_HLEN + datalen, ESP_LOG_INFO);
-        ESP_LOGI(TAG, "Received ICMPv6 msg: type: %d, code: %d, id: %d, seqno: %d\n",
+        ESP_LOGI(TAG, "Received ICMPv6 msg: type: %d, code: %d, id: %d, seqno: %d",
                  icmphdr->type,
                  icmphdr->code,
                  icmphdr->id,
@@ -215,34 +215,41 @@ static void send_ping(char *src_addr_str, char *dst_addr_str, char *interface)
     free(msghdr.msg_control);
 }
 
+/**
+ * @brief API struct to pass interface name and source addresses in TCPIP context
+ *
+ * @param[out] interface Name of the interface.
+ * @param[out] src_addr_str Global/Unique local IPv6 address of the interface
+ */
+typedef struct src_iface_api {
+    char *interface;
+    char *src_addr_str;
+} src_iface_api_t;
 
 /**
  * @brief Goes over each interface and searches for one Global/Unique local IPv6 address.
  *        Returns the interface name and IPv6 address of the interface in case of success.
  *
- * @param[out] interface Name of the interface.
- * @param[out] src_addr_str Global/Unique local IPv6 address of the interface
  * @return
- *          >0 : Successfully found an interface with Global/Unique local IPv6 address.
- *          -1 : Unable to to find a valid interface with Global/Unique local  IPv6 address.
+ *          ESP_OK : Successfully found an interface with Global/Unique local IPv6 address.
+ *          ESP_FAIL : Unable to to find a valid interface with Global/Unique local  IPv6 address.
  */
-bool get_src_iface(char *interface, char *src_addr_str)
+static esp_err_t get_src_iface(void* ctx)
 {
+    src_iface_api_t *api = ctx;
     esp_netif_t *netif = NULL;
     int ip6_addrs_count = 0;
     esp_ip6_addr_t ip6[LWIP_IPV6_NUM_ADDRESSES];
-    esp_err_t ret = ESP_FAIL;
 
     // Get interface details and own global ipv6 address
-    for (int i = 0; i < esp_netif_get_nr_of_ifs(); ++i) {
-        netif = esp_netif_next(netif);
-        ret = esp_netif_get_netif_impl_name(netif, interface);
+    while ((netif = esp_netif_next_unsafe(netif)) != NULL) {
+        esp_err_t ret = esp_netif_get_netif_impl_name(netif, api->interface);
 
         if ((ESP_FAIL == ret) || (NULL == netif)) {
             ESP_LOGE(TAG, "No interface available");
-            return false;
+            return ESP_FAIL;
         }
-        ESP_LOGI(TAG, "Interface: %s", interface);
+        ESP_LOGI(TAG, "Interface: %s", api->interface);
 
         ip6_addrs_count = esp_netif_get_all_ip6(netif, ip6);
         for (int j = 0; j < ip6_addrs_count; ++j) {
@@ -252,13 +259,13 @@ bool get_src_iface(char *interface, char *src_addr_str)
             if ((ESP_IP6_ADDR_IS_GLOBAL == ipv6_type) ||
                     (ESP_IP6_ADDR_IS_UNIQUE_LOCAL == ipv6_type)) {
                 // Break as we have the source address
-                sprintf(src_addr_str, IPV6STR, IPV62STR(ip6[j]));
-                return true;
+                sprintf(api->src_addr_str, IPV6STR, IPV62STR(ip6[j]));
+                return ESP_OK;
             }
         }
     }
 
-    return false;
+    return ESP_FAIL;
 }
 
 
@@ -268,7 +275,8 @@ static void ping6_test_task(void *pvParameters)
     char interface[10];
     char dst_addr_str[] = CONFIG_EXAMPLE_DST_IPV6_ADDR;
 
-    if (true == get_src_iface(interface, src_addr_str)) {
+    src_iface_api_t api = { .interface = interface, .src_addr_str = src_addr_str };
+    if (esp_netif_tcpip_exec(get_src_iface, &api) == ESP_OK) {
         ESP_LOGI(TAG, "Source address: %s", src_addr_str);
         ESP_LOGI(TAG, "Destination address: %s", dst_addr_str);
         ESP_LOGI(TAG, "Interface name: %s", interface);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include "esp_assert.h"
 #include "hal/misc.h"
 #include "hal/assert.h"
 #include "hal/twai_types.h"
@@ -82,20 +83,53 @@ typedef union {
     uint8_t bytes[13];
 } __attribute__((packed)) twai_ll_frame_buffer_t;
 
-_Static_assert(sizeof(twai_ll_frame_buffer_t) == 13, "TX/RX buffer type should be 13 bytes");
+ESP_STATIC_ASSERT(sizeof(twai_ll_frame_buffer_t) == 13, "TX/RX buffer type should be 13 bytes");
+
+/* ---------------------------- Reset and Clock Control ------------------------------ */
+
+/**
+ * @brief Enable the bus clock for twai module
+ *
+ * @param group_id Group ID
+ * @param enable true to enable, false to disable
+ */
+static inline void twai_ll_enable_bus_clock(int group_id, bool enable)
+{
+    if (group_id == 0) {
+        PCR.twai0_conf.twai0_clk_en = enable;
+    } else {
+        PCR.twai1_conf.twai1_clk_en = enable;
+    }
+}
+
+/**
+ * @brief Reset the twai module
+ *
+ * @param group_id Group ID
+ */
+static inline void twai_ll_reset_register(int group_id)
+{
+    if (group_id == 0) {
+        PCR.twai0_conf.twai0_rst_en = 1;
+        PCR.twai0_conf.twai0_rst_en = 0;
+    } else {
+        PCR.twai1_conf.twai1_rst_en = 1;
+        PCR.twai1_conf.twai1_rst_en = 0;
+    }
+}
 
 /* ---------------------------- Peripheral Control Register ----------------- */
 
 /**
  * @brief Enable TWAI module clock
  *
- * @param hw Start address of the TWAI registers
+ * @param group_id Group ID
  * @param en true to enable, false to disable
  */
 __attribute__((always_inline))
-static inline void twai_ll_enable_clock(twai_dev_t *hw, bool en)
+static inline void twai_ll_enable_clock(int group_id, bool en)
 {
-    if (hw == &TWAI0) {
+    if (group_id == 0) {
         PCR.twai0_func_clk_conf.twai0_func_clk_en = en;
     } else {
         PCR.twai1_func_clk_conf.twai1_func_clk_en = en;
@@ -105,11 +139,11 @@ static inline void twai_ll_enable_clock(twai_dev_t *hw, bool en)
 /**
  * @brief Set clock source for TWAI module
  *
- * @param hw Start address of the TWAI registers
+ * @param group_id Group ID
  * @param clk_src Clock source
  */
 __attribute__((always_inline))
-static inline void twai_ll_set_clock_source(twai_dev_t *hw, twai_clock_source_t clk_src)
+static inline void twai_ll_set_clock_source(int group_id, twai_clock_source_t clk_src)
 {
     uint32_t clk_id = 0;
     bool valid = true;
@@ -124,7 +158,7 @@ static inline void twai_ll_set_clock_source(twai_dev_t *hw, twai_clock_source_t 
     }
 
     if (valid) {
-        if (hw == &TWAI0) {
+        if (group_id == 0) {
             PCR.twai0_func_clk_conf.twai0_func_clk_sel = clk_id;
         } else {
             PCR.twai1_func_clk_conf.twai1_func_clk_sel = clk_id;

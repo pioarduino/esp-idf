@@ -19,6 +19,10 @@
 #include "hal/spi_flash_types.h"
 #include "esp_assert.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Hardware host-specific constants */
 #define SPI_FLASH_HAL_MAX_WRITE_BYTES 64
 #define SPI_FLASH_HAL_MAX_READ_BYTES 64
@@ -48,8 +52,9 @@ typedef struct {
     uint32_t slicer_flags;      /// Slicer flags for configuring how to slice data correctly while reading or writing.
 #define SPI_FLASH_HOST_CONTEXT_SLICER_FLAG_DTR           BIT(0)  ///< Slice data according to DTR mode, the address and length must be even (A0=0).
     int freq_mhz;               /// Flash clock frequency.
+    uint8_t tsus_val;     ///< Tsus value of suspend (us)
 } spi_flash_hal_context_t;
-ESP_STATIC_ASSERT(sizeof(spi_flash_hal_context_t) == 44, "size of spi_flash_hal_context_t incorrect. Please check data compatibility with the ROM");
+ESP_STATIC_ASSERT(sizeof(spi_flash_hal_context_t) == 48, "size of spi_flash_hal_context_t incorrect. Please check data compatibility with the ROM");
 
 /// This struct provide MSPI Flash necessary timing related config, should be consistent with that in union in `spi_flash_hal_config_t`.
 typedef struct {
@@ -81,6 +86,7 @@ typedef struct {
     esp_flash_io_mode_t default_io_mode;        ///< Default flash io mode.
     int freq_mhz;         ///< SPI flash clock speed (MHZ).
     int clock_src_freq;    ///< SPI flash clock source (MHZ).
+    uint8_t tsus_val;     ///< Tsus value of suspend (us)
 } spi_flash_hal_config_t;
 
 /**
@@ -273,3 +279,7 @@ void spi_flash_hal_suspend(spi_flash_host_inst_t *host);
  * @return Always ESP_OK
  */
 esp_err_t spi_flash_hal_setup_read_suspend(spi_flash_host_inst_t *host, const spi_flash_sus_cmd_conf *sus_conf);
+
+#ifdef __cplusplus
+}
+#endif

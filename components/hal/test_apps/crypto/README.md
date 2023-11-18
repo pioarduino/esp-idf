@@ -1,5 +1,5 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 |
+| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- | -------- |
 
 ## Crypto peripherals test
 
@@ -47,6 +47,22 @@ This contains tests for the following features of the crypto peripherals:
     - ECDSA P192 signature verification
     - ECDSA P256 signature verification
 
+- AES peripheral
+    - Block Mode
+        - CBC AES-256
+        - CTR AES-256
+
+- SHA peripheral
+    - Block Mode
+        - SHA-1
+        - SHA-224
+        - SHA-256
+        - SHA-384
+        - SHA-512
+        - SHA-512/224
+        - SHA-512/256
+        - SHA-512/t
+
 > **_NOTE:_** The verification tests for the HMAC and Digital Signature peripherals would get exercised in only in an FPGA environment.
 # Burning the HMAC key
 
@@ -62,12 +78,22 @@ espefuse.py -p $ESPPORT burn_key BLOCK_KEY4 main/hmac/hmac_key.bin HMAC_UP
 
 The tests needs some HMAC keys to be burned in the `BLOCK_KEY1`, `BLOCK_KEY2` and `BLOCK_KEY3` of the efuses. As this verification application is independent of the efuse component, the user needs to manually burn the keys and their key purposes using `espefuse.py`.
 
+If SOC_DS_SIGNATURE_MAX_BIT_LEN == 3072:
 ```bash
-espefuse.py -p $ESPPORT burn_key BLOCK_KEY1 main/ds/ds_key1.bin HMAC_DOWN_DIGITAL_SIGNATURE --do-not-confirm
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY1 main/ds/keys/3072/ds_key1.bin HMAC_DOWN_DIGITAL_SIGNATURE
 
-espefuse.py -p $ESPPORT burn_key BLOCK_KEY2 main/ds/ds_key2.bin HMAC_DOWN_DIGITAL_SIGNATURE --do-not-confirm
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY2 main/ds/keys/3072/ds_key2.bin HMAC_DOWN_DIGITAL_SIGNATURE
 
-espefuse.py -p $ESPPORT burn_key BLOCK_KEY3 main/ds/ds_key3.bin HMAC_DOWN_DIGITAL_SIGNATURE --do-not-confirm
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY3 main/ds/keys/3072/ds_key3.bin HMAC_DOWN_DIGITAL_SIGNATURE
+```
+
+If SOC_DS_SIGNATURE_MAX_BIT_LEN == 4096:
+```bash
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY1 main/ds/keys/4096/ds_key1.bin HMAC_DOWN_DIGITAL_SIGNATURE
+
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY2 main/ds/keys/4096/ds_key2.bin HMAC_DOWN_DIGITAL_SIGNATURE
+
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY3 main/ds/keys/4096/ds_key3.bin HMAC_DOWN_DIGITAL_SIGNATURE
 ```
 
 # Burning the ECDSA keys
@@ -75,9 +101,9 @@ espefuse.py -p $ESPPORT burn_key BLOCK_KEY3 main/ds/ds_key3.bin HMAC_DOWN_DIGITA
 The ECDSA tests need some ECDSA keys to be burned in the `BLOCK_KEY1` and `BLOCK_KEY2` of the efuses. As this verification application is independent of the efuse component, the user needs to manually burn the keys and their key purposes using `espefuse.py`.
 
 ```bash
-espefuse.py -p $ESPPORT burn_key BLOCK_KEY1 main/ecdsa/ecdsa192_priv_key.pem ECDSA_KEY --do-not-confirm
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY1 main/ecdsa/ecdsa192_priv_key.pem ECDSA_KEY
 
-espefuse.py -p $ESPPORT burn_key BLOCK_KEY2 main/ecdsa/ecdsa256_priv_key.pem ECDSA_KEY --do-not-confirm
+espefuse.py -p $ESPPORT burn_key BLOCK_KEY2 main/ecdsa/ecdsa256_priv_key.pem ECDSA_KEY
 ```
 
 # Building

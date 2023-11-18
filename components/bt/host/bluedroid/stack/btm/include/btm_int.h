@@ -214,6 +214,10 @@ tBTM_CMPL_CB        *p_tx_power_cmpl_cb;/* Callback function to be called       
 TIMER_LIST_ENT       afh_channels_timer;
 tBTM_CMPL_CB        *p_afh_channels_cmpl_cb; /* Callback function to be called  When */
 /* set AFH channels is completed   */
+
+TIMER_LIST_ENT       page_timeout_set_timer;
+tBTM_CMPL_CB         *p_page_to_set_cmpl_cb; /* Callback function to be called when */
+/* set page timeout is completed */
 #endif
 
 DEV_CLASS            dev_class;         /* Local device class                   */
@@ -315,6 +319,7 @@ typedef struct {
     UINT16           inq_scan_type;
     UINT16           page_scan_type;        /* current page scan type */
     tBTM_INQ_TYPE    scan_type;
+    UINT16           page_timeout;
 
     BD_ADDR          remname_bda;           /* Name of bd addr for active remote name request */
 #define BTM_RMT_NAME_INACTIVE       0
@@ -431,6 +436,7 @@ typedef struct {
 #define BTM_SCO_XMIT_QUEUE_HIGH_WM  20
     fixed_queue_t   *xmit_data_q;       /* SCO data transmitting queue  */
     INT16           sent_not_acked;
+    tBTM_SCO_PKT_STAT_NUMS pkt_stat_nums;
 #endif
     tBTM_SCO_CB     *p_conn_cb;         /* Callback for when connected  */
     tBTM_SCO_CB     *p_disc_cb;         /* Callback for when disconnect */
@@ -1135,6 +1141,8 @@ void btm_delete_stored_link_key_complete (UINT8 *p);
 void btm_report_device_status (tBTM_DEV_STATUS status);
 void btm_set_afh_channels_complete (UINT8 *p);
 void btm_ble_set_channels_complete (UINT8 *p);
+void btm_set_page_timeout_complete (const UINT8 *p);
+void btm_page_to_setup_timeout (void *p_tle);
 
 /* Internal functions provided by btm_dev.c
 **********************************************
@@ -1178,9 +1186,11 @@ void  btm_sec_rmt_name_request_complete (UINT8 *bd_addr, UINT8 *bd_name, UINT8 s
 void  btm_sec_rmt_host_support_feat_evt (UINT8 *p);
 void  btm_io_capabilities_req (UINT8 *p);
 void  btm_io_capabilities_rsp (UINT8 *p);
+#if (CLASSIC_BT_INCLUDED == TRUE)
 void  btm_proc_sp_req_evt (tBTM_SP_EVT event, UINT8 *p);
 void  btm_keypress_notif_evt (UINT8 *p);
 void  btm_simple_pair_complete (UINT8 *p);
+#endif /* (CLASSIC_BT_INCLUDED == TRUE) */
 void  btm_sec_link_key_notification (UINT8 *p_bda, UINT8 *p_link_key, UINT8 key_type);
 void  btm_sec_link_key_request (UINT8 *p_bda);
 void  btm_sec_pin_code_request (UINT8 *p_bda);

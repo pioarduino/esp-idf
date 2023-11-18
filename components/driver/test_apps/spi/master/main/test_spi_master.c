@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -287,8 +287,8 @@ TEST_CASE("SPI Master test", "[spi]")
     success &= spi_test(handle, 4096 - 2); //multiple descs, edge case 1
     success &= spi_test(handle, 4096 - 1); //multiple descs, edge case 2
     success &= spi_test(handle, 4096 * 3); //multiple descs
-
     master_free_device_bus(handle);
+    TEST_ASSERT(success);
 
     printf("Testing bus at 80KHz, non-DMA\n");
     handle = setup_spi_bus_loopback(80000, false);
@@ -299,19 +299,18 @@ TEST_CASE("SPI Master test", "[spi]")
     success &= spi_test(handle, 47); //small, unaligned
     success &= spi_test(handle, 63); //small
     success &= spi_test(handle, 64); //small, unaligned
-
     master_free_device_bus(handle);
+    TEST_ASSERT(success);
 
-    printf("Testing bus at 26MHz\n");
+    printf("Testing bus at 20MHz\n");
     handle = setup_spi_bus_loopback(20000000, true);
-
     success &= spi_test(handle, 128); //DMA, aligned
     success &= spi_test(handle, 4096 * 3); //DMA, multiple descs
     master_free_device_bus(handle);
+    TEST_ASSERT(success);
 
     printf("Testing bus at 900KHz\n");
     handle = setup_spi_bus_loopback(9000000, true);
-
     success &= spi_test(handle, 128); //DMA, aligned
     success &= spi_test(handle, 4096 * 3); //DMA, multiple descs
     master_free_device_bus(handle);
@@ -790,11 +789,8 @@ TEST_CASE("SPI Master DMA test: length, start, not aligned", "[spi]")
     //connect MOSI to two devices breaks the output, fix it.
     spitest_gpio_output_sel(buscfg.mosi_io_num, FUNC_GPIO, spi_periph_signal[TEST_SPI_HOST].spid_out);
 
-    memset(rx_buf, 0x66, 320);
-
     for ( int i = 0; i < 8; i ++ ) {
         memset( rx_buf, 0x66, sizeof(rx_buf));
-
         spi_transaction_t t = {};
         t.length = 8 * (i + 1);
         t.rxlength = 0;
@@ -881,12 +877,12 @@ void test_cmd_addr(spi_slave_task_context_t *slave_context, bool lsb_first)
         vTaskDelay(50);
         //prepare master tx data
         int cmd_bits = (i + 1) * 2;
-        int addr_bits =
+        int addr_bits = 0;
 #ifdef CONFIG_IDF_TARGET_ESP32
-            56 - 8 * i;
+        addr_bits = 56 - 8 * i;
 #elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
             //ESP32S2 only supportes up to 32 bits address
-            28 - 4 * i;
+        addr_bits = 28 - 4 * i;
 #endif
         int round_up = (cmd_bits + addr_bits + 7) / 8 * 8;
         addr_bits = round_up - cmd_bits;
@@ -1051,7 +1047,7 @@ TEST_CASE("SPI master variable dummy test", "[spi]")
     TEST_ESP_OK(spi_bus_add_device(TEST_SPI_HOST, &dev_cfg, &spi));
 
     spi_slave_interface_config_t slave_cfg = SPI_SLAVE_TEST_DEFAULT_CONFIG();
-    TEST_ESP_OK(spi_slave_initialize(TEST_SLAVE_HOST, &bus_cfg, &slave_cfg, 0));
+    TEST_ESP_OK(spi_slave_initialize(TEST_SLAVE_HOST, &bus_cfg, &slave_cfg, SPI_DMA_DISABLED));
 
     spitest_gpio_output_sel(bus_cfg.mosi_io_num, FUNC_GPIO, spi_periph_signal[TEST_SPI_HOST].spid_out);
     spitest_gpio_output_sel(bus_cfg.miso_io_num, FUNC_GPIO, spi_periph_signal[TEST_SLAVE_HOST].spiq_out);
@@ -1116,6 +1112,7 @@ TEST_CASE("SPI master hd dma TX without RX test", "[spi]")
     spi_slave_transaction_t slave_trans = {
         .rx_buffer = slv_recv_buf,
         .length = buf_size * 8,
+        .flags = SPI_SLAVE_TRANS_DMA_BUFFER_ALIGN_AUTO,
     };
     TEST_ESP_OK(spi_slave_queue_trans(TEST_SLAVE_HOST, &slave_trans, portMAX_DELAY));
 
@@ -1140,6 +1137,7 @@ TEST_CASE("SPI master hd dma TX without RX test", "[spi]")
         slave_trans = (spi_slave_transaction_t) {};
         slave_trans.tx_buffer = slv_send_buf;
         slave_trans.length = buf_size * 8;
+        slave_trans.flags |= SPI_SLAVE_TRANS_DMA_BUFFER_ALIGN_AUTO;
         TEST_ESP_OK(spi_slave_queue_trans(TEST_SLAVE_HOST, &slave_trans, portMAX_DELAY));
 
         vTaskDelay(50);
@@ -1575,7 +1573,7 @@ void test_add_device_slave(void)
         .spics_io_num = CS_REAL_DEV,
         .queue_size = 3,
     };
-    TEST_ESP_OK(spi_slave_initialize(TEST_SPI_HOST, &bus_cfg, &slvcfg, SPI_DMA_CH_AUTO));
+    TEST_ESP_OK(spi_slave_initialize(TEST_SPI_HOST, &bus_cfg, &slvcfg, SPI_DMA_DISABLED));
 
     spi_slave_transaction_t slave_trans = {};
     slave_trans.length = sizeof(slave_sendbuf) * 8;
@@ -1644,7 +1642,7 @@ TEST_CASE("test_master_isr_pin_to_core","[spi]")
 
 
     //-------------------------------------CPU1---------------------------------------
-    buscfg.isr_cpu_id = INTR_CPU_ID_1;
+    buscfg.isr_cpu_id = ESP_INTR_CPU_AFFINITY_1;
 
     master_expect = 0;
     for (int i = 0; i < TEST_ISR_CNT; i++) {
@@ -1662,7 +1660,6 @@ TEST_CASE("test_master_isr_pin_to_core","[spi]")
 #endif
 
 #if CONFIG_SPI_MASTER_IN_IRAM
-
 #define TEST_MASTER_IRAM_TRANS_LEN  120
 static IRAM_ATTR void test_master_iram_post_trans_cbk(spi_transaction_t *trans)
 {

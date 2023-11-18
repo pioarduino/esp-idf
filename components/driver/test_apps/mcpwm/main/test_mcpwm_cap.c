@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -76,6 +76,7 @@ TEST_CASE("mcpwm_capture_ext_gpio", "[mcpwm]")
     mcpwm_capture_timer_config_t cap_timer_config = {
         .clk_src = MCPWM_CAPTURE_CLK_SRC_DEFAULT,
         .group_id = 0,
+        .resolution_hz = 8 * 1000 * 1000,
     };
     TEST_ESP_OK(mcpwm_new_capture_timer(&cap_timer_config, &cap_timer));
 
@@ -111,13 +112,14 @@ TEST_CASE("mcpwm_capture_ext_gpio", "[mcpwm]")
 
     printf("simulate GPIO capture signal\r\n");
     gpio_set_level(cap_gpio, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    esp_rom_delay_us(10 * 1000);
     gpio_set_level(cap_gpio, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    esp_rom_delay_us(10 * 1000);
     printf("capture value: Pos=%"PRIu32", Neg=%"PRIu32"\r\n", cap_value[0], cap_value[1]);
     uint32_t clk_src_res;
     TEST_ESP_OK(mcpwm_capture_timer_get_resolution(cap_timer, &clk_src_res));
     clk_src_res /= 1000; // convert to kHz
+    printf("timer resolution:%"PRIu32"KHz\r\n", clk_src_res);
     TEST_ASSERT_UINT_WITHIN(1000, 10000, (cap_value[1] - cap_value[0]) * 1000 / clk_src_res);
 
     printf("uninstall capture channel and timer\r\n");
@@ -176,10 +178,9 @@ TEST_CASE("mcpwm_capture_software_catch", "[mcpwm]")
 
     printf("trigger software catch\r\n");
     TEST_ESP_OK(mcpwm_capture_channel_trigger_soft_catch(cap_channel));
-    vTaskDelay(pdMS_TO_TICKS(10));
+    esp_rom_delay_us(10 * 1000);
     TEST_ESP_OK(mcpwm_capture_channel_trigger_soft_catch(cap_channel));
-    vTaskDelay(pdMS_TO_TICKS(10));
-
+    esp_rom_delay_us(10 * 1000);
     // check user data
     TEST_ASSERT_EQUAL(2, test_callback_data.cap_data_index);
     uint32_t delta = test_callback_data.cap_data[1] - test_callback_data.cap_data[0];

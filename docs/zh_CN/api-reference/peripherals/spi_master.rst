@@ -1,16 +1,17 @@
 SPI 主机驱动程序
 ===================
+
 :link_to_translation:`en:[English]`
 
-SPI 主机驱动程序是用于控制 {IDF_TARGET_NAME} 的通用 SPI (GP-SPI) 外设作为 SPI 主机的软件程序。
+SPI 主机驱动程序是一个软件程序，用于在 {IDF_TARGET_NAME} 的通用 SPI (GP-SPI) 外设工作在主控模式时，对其进行控制。
 
 .. only:: esp32
 
     .. note::
-    
+
         SPI1 不属于 GP-SPI。SPI 主机驱动程序也支持 SPI1。但在 SPI1 总线上使用 SPI 主机驱动程序存在诸多限制，请参阅 :ref:`spi_master_on_spi1_bus`。
 
-有关 GP-SPI 硬件相关信息，请参考 *{IDF_TARGET_NAME} 技术参考手册* > *SPI 控制器* [`PDF <{IDF_TARGET_TRM_CN_URL}#spi>`__]。
+有关 GP-SPI 硬件相关信息，请参考 **{IDF_TARGET_NAME} 技术参考手册** > **SPI 控制器** [`PDF <{IDF_TARGET_TRM_CN_URL}#spi>`__]。
 
 术语
 --------
@@ -56,9 +57,9 @@ SPI 主机驱动程序是用于控制 {IDF_TARGET_NAME} 的通用 SPI (GP-SPI) �
    * - 传输事务 (Transaction)
      - 即主机断言设备的 CS 线，向设备发送数据/从设备读取数据，接着去断言 CS 线的过程。传输事务为原子操作，不可打断。
    * - 发射沿 (Launch Edge)
-     - 源寄存器将信号 *发射* 到线路上的时钟边沿。
+     - 源寄存器将信号 **发射** 到线路上的时钟边沿。
    * - 锁存沿 (Latch Edge)
-     - 目的寄存器 *锁存* 信号的时钟边沿。
+     - 目的寄存器 **锁存** 信号的时钟边沿。
 
 
 主机驱动特性
@@ -125,7 +126,7 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
 
 并非每个 SPI 设备都要求命令和/或地址，因此命令阶段和地址阶段为可选项。这反映在设备的配置中：如果 :cpp:member:`spi_device_interface_config_t::command_bits` 和/或 :cpp:member:`spi_device_interface_config_t::address_bits` 被设置为零，则不会唤起命令或地址阶段。
 
-并非每个传输事务都需要写入和读取数据，因此读取和写入阶段也是可选项。如果将 :cpp:member:`spi_transaction_t::rx_buffer` 设置为 NULL，且未设置 :c:macro:`SPI_TRANS_USE_RXDATA`，读取阶段将被跳过。如果将 :cpp:member:`spi_transaction_t::tx_buffer` 设置为 NULL，且未设置 :c:macro:`SPI_TRANS_USE_TXDATA`，写入阶段将被跳过。
+并非每个传输事务都需要写入和读取数据，因此读取和写入阶段也是可选项。如果将 :cpp:member:`spi_transaction_t::rx_buffer` 设置为 ``NULL``，且未设置 :c:macro:`SPI_TRANS_USE_RXDATA`，读取阶段将被跳过。如果将 :cpp:member:`spi_transaction_t::tx_buffer` 设置为 ``NULL``，且未设置 :c:macro:`SPI_TRANS_USE_TXDATA`，写入阶段将被跳过。
 
 主机驱动程序支持两种类型的传输事务：中断传输事务和轮询传输事务。用户可以选择在不同设备上使用不同的传输事务类型。若设备需要同时使用两种传输事务类型，请参阅 :ref:`mixed_transactions`。
 
@@ -156,7 +157,7 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
 传输线模式配置
 ^^^^^^^^^^^^^^^^^^^^^
 
-{IDF_TARGET_NAME} 支持的线路模式如下。要使用这些模式，请在结构体 :cpp:type:`spi_transaction_t` 中设置 ``flags``，如 ``传输事务标志信号`` 一栏所示。要检查相应的 IO 管脚是否被设置，请在 :cpp:type:`spi_bus_config_t` 中设置 ``flags``，如 `总线 IO 设置标志信号` 一栏所示。
+{IDF_TARGET_NAME} 支持的线路模式如下。要使用这些模式，请在结构体 :cpp:type:`spi_transaction_t` 中设置 ``flags``，如 ``传输事务标志信号`` 一栏所示。要检查相应的 IO 管脚是否被设置，请在 :cpp:type:`spi_bus_config_t` 中设置 ``flags``，如 ``总线 IO 设置标志信号`` 一栏所示。
 
 
 .. only:: not SOC_SPI_SUPPORT_OCT
@@ -181,28 +182,28 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
          - 1
          - 1
          - 2
-         - {SPI_TRANS_MODE_DIO}
-         - {SPICOMMON_BUSFLAG_DUAL}
+         - SPI_TRANS_MODE_DIO
+         - SPICOMMON_BUSFLAG_DUAL
        * - 双线 I/O 模式
          - 1
          - 2
          - 2
-         - * {SPI_TRANS_MODE_DIO}
-           * {SPI_TRANS_MULTILINE_ADDR}
-         -
+         - SPI_TRANS_MODE_DIO
+           SPI_TRANS_MULTILINE_ADDR
+         - SPICOMMON_BUSFLAG_DUAL
        * - 四线输出模式
          - 1
          - 1
          - 4
-         - {SPI_TRANS_MODE_QIO}
-         - {SPICOMMON_BUSFLAG_QUAD}
+         - SPI_TRANS_MODE_QIO
+         - SPICOMMON_BUSFLAG_QUAD
        * - 四线 I/O 模式
          - 1
          - 4
          - 4
-         - * {SPI_TRANS_MODE_QIO}
-           * {SPI_TRANS_MULTILINE_ADDR}
-         - {SPICOMMON_BUSFLAG_QUAD}
+         - SPI_TRANS_MODE_QIO
+           SPI_TRANS_MULTILINE_ADDR
+         - SPICOMMON_BUSFLAG_QUAD
 
 .. only:: SOC_SPI_SUPPORT_OCT
 
@@ -226,42 +227,42 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
          - 1
          - 1
          - 2
-         - {SPI_TRANS_MODE_DIO}
-         - {SPICOMMON_BUSFLAG_DUAL}
+         - SPI_TRANS_MODE_DIO
+         - SPICOMMON_BUSFLAG_DUAL
        * - 双线 I/O 模式
          - 1
          - 2
          - 2
-         - * {SPI_TRANS_MODE_DIO}
-           * {SPI_TRANS_MULTILINE_ADDR}
-         -
+         - SPI_TRANS_MODE_DIO
+           SPI_TRANS_MULTILINE_ADDR
+         - SPICOMMON_BUSFLAG_DUAL
        * - 四线输出模式
          - 1
          - 1
          - 4
-         - {SPI_TRANS_MODE_QIO}
-         - {SPICOMMON_BUSFLAG_QUAD}
+         - SPI_TRANS_MODE_QIO
+         - SPICOMMON_BUSFLAG_QUAD
        * - 四线 I/O 模式
          - 1
          - 4
          - 4
-         - * {SPI_TRANS_MODE_QIO}
-           * {SPI_TRANS_MULTILINE_ADDR}
-         - {SPICOMMON_BUSFLAG_QUAD}
+         - SPI_TRANS_MODE_QIO
+           SPI_TRANS_MULTILINE_ADDR
+         - SPICOMMON_BUSFLAG_QUAD
        * - 八线输出模式
          - 1
          - 1
          - 8
-         - {SPI_TRANS_MODE_OCT}
-         - {SPICOMMON_BUSFLAG_OCTAL}
+         - SPI_TRANS_MODE_OCT
+         - SPICOMMON_BUSFLAG_OCTAL
        * - OPI 模式
          - 8
          - 8
          - 8
-         - * {SPI_TRANS_MODE_OCT}
-           * {SPI_TRANS_MULTILINE_ADDR}
-           * {SPI_TRANS_MULTILINE_CMD}
-         - {SPICOMMON_BUSFLAG_OCTAL}
+         - SPI_TRANS_MODE_OCT
+           SPI_TRANS_MULTILINE_ADDR
+           SPI_TRANS_MULTILINE_CMD
+         - SPICOMMON_BUSFLAG_OCTAL
 
 命令阶段和地址阶段
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -283,7 +284,7 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
 
 若未满足以上要求，传输事务效率将受到临时缓冲区分配和复制的影响。
 
-如果使用多条数据线传输，请在结构体 :cpp:type:`spi_device_interface_config_t` 中的 `flags` 设置 ``SPI_DEVICE_HALFDUPLEX`` 标志信号。结构体 :cpp:type:`spi_transaction_t` 中的 ``flags`` 应按照 :ref:`transaction-line-mode` 中的描述设置。
+如果使用多条数据线传输，请在结构体 :cpp:type:`spi_device_interface_config_t` 中的 ``flags`` 设置 ``SPI_DEVICE_HALFDUPLEX`` 标志信号。结构体 :cpp:type:`spi_transaction_t` 中的 ``flags`` 应按照 :ref:`transaction-line-mode` 中的描述设置。
 
 .. only:: esp32
 
@@ -291,7 +292,7 @@ SPI 总线传输事务由五个阶段构成，详见下表（任意阶段均可�
 
         当启用 DMA 时，不支持同时具有读取阶段和写入阶段的半双工传输事务。有关细节和解决方法，请参阅 :ref:`spi_known_issues`。
 
-.. only:: esp32s3 or esp32c3 or esp32c2 or esp32c6 or esp32h2
+.. only:: not SOC_SPI_HD_BOTH_INOUT_SUPPORTED
 
     .. note::
 
@@ -363,7 +364,7 @@ SPI 主机逐字节地将数据读入和写入内存。默认情况下，数据�
 在某些情况下，要传输的数据大小与 ``uint8_t`` 数组不同，可使用以下宏将数据转换为可由 SPI 驱动直接发送的格式：
 
 - 需传输的数据，使用 :c:macro:`SPI_SWAP_DATA_TX`
-- 接收到的数据，使用 :c:macro:`SPI_SWAP_DATA_RX` 
+- 接收到的数据，使用 :c:macro:`SPI_SWAP_DATA_RX`
 
 
 .. _mixed_transactions:
@@ -392,7 +393,7 @@ ISR 会干扰飞行中的轮询传输事务，以适应中断传输事务。在�
 
         因具备 :ref:`spi_bus_lock` 特性，SPI 主机驱动程序可在 SPI1 总线上运行，但该过程十分棘手，且需要许多特殊处理。这是一个适合高级开发者的功能。
 
-    要在 SPI1 总线上运行 SPI 主机驱动程序，需注意以下两个问题： 
+    要在 SPI1 总线上运行 SPI 主机驱动程序，需注意以下两个问题：
 
     1. 当驱动在 SPI1 上运行时，代码和数据应在内部存储器中。
 
@@ -454,7 +455,7 @@ GPIO 矩阵与 IO_MUX 管脚
        * - CS0 [1]_
          - 15
          - 5
-       * - SCLK 
+       * - SCLK
          - 14
          - 18
        * - MISO
@@ -468,16 +469,16 @@ GPIO 矩阵与 IO_MUX 管脚
          - 22
        * - QUADHD
          - 4
-         - 21  
+         - 21
 
 .. only:: not esp32
 
-    {IDF_TARGET_SPI2_IOMUX_PIN_CS:default="N/A",   esp32s2="10", esp32s3="10", esp32c2="10", esp32c3="10", esp32c6="16", esp32h2="1"}
-    {IDF_TARGET_SPI2_IOMUX_PIN_CLK:default="N/A",  esp32s2="12", esp32s3="12", esp32c2="6",  esp32c3="6",  esp32c6="6",  esp32h2="4"}
-    {IDF_TARGET_SPI2_IOMUX_PIN_MOSI:default="N/A", esp32s2="11"  esp32s3="11", esp32c2="7"   esp32c3="7",  esp32c6="7",  esp32h2="5"}
-    {IDF_TARGET_SPI2_IOMUX_PIN_MISO:default="N/A", esp32s2="13"  esp32s3="13", esp32c2="2"   esp32c3="2",  esp32c6="2",  esp32h2="0"}
-    {IDF_TARGET_SPI2_IOMUX_PIN_HD:default="N/A",   esp32s2="9"   esp32s3="9",  esp32c2="4"   esp32c3="4",  esp32c6="4",  esp32h2="3"}
-    {IDF_TARGET_SPI2_IOMUX_PIN_WP:default="N/A",   esp32s2="14"  esp32s3="14", esp32c2="5"   esp32c3="5",  esp32c6="5",  esp32h2="2"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_CS:default="N/A",   esp32s2="10", esp32s3="10", esp32c2="10", esp32c3="10", esp32c6="16", esp32h2="1", esp32p4="7"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_CLK:default="N/A",  esp32s2="12", esp32s3="12", esp32c2="6",  esp32c3="6",  esp32c6="6",  esp32h2="4", esp32p4="9"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_MOSI:default="N/A", esp32s2="11"  esp32s3="11", esp32c2="7"   esp32c3="7",  esp32c6="7",  esp32h2="5", esp32p4="8"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_MISO:default="N/A", esp32s2="13"  esp32s3="13", esp32c2="2"   esp32c3="2",  esp32c6="2",  esp32h2="0", esp32p4="10"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_HD:default="N/A",   esp32s2="9"   esp32s3="9",  esp32c2="4"   esp32c3="4",  esp32c6="4",  esp32h2="3", esp32p4="6"}
+    {IDF_TARGET_SPI2_IOMUX_PIN_WP:default="N/A",   esp32s2="14"  esp32s3="14", esp32c2="5"   esp32c3="5",  esp32c6="5",  esp32h2="2", esp32p4="11"}
 
     芯片的大多数外围信号都与之专用的 IO_MUX 管脚连接，但这些信号也可以通过较不直接的 GPIO 矩阵路由到任何其他可用的管脚。只要有一个信号是通过 GPIO 矩阵路由的，那么所有的信号都将通过它路由。
 
@@ -549,6 +550,7 @@ SPI 时钟频率
 ^^^^^^^^^^^^^^^^^^^
 
 GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg::clock_source` 选择，可用的时钟源请参阅 :cpp:type:`spi_clock_source_t`。
+
 默认情况下，驱动程序将把 :cpp:member:`spi_device_handle_t::cfg::clock_source` 设置为 ``SPI_CLK_SRC_DEFAULT``。这往往代表 GPSPI 时钟源中的最高频率，在不同的芯片中这一数值会有所不同。
 
 设备的实际时钟频率可能不完全等于所设置的数字，驱动会将其重新计算为与硬件兼容的最接近的数字，并且不超过时钟源的时钟频率。调用函数 :cpp:func:`spi_device_get_actual_freq` 以了解驱动计算的实际频率。
@@ -602,7 +604,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
 
     SPI 驱动是基于 FreeRTOS 的 API 实现的，在使用 :ref:`CONFIG_SPI_MASTER_IN_IRAM` 时，不得启用 :ref:`CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH`。
 
-单个中断传输事务传输 n 字节的总成本为 *20+8n/Fspi[MHz]* [µs]，故传输速度为 *n/(20+8n/Fspi)*。8 MHz 时钟速度的传输速度见下表。
+单个中断传输事务传输 n 字节的总成本为 **20+8n/Fspi[MHz]** [µs]，故传输速度为 **n/(20+8n/Fspi)**。8 MHz 时钟速度的传输速度见下表。
 
 .. list-table::
    :widths: 30 45 40 30 30
@@ -637,11 +639,11 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
      - 25
      - 128
      - 153
-     - 836.6  
+     - 836.6
 
 传输事务长度较短时将提高传输事务间隔成本，因此应尽可能将几个短传输事务压缩成一个传输事务，以提升传输速度。
 
-注意，ISR 在 flash 操作期间默认处于禁用状态。要在 flash 操作期间继续发送传输事务，请启用 :ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM`，并在 :cpp:member:`spi_bus_config_t::intr_flags` 中设置 :c:macro:`ESP_INTR_FLAG_IRAM`。此时，flash 操作前列队的传输事务将由 ISR 并行处理。此外，每个设备的回调和它们的 callee 函数都应该在 IRAM 中，避免回调因缓存丢失而崩溃。详情请参阅 :ref:`iram-safe-interrupt-handlers`。
+注意，ISR 在 flash 操作期间默认处于禁用状态。要在 flash 操作期间继续发送传输事务，请启用 :ref:`CONFIG_SPI_MASTER_ISR_IN_IRAM`，并在 :cpp:member:`spi_bus_config_t::intr_flags` 中设置 :c:macro:`ESP_INTR_FLAG_IRAM`。此时，flash 操作前列队的传输事务将由 ISR 并行处理。此外，每个设备的回调和它们的 ``callee`` 函数都应该在 IRAM 中，避免回调因缓存丢失而崩溃。详情请参阅 :ref:`iram-safe-interrupt-handlers`。
 
 
 .. only:: esp32
@@ -664,7 +666,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
     - :cpp:member:`spi_device_interface_config_t::input_delay_ns` - SCLK 上的一个时钟周期开始后 MISO 总线上的最大数据有效时间
     - 是否使用了 IO_MUX 管脚或 GPIO 矩阵
 
-    使用 GPIO 矩阵时，最大有效频率降至现有 *输入延迟* 的 33~77%。使用 IO_MUX 管脚或 *dummy 位* 可以保留较高的频率，调用函数 :cpp:func:`spi_get_freq_limit` 能够获取主机的最大读取频率。
+    使用 GPIO 矩阵时，最大有效频率降至现有 **输入延迟** 的 33 ~ 77%。使用 IO_MUX 管脚或 **dummy 位** 可以保留较高的频率，调用函数 :cpp:func:`spi_get_freq_limit` 能够获取主机的最大读取频率。
 
     .. _dummy_bit_workaround:
 
@@ -693,7 +695,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
          - 是
          - 半双工，禁用 DMA
 
-    如果主机仅写入数据，可以通过设置 :cpp:member:`spi_device_interface_config_t::flags` 中的 ``SPI_DEVICE_NO_DUMMY`` 位来禁用 *Dummy 位* 和频率检查机制。禁用 *Dummy 位* 和频率检查机制后，即便在使用 GPIO 矩阵的情况下，输出频率也可达 80 MHz。
+    如果主机仅写入数据，可以通过设置 :cpp:member:`spi_device_interface_config_t::flags` 中的 ``SPI_DEVICE_NO_DUMMY`` 位来禁用 **Dummy 位** 和频率检查机制。禁用 **Dummy 位** 和频率检查机制后，即便在使用 GPIO 矩阵的情况下，输出频率也可达 80 MHz。
 
     :cpp:member:`spi_device_interface_config_t::flags`
 
@@ -719,9 +721,9 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
        * - 使用 IO_MUX 的 ESP32 从机设备
          - 50
        * - 使用 GPIO_MATRIX 的 ESP32 从机设备
-         - 75 
+         - 75
 
-    MISO 路径延迟（有效时间）由从机的 *输入延迟* 与主机的 *GPIO 矩阵延迟* 组成。该延迟决定了频率限制，超过这个频率的全双工传输将无法如半双工交易中使用的 Dummy 位一样工作。该频率限制的计算方法为：
+    MISO 路径延迟（有效时间）由从机的 **输入延迟** 与主机的 **GPIO 矩阵延迟** 组成。该延迟决定了频率限制，超过这个频率的全双工传输将无法如半双工交易中使用的 Dummy 位一样工作。该频率限制的计算方法为：
 
         *Freq limit [MHz] = 80 / (floor(MISO delay[ns]/12.5) + 1)*
 
@@ -729,7 +731,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
 
     .. image:: /../_static/spi_master_freq_tv.png
 
-    不同设备在不同 *输入延迟* 时间下对应的频率限制如下表所示。
+    不同设备在不同 **输入延迟** 时间下对应的频率限制如下表所示。
 
     当主机驱动为 IO_MUX (0 ns) 时：
 
@@ -767,10 +769,8 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
          - 11.43
        * - 75
          - 100
-         - 8.89   
+         - 8.89
 
-
-.. only:: esp32
 
     .. _spi_known_issues:
 
@@ -800,6 +800,7 @@ GPSPI 外设的时钟源可以通过设置 :cpp:member:`spi_device_handle_t::cfg
 
 查看使用 SPI 主机驱动程序在半双工模式下读取/写入 AT93C46D EEPROM（8 位模式）的示例代码，请前往 ESP-IDF 示例的 :example:`peripherals/spi_master/hd_eeprom` 目录。
 
+查看使用 SPI 主机驱动程序在全双工模式下驱动 LCD 屏幕（如 ST7789V 或 ILI9341）的示例代码，请前往 ESP-IDF 示例的 :example:`peripherals/spi_master/lcd` 目录。
 
 API 参考 - SPI Common
 --------------------------

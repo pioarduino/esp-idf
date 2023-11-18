@@ -1,5 +1,6 @@
 杂项系统 API
 =========================
+
 :link_to_translation:`en:[English]`
 
 {IDF_TARGET_BASE_MAC_BLOCK: default="BLK1", esp32="BLK0"}
@@ -36,7 +37,7 @@ MAC 地址
 
 要获取特定接口（如 Wi-Fi、蓝牙、以太网）的 MAC 地址，请调用函数 :cpp:func:`esp_read_mac`。
 
-在 ESP-IDF 中，各个网络接口的 MAC 地址是根据单个 *基准 MAC 地址 (Base MAC address)* 计算出来的。默认情况下使用乐鑫指定的基准 MAC 地址，该基准地址在产品生产过程中已预烧录至 {IDF_TARGET_NAME} eFuse。
+在 ESP-IDF 中，各个网络接口的 MAC 地址是根据单个 **基准 MAC 地址 (Base MAC address)** 计算出来的。默认情况下使用乐鑫指定的基准 MAC 地址，该基准地址在产品生产过程中已预烧录至 {IDF_TARGET_NAME} eFuse。
 
 .. only:: not esp32s2
 
@@ -45,7 +46,7 @@ MAC 地址
         :header-rows: 1
 
         * - 接口
-          - MAC 地址（默认 4 个全局地址)
+          - MAC 地址（默认 4 个全局地址）
           - MAC 地址（2 个全局地址）
         * - Wi-Fi Station
           - base_mac
@@ -71,7 +72,7 @@ MAC 地址
         :header-rows: 1
 
         * - 接口
-          - MAC 地址（默认 2 个全局地址)
+          - MAC 地址（默认 2 个全局地址）
           - MAC 地址（1 个全局地址）
         * - Wi-Fi Station
           - base_mac
@@ -89,7 +90,9 @@ MAC 地址
 
 .. only:: not SOC_EMAC_SUPPORTED
 
-    .. note:: {IDF_TARGET_NAME} 内部未集成以太网 MAC 地址，但仍可以计算得出该地址。不过，以太网 MAC 地址只能与外部以太网接口（如 SPI 以太网设备）一起使用，具体请参阅 :doc:`/api-reference/network/esp_eth`。
+    .. note::
+
+      {IDF_TARGET_NAME} 内部未集成以太网 MAC 地址，但仍可以计算得出该地址。不过，以太网 MAC 地址只能与外部以太网接口（如 SPI 以太网设备）一起使用，具体请参阅 :doc:`/api-reference/network/esp_eth`。
 
 自定义接口 MAC
 ^^^^^^^^^^^^^^^^
@@ -181,7 +184,7 @@ ESP-IDF 提供了 :cpp:func:`esp_efuse_mac_get_custom` 函数，从 eFuse 读取
 内部调用函数 :cpp:func:`esp_derive_local_mac`，可从全局 MAC 地址生成本地 MAC 地址。具体流程如下：
 
 1. 在全局 MAC 地址的第一个字节组中设置 U/L 位（位值为 0x2），创建本地 MAC 地址。
-2. 如果该位已存在于全局 MAC 地址中（即现有的 “全局” MAC 地址实际上已经是本地 MAC 地址），则本地 MAC 地址的第一个字节组与 0x4 异或。
+2. 如果该位已存在于全局 MAC 地址中（即现有的“全局”MAC 地址实际上已经是本地 MAC 地址），则本地 MAC 地址的第一个字节组与 0x4 异或。
 
 芯片版本
 ------------

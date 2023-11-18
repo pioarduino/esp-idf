@@ -28,7 +28,6 @@
 #include "sdkconfig.h"
 #include "sdmmc_cmd.h"
 
-
 #define TIMEOUT_MAX   UINT32_MAX
 
 #define GPIO_B1     21
@@ -54,7 +53,6 @@
 #define PIN_D2      SDMMC_SLOT1_IOMUX_PIN_NUM_D2
 #define PIN_D3      SDMMC_SLOT1_IOMUX_PIN_NUM_D3
 #endif
-
 
 /*
    sdio host example.
@@ -186,10 +184,10 @@ esp_err_t slave_init(essl_handle_t* handle)
 #ifndef CONFIG_EXAMPLE_SDIO_OVER_SPI
     sdmmc_host_t config = SDMMC_HOST_DEFAULT();
 #ifdef CONFIG_EXAMPLE_SDIO_4BIT
-    ESP_LOGI(TAG, "Probe using SD 4-bit...\n");
+    ESP_LOGI(TAG, "Probe using SD 4-bit...");
     config.flags = SDMMC_HOST_FLAG_4BIT;
 #else
-    ESP_LOGI(TAG, "Probe using SD 1-bit...\n");
+    ESP_LOGI(TAG, "Probe using SD 1-bit...");
     config.flags = SDMMC_HOST_FLAG_1BIT;
 #endif
 
@@ -249,7 +247,7 @@ esp_err_t slave_init(essl_handle_t* handle)
     ESP_ERROR_CHECK(err);
     err = sdspi_host_init_device(&dev_config, &sdspi_handle);
     ESP_ERROR_CHECK(err);
-    ESP_LOGI(TAG, "Probe using SPI...\n");
+    ESP_LOGI(TAG, "Probe using SPI...");
 
     sdmmc_host_t config = SDSPI_HOST_DEFAULT();
     config.slot = sdspi_handle;
@@ -298,7 +296,6 @@ esp_err_t slave_init(essl_handle_t* handle)
     return ret;
 }
 
-
 void slave_power_on(void)
 {
 #ifdef SLAVE_PWR_GPIO
@@ -338,9 +335,13 @@ static esp_err_t get_intr(essl_handle_t handle, uint32_t* out_raw, uint32_t* out
 #endif
 
     ret = essl_get_intr(handle, out_raw, out_st, TIMEOUT_MAX);
-    if (ret != ESP_OK) return ret;
+    if (ret != ESP_OK) {
+        return ret;
+    }
     ret = essl_clear_intr(handle, *out_raw, TIMEOUT_MAX);
-    if (ret != ESP_OK) return ret;
+    if (ret != ESP_OK) {
+        return ret;
+    }
     ESP_LOGD(TAG, "intr: %08"PRIX32, *out_raw);
     return ESP_OK;
 }

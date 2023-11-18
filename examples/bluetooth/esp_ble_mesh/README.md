@@ -8,13 +8,9 @@ Note: To use examples in this directory, you need to have Bluetooth enabled in c
 
 # Example Layout
 
-This directory includes examples to demonstrate ESP-BLE-MESH functionality based on [Zephyr Bluetooth Mesh stack](https://github.com/zephyrproject-rtos/zephyr/tree/master/subsys/bluetooth/mesh).
+This directory includes some examples to demonstrate ESP-BLE-MESH functionality based on [Zephyr Bluetooth Mesh stack](https://github.com/zephyrproject-rtos/zephyr/tree/master/subsys/bluetooth/mesh).
 
-## ble_mesh_console
-
-This example demonstrates how ESP-BLE-MESH uses Console for message transmitting/receiving tests.
-
-## ble_mesh_fast_provision
+## fast_provisioning
 
 This example illustrates the solution of ESP-BLE-MESH Fast Provisioning.
 
@@ -22,7 +18,7 @@ This example illustrates the solution of ESP-BLE-MESH Fast Provisioning.
 
 This example shows how ESP32, acting as a BLE Mesh Fast Provisioning Client, provisions other unprovisioned devices and then controls the nodes.
 
-See [fast_prov_client](ble_mesh_fast_provision/fast_prov_client) folder for more details.
+See [fast_prov_client](fast_provisioning/fast_prov_client) folder for more details.
 
 #### fast_prov_server
 
@@ -30,9 +26,9 @@ This example illustrates the process that:
 1. ESP32 as a BLE Mesh Fast Provisioning Server is provisioned into a node;
 2. ESP32 as a Temporary Provisioner provisions other unprovisioned devices.
 
-See [fast_prov_server](ble_mesh_fast_provision/fast_prov_server) folder for more details.
+See [fast_prov_server](fast_provisioning/fast_prov_server) folder for more details.
 
-## ble_mesh_node
+## onoff_models
 
 This example demonstrates how ESP32 acts as a BLE Mesh node with Generic OnOff Server model or Generic OnOff Client model on board.
 
@@ -40,21 +36,21 @@ This example demonstrates how ESP32 acts as a BLE Mesh node with Generic OnOff S
 
 This example shows how ESP32 acts as a BLE Mesh Node with Generic OnOff Client model in the Primary Element.
 
-See [onoff_client](ble_mesh_node/onoff_client) folder for more details.
+See [onoff_client](onoff_models/onoff_client) folder for more details.
 
 #### onoff_server
 
 This example shows how ESP32 acts as a BLE Mesh Node with only Generic OnOff Server model in the Primary Element.
 
-See [onoff_server](ble_mesh_node/onoff_server) folder for more details.
+See [onoff_server](onoff_models/onoff_server) folder for more details.
 
-## ble_mesh_provisioner
+## provisioner
 
 This example shows how ESP32 acts as a BLE Mesh Provisioner and provisions other unprovisioned devices.
 
-See [ble_mesh_provisioner](ble_mesh_provisioner) folder for more details.
+See [provisioner](provisioner) folder for more details.
 
-## ble_mesh_vendor_model
+## vendor_models
 
 This example demonstrates how ESP32 acts as a BLE Mesh Provisioner with vendor client model or as a BLE Mesh node with vendor server model.
 
@@ -62,19 +58,57 @@ This example demonstrates how ESP32 acts as a BLE Mesh Provisioner with vendor c
 
 This example shows how ESP32 acts as a BLE Mesh Provisioner with a vendor client model in the Primary Element.
 
-See [vendor_client](ble_mesh_vendor_model/vendor_client) folder for more details.
+See [vendor_client](vendor_models/vendor_client) folder for more details.
 
 #### vendor_server
 
 This example shows how ESP32 acts as a BLE Mesh Node with a vendor server model in the Primary Element.
 
-See [vendor_server](ble_mesh_vendor_model/vendor_server) folder for more details.
+See [vendor_server](vendor_models/vendor_server) folder for more details.
 
-## ble_mesh_wifi_coexist
+## wifi_coexist
 
 This example shows how ESP32 acts as a BLE Mesh Fast Provisioning Server and coexists with Wi-Fi iperf functionality.
 
-See [ble_mesh_wifi_coexist](ble_mesh_wifi_coexist) folder for more details.
+See [wifi_coexist](wifi_coexist) folder for more details.
+
+## directed_forwarding (v1.1)
+
+This example shows how the ESP32 acts as a Directed Forwarding node to establish paths and directed forwarding messages.
+
+### df_client
+
+This example shows how ESP32 acts as a BLE Mesh Provisioner with a Directed Forwarding Client model in the Primary Element.
+
+See [df_client](directed_forwarding/df_client) folder for more details.
+
+### df_server
+
+This example shows how ESP32 acts as a BLE Mesh Node with a Directed Forwarding Server model in the Primary Element.
+
+See [df_server](directed_forwarding/df_server) folder for more details.
+
+## remote_provisioning (v1.1)
+
+This example shows how the ESP32 acts as an Remote Provisioning Server assistant provisioner to provisioning devices out of single-hop.
+
+### rpr_client
+
+This example shows how ESP32 acts as a BLE Mesh Provisioner with a Remote Provisioning Client model in the Primary Element.
+
+See [rpr_client](remote_provisioning/rpr_client) folder for more details.
+
+### rpr_server
+
+This example shows how ESP32 acts as a BLE Mesh Node with a Remote Provisioning Server model in the Primary Element.
+
+See [rpr_server](remote_provisioning/rpr_server) folder for more details.
+
+### unprov_dev
+
+This example shows how ESP32 acts as an unprovisioning device.
+
+See [unprov_dev](remote_provisioning/unprov_dev) folder for more details.
 
 # More
 

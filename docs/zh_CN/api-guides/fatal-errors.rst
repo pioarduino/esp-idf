@@ -1,5 +1,6 @@
 严重错误
 ========
+
 :link_to_translation:`en:[English]`
 
 .. _Overview:
@@ -31,7 +32,7 @@
 紧急处理程序
 ------------
 
-:ref:`Overview` 中列举的所有错误都会由 *紧急处理程序（Panic Handler）* 负责处理。
+:ref:`Overview` 中列举的所有错误都会由 *紧急处理程序 (Panic Handler)* 负责处理。
 
 紧急处理程序首先会将出错原因打印到控制台，例如 CPU 异常的错误信息通常会类似于
 
@@ -64,10 +65,6 @@
 - 调用 GDB Stub（``CONFIG_ESP_SYSTEM_PANIC_GDBSTUB``）
 
   启动 GDB 服务器，通过控制台 UART 接口与 GDB 进行通信。该选项只提供只读调试或者事后调试，详细信息请参阅 `GDB Stub`_。
-
-- 调用动态 GDB Stub (``ESP_SYSTEM_GDBSTUB_RUNTIME``)
-
-  启动 GDB 服务器，通过控制台 UART 接口与 GDB 进行通信。该选项允许用户在程序运行时对其进行调试、设置断点和改变其执行方式等，详细信息请参阅 `GDB Stub`_。
 
 紧急处理程序的行为还受到另外两个配置项的影响：
 
@@ -163,11 +160,11 @@
 
 仅会打印异常帧中 CPU 寄存器的值，即引发 CPU 异常或者其它严重错误时刻的值。
 
-紧急处理程序如果是因 abort() 而调用，则不会打印寄存器转储。
+紧急处理程序如果是因 ``abort()`` 而调用，则不会打印寄存器转储。
 
 .. only:: CONFIG_IDF_TARGET_ARCH_XTENSA
 
-    在某些情况下，例如中断看门狗超时，紧急处理程序会额外打印 CPU 寄存器（EPC1-EPC4）的值，以及另一个 CPU 的寄存器值和代码回溯。
+    在某些情况下，例如中断看门狗超时，紧急处理程序会额外打印 CPU 寄存器 (EPC1-EPC4) 的值，以及另一个 CPU 的寄存器值和代码回溯。
 
     回溯行包含了当前任务中每个堆栈帧的 PC:SP 对（PC 是程序计数器，SP 是堆栈指针）。如果在 ISR 中发生了严重错误，回溯会同时包括被中断任务的 PC:SP 对，以及 ISR 中的 PC:SP 对。
 
@@ -241,10 +238,10 @@
 
         Backtrace: 0x42009e9a:0x3fc92120 0x42009ea6:0x3fc92120 0x42009ec2:0x3fc92130 0x42024620:0x3fc92150 0x40387d7c:0x3fc92160 0xfffffffe:0x3fc92170
 
-    这些 ``PC:SP`` 对代表当前任务每一个栈帧的程序计数器值（Program Counter）和栈顶地址（Stack Pointer）。
+    这些 ``PC:SP`` 对代表当前任务每一个栈帧的程序计数器值 (Program Counter) 和栈顶地址 (Stack Pointer)。
 
 
-    :ref:`CONFIG_ESP_SYSTEM_USE_EH_FRAME` 选项的主要优点是，回溯信息可以由程序自己解析生成并打印 (而不依靠 :doc:`IDF 监视器 <tools/idf-monitor>`)。但是该选项会导致编译后的二进制文件更大（增幅可达 20% 甚至 100%）。此外，该选项会将调试信息也保存在二进制文件里。因此，强烈不建议用户在量产/生产版本中启用该选项。
+    :ref:`CONFIG_ESP_SYSTEM_USE_EH_FRAME` 选项的主要优点是，回溯信息可以由程序自己解析生成并打印（而不依靠 :doc:`tools/idf-monitor`）。但是该选项会导致编译后的二进制文件更大（增幅可达 20% 甚至 100%）。此外，该选项会将调试信息也保存在二进制文件里。因此，强烈不建议用户在量产/生产版本中启用该选项。
 
 若要查找发生严重错误的代码位置，请查看 "Backtrace" 的后面几行，发生严重错误的代码显示在顶行，后续几行显示的是调用堆栈。
 
@@ -307,7 +304,9 @@ Guru Meditation 错误
 
 本节将对打印在 ``Guru Meditation Error: Core panic'ed`` 后面括号中的致错原因进行逐一解释。
 
-.. note:: 想要了解 "Guru Meditation" 的历史渊源，请参阅 `维基百科 <https://en.wikipedia.org/wiki/Guru_Meditation>`_ 。
+.. note::
+
+  想要了解 "Guru Meditation" 的历史渊源，请参阅 `维基百科 <https://en.wikipedia.org/wiki/Guru_Meditation>`_ 。
 
 
 |ILLEGAL_INSTR_MSG|
@@ -361,11 +360,7 @@ Guru Meditation 错误
     Unhandled debug exception
     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-    这后面通常会再跟一条消息::
-
-        Debug exception reason: Stack canary watchpoint triggered (task_name)
-
-    此错误表示应用程序写入的位置越过了 ``task_name`` 任务堆栈的末尾，请注意，并非每次堆栈溢出都会触发此错误。任务有可能会绕过堆栈金丝雀（stack canary）的位置访问内存，在这种情况下，监视点就不会被触发。
+    执行指令 ``BREAK`` 时，会发生此 CPU 异常。
 
 .. only:: CONFIG_IDF_TARGET_ARCH_RISCV
 
@@ -382,7 +377,7 @@ Guru Meditation 错误
     Breakpoint
     ^^^^^^^^^^
 
-    当执行 ``EBREAK`` 指令时，会发生此 CPU 异常。
+    执行 ``EBREAK`` 指令时，会发生此 CPU 异常。请参见 :ref:`FreeRTOS-End-Of-Stack-Watchpoint`。
 
     Load address misaligned, Store address misaligned
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -407,7 +402,7 @@ Interrupt wdt timeout on CPU0 / CPU1
     ESP-IDF 中使用 {IDF_TARGET_NAME} 的权限控制功能来防止以下类型的内存访问：
 
     * 程序加载后向指令 RAM 写入代码
-    * 从数据 RAM （用于堆、静态 .data 和 .bss 区域）执行代码
+    * 从数据 RAM（用于堆、静态 .data 和 .bss 区域）执行代码
 
     该类操作对于大多数程序来说并不必要，禁止此类操作往往使软件漏洞更难被利用。依赖动态加载或自修改代码的应用程序可以使用 :ref:`CONFIG_ESP_SYSTEM_MEMPROT_FEATURE` 选项来禁用此项保护。
 
@@ -416,18 +411,21 @@ Interrupt wdt timeout on CPU0 / CPU1
 其他严重错误
 ------------
 
-掉电
-^^^^
+.. only:: SOC_BOD_SUPPORTED
 
-{IDF_TARGET_NAME} 内部集成掉电检测电路，并且会默认启用。如果电源电压低于安全值，掉电检测器可以触发系统复位。掉电检测器可以使用 :ref:`CONFIG_ESP_BROWNOUT_DET` 和 :ref:`CONFIG_ESP_BROWNOUT_DET_LVL_SEL` 这两个选项进行设置。
+    掉电
+    ^^^^
 
-当掉电检测器被触发时，会打印如下信息::
+    {IDF_TARGET_NAME} 内部集成掉电检测电路，并且会默认启用。如果电源电压低于安全值，掉电检测器可以触发系统复位。掉电检测器可以使用 :ref:`CONFIG_ESP_BROWNOUT_DET` 和 :ref:`CONFIG_ESP_BROWNOUT_DET_LVL_SEL` 这两个选项进行设置。
 
-    Brownout detector was triggered
+    当掉电检测器被触发时，会打印如下信息::
 
-芯片会在该打印信息结束后复位。
+        Brownout detector was triggered
 
-请注意，如果电源电压快速下降，则只能在控制台上看到部分打印信息。
+    芯片会在该打印信息结束后复位。
+
+    请注意，如果电源电压快速下降，则只能在控制台上看到部分打印信息。
+
 
 堆不完整
 ^^^^^^^^^^^
@@ -439,6 +437,64 @@ ESP-IDF 堆的实现包含许多运行时的堆结构检查，可以在 menuconf
     abort() was called at PC 0x400dca43 on core 0
 
 更多详细信息，请查阅 :doc:`堆内存调试 <../api-reference/system/heap_debug>` 文档。
+
+|STACK_OVERFLOW|
+^^^^^^^^^^^^^^^^
+
+.. only:: SOC_ASSIST_DEBUG_SUPPORTED
+
+    硬件堆栈保护
+    """"""""""""""""""""
+
+    {IDF_TARGET_NAME} 集成了辅助调试模块，支持监测堆栈指针 (SP) 寄存器，确保其值位于已分配给堆栈的内存范围内。发生中断处理或 FreeRTOS 切换上下文时，辅助调试模块都会设置新的堆栈监测范围。注意，该操作会对性能产生一定影响。
+
+    以下为辅助调试模块的部分相关特性：
+
+    - 采用硬件实现
+    - 支持监测堆栈指针寄存器的值
+    - 无需占用额外 CPU 时间或内存，即可监测堆栈内存范围
+
+    当辅助调试模块检测到堆栈溢出时，将触发紧急处理程序并打印类似如下信息：
+
+    .. parsed-literal::
+
+        Guru Meditation Error: Core 0 panic'ed (Stack protection fault).
+
+    可以通过 :ref:`CONFIG_ESP_SYSTEM_HW_STACK_GUARD` 选项，禁用硬件堆栈保护。
+
+.. _FreeRTOS-End-Of-Stack-Watchpoint:
+
+FreeRTOS 任务堆栈末尾监视点
+""""""""""""""""""""""""""""""""
+
+ESP-IDF 支持基于监视点的 FreeRTOS 堆栈溢出检测机制。每次 FreeRTOS 切换任务上下文时，都会设置一个监视点，用于监视堆栈的最后 32 字节。
+
+通常，该设置会提前触发监视点，触发点可能会比预期提前多达 28 字节。基于 FreeRTOS 中堆栈金丝雀的大小为 20 字节，故将观察范围设置为 32 字节，确保可以在堆栈金丝雀遭到破坏前及时触发监测点。
+
+.. note::
+    并非每次堆栈溢出都能触发监视点。如果任务绕过堆栈金丝雀的位置访问堆栈，则无法触发监视点。
+
+监视点触发后，将打印类似如下信息：
+
+.. only:: CONFIG_IDF_TARGET_ARCH_XTENSA
+
+    ::
+
+        Debug exception reason: Stack canary watchpoint triggered (task_name)
+
+.. only:: CONFIG_IDF_TARGET_ARCH_RISCV
+
+    ::
+
+        Guru Meditation Error: Core  0 panic'ed (Breakpoint). Exception was unhandled.
+
+可以通过 :ref:`CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK` 选项启用该功能。
+
+
+FreeRTOS 堆栈检查
+"""""""""""""""""""""
+
+请参见 :ref:`CONFIG_FREERTOS_CHECK_STACKOVERFLOW`。
 
 堆栈粉碎
 ^^^^^^^^^^
@@ -459,14 +515,16 @@ ESP-IDF 堆的实现包含许多运行时的堆结构检查，可以在 menuconf
     .. |CPU_EXCEPTIONS_LIST| replace:: 非法指令，加载/存储时的内存对齐错误，加载/存储时的访问权限错误，双重异常。
     .. |ILLEGAL_INSTR_MSG| replace:: IllegalInstruction
     .. |CACHE_ERR_MSG| replace:: Cache disabled but cached memory region accessed
+    .. |STACK_OVERFLOW| replace:: 堆栈溢出
 
 .. only:: CONFIG_IDF_TARGET_ARCH_RISCV
 
     .. |CPU_EXCEPTIONS_LIST| replace:: 非法指令，加载/存储时的内存对齐错误，加载/存储时的访问权限错误。
-    .. |ILLEGAL_INSTR_MSG| replace:: Illegal instruction
+    .. |ILLEGAL_INSTR_MSG| replace:: IllegalInstruction
     .. |CACHE_ERR_MSG| replace:: Cache error
+    .. |STACK_OVERFLOW| replace:: 堆栈溢出
 
-未定义行为清理器（UBSAN）检查
+未定义行为清理器 (UBSAN) 检查
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 未定义行为清理器 (UBSAN) 是一种编译器功能，它会为可能不正确的操作添加运行时检查，例如：
@@ -497,7 +555,9 @@ ESP-IDF 堆的实现包含许多运行时的堆结构检查，可以在 menuconf
     idf_component_get_property(lib component_name COMPONENT_LIB)
     target_compile_options(${lib} PRIVATE "-fsanitize=undefined" "-fno-sanitize=shift-base")
 
-.. 注意:: 关于 :ref:`构建属性 <cmake-build-properties>` 和 :ref:`组件属性 <cmake-component-properties>` 的更多信息，请查看构建系统文档。
+.. 注意::
+
+  关于 :ref:`构建属性 <cmake-build-properties>` 和 :ref:`组件属性 <cmake-component-properties>` 的更多信息，请查看构建系统文档。
 
 要为同一组件的 CMakeLists.txt 中的特定组件（``component_name``）使能 UBSAN，在文件末尾添加以下内容::
 

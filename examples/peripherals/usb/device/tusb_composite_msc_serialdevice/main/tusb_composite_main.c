@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "esp_partition.h"
 #include "esp_check.h"
 #include "tinyusb.h"
 #include "tusb_msc_storage.h"
@@ -58,7 +59,7 @@ static void file_operations(void)
     bool directory_exists = stat(directory, &s) == 0;
     if (!directory_exists) {
         if (mkdir(directory, 0775) != 0) {
-            ESP_LOGE(TAG, "mkdir failed with errno: %s\n", strerror(errno));
+            ESP_LOGE(TAG, "mkdir failed with errno: %s", strerror(errno));
         }
     }
 

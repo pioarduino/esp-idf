@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,14 +8,14 @@
 #include "sdkconfig.h"
 #include "soc/soc_memory_layout.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task_snapshot.h"
+#include "esp_private/freertos_debug.h"
 #include "esp_rom_sys.h"
 #include "esp_core_dump_port.h"
 #include "esp_core_dump_common.h"
 #include "core_dump_elf.h"
 #include "core_dump_binary.h"
 
-const static DRAM_ATTR char TAG[] __attribute__((unused)) = "esp_core_dump_common";
+const static char TAG[] __attribute__((unused)) = "esp_core_dump_common";
 
 #if CONFIG_ESP_COREDUMP_ENABLE
 
@@ -106,9 +106,11 @@ FORCE_INLINE_ATTR uint32_t esp_core_dump_free_stack_space(const uint8_t *pucStac
  */
 FORCE_INLINE_ATTR void esp_core_dump_report_stack_usage(void)
 {
+#if CONFIG_ESP_COREDUMP_LOGS
     uint32_t bytes_free = esp_core_dump_free_stack_space(s_coredump_stack);
     ESP_COREDUMP_LOGI("Core dump used %u bytes on stack. %u bytes left free.",
         s_core_dump_sp - s_coredump_stack - bytes_free, bytes_free);
+#endif
 
     /* Restore the stack pointer. */
     ESP_COREDUMP_LOGI("Restoring stack @ %p", s_stack_context.sp);

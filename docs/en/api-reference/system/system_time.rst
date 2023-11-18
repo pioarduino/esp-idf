@@ -5,7 +5,7 @@ System Time
 
 {IDF_TARGET_RTC_CLK_FRE:default="Not updated", esp32="150 kHz", esp32s2="90 kHz", esp32s3="136 kHz", esp32c3="136 kHz", esp32c2="136 kHz", esp32c6="150 kHz", esp32h2="150 kHz"}
 {IDF_TARGET_INT_OSC_FRE:default="Not updated", esp32="8.5 MHz", esp32s2="8.5 MHz", esp32s3="17.5 MHz", esp32c3="17.5 MHz", esp32c2="17.5 MHz", esp32c6="20 MHz"}
-{IDF_TARGET_INT_OSC_FRE_DIVIDED:default="Not updated", esp32="~33 kHz", esp32s2="~33 kHz", esp32s3="~68 kHz", esp32c3="~68 kHz", esp32c2="~68 kHz"}
+{IDF_TARGET_INT_OSC_FRE_DIVIDED:default="Not updated", esp32="about 33 kHz", esp32s2="about 33 kHz", esp32s3="about 68 kHz", esp32c3="about 68 kHz", esp32c2="about 68 kHz"}
 {IDF_TARGET_EXT_CRYSTAL_PIN:default="Not updated", esp32="32K_XP and 32K_XN", esp32s2="XTAL_32K_P and XTAL_32K_N", esp32s3="XTAL_32K_P and XTAL_32K_N", esp32c3="XTAL_32K_P and XTAL_32K_N", esp32c6="XTAL_32K_P and XTAL_32K_N", esp32h2="XTAL_32K_P and XTAL_32K_N"}
 {IDF_TARGET_EXT_OSC_PIN:default="Not updated", esp32="32K_XN", esp32s2="XTAL_32K_P", esp32s3="XTAL_32K_P", esp32c3="XTAL_32K_P", esp32c2="GPIO0", esp32c6="XTAL_32K_P"}
 {IDF_TARGET_HARDWARE_DESIGN_URL:default="Not updated",esp32="`ESP32 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32_hardware_design_guidelines_en.pdf#page=11>`_", esp32s2="`ESP32-S2 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32-s2_hardware_design_guidelines_en.pdf#page=10>`_", esp32s3="`ESP32-S3 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32-s3_hardware_design_guidelines_en.pdf#page=11>`_", esp32c3="`ESP32-C3 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32-c3_hardware_design_guidelines_en.pdf#page=9>`_", esp32c6="`ESP32-C6 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32-c6_hardware_design_guidelines_en.pdf#page=12>`_", esp32c2="`ESP8684 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp8684_hardware_design_guidelines_en.pdf#page=10>`_", esp32h2="`ESP32-H2 Hardware Design Guidelines <https://www.espressif.com/sites/default/files/documentation/esp32-h2_hardware_design_guidelines_en.pdf#page=11>`_"}
@@ -134,13 +134,13 @@ If you want to choose the :cpp:enumerator:`SNTP_SYNC_MODE_SMOOTH` mode, please s
 
 For setting a callback function that is called when time gets synchronized, use the :cpp:member:`esp_sntp_config::sync_cb` field in the configuration struct.
 
-An application with this initialization code will periodically synchronize the time. The time synchronization period is determined by :ref:`CONFIG_LWIP_SNTP_UPDATE_DELAY` (the default value is one hour). To modify the variable, set :ref:`CONFIG_LWIP_SNTP_UPDATE_DELAY` in project configuration.
+An application with this initialization code periodically synchronizes the time. The time synchronization period is determined by :ref:`CONFIG_LWIP_SNTP_UPDATE_DELAY` (the default value is one hour). To modify the variable, set :ref:`CONFIG_LWIP_SNTP_UPDATE_DELAY` in project configuration.
 
 A code example that demonstrates the implementation of time synchronization based on the lwIP SNTP library is provided in the :example:`protocols/sntp` directory.
 
-Note that it's also possible to use lwIP API directly, but care must be taken to thread safety. Here we list the thread-safe APIs:
+Note that it is also possible to use lwIP API directly, but care must be taken to thread safety. Here we list the thread-safe APIs:
 
-- :cpp:func:`sntp_set_time_sync_notification_cb` can be used to set a callback function that will notify of the time synchronization process.
+- :cpp:func:`sntp_set_time_sync_notification_cb` can be used to set a callback function that notifies of the time synchronization process.
 - :cpp:func:`sntp_get_sync_status` and :cpp:func:`sntp_set_sync_status` can be used to get/set time synchronization status.
 - :cpp:func:`sntp_set_sync_mode` can be used to set the synchronization mode.
 - :cpp:func:`esp_sntp_setoperatingmode` sets the preferred operating mode.:cpp:enumerator:`ESP_SNTP_OPMODE_POLL` and :cpp:func:`esp_sntp_init` initializes SNTP module.
@@ -155,7 +155,7 @@ To set the local timezone, use the following POSIX functions:
 1. Call ``setenv()`` to set the ``TZ`` environment variable to the correct value based on the device location. The format of the time string is the same as described in the `GNU libc documentation <https://www.gnu.org/software/libc/manual/html_node/TZ-Variable.html>`_ (although the implementation is different).
 2. Call ``tzset()`` to update C library runtime data for the new timezone.
 
-Once these steps are completed, call the standard C library function ``localtime()``, and it will return the correct local time taking into account the timezone offset and daylight saving time.
+Once these steps are completed, call the standard C library function ``localtime()``, and it returns the correct local time taking into account the timezone offset and daylight saving time.
 
 
 Year 2036 and 2038 Overflow Issues

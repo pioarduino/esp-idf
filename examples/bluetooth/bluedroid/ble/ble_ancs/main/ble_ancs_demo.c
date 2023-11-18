@@ -243,7 +243,7 @@ static void periodic_timer_callback(void* arg)
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
-    ESP_LOGV(BLE_ANCS_TAG, "GAP_EVT, event %d\n", event);
+    ESP_LOGV(BLE_ANCS_TAG, "GAP_EVT, event %d", event);
 
     switch (event) {
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
@@ -384,13 +384,15 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                                                                         &count);
             if (ret_status != ESP_GATT_OK) {
                 ESP_LOGE(BLE_ANCS_TAG, "esp_ble_gattc_get_attr_count error, %d", __LINE__);
+                break;
             }
             if (count > 0) {
                 char_elem_result = (esp_gattc_char_elem_t *)malloc(sizeof(esp_gattc_char_elem_t) * count);
-                memset(char_elem_result, 0xff, sizeof(esp_gattc_char_elem_t) * count);
                 if (!char_elem_result) {
                     ESP_LOGE(BLE_ANCS_TAG, "gattc no mem");
+                    break;
                 } else {
+                    memset(char_elem_result, 0xff, sizeof(esp_gattc_char_elem_t) * count);
                     ret_status = esp_ble_gattc_get_all_char(gattc_if,
                                                             gl_profile_tab[PROFILE_A_APP_ID].conn_id,
                                                             gl_profile_tab[PROFILE_A_APP_ID].service_start_handle,
@@ -400,6 +402,9 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                                                             offset);
                     if (ret_status != ESP_GATT_OK) {
                         ESP_LOGE(BLE_ANCS_TAG, "esp_ble_gattc_get_all_char error, %d", __LINE__);
+                        free(char_elem_result);
+                        char_elem_result = NULL;
+                        break;
                     }
                     if (count > 0) {
 
@@ -432,6 +437,7 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                     }
                 }
                 free(char_elem_result);
+                char_elem_result = NULL;
             }
         } else {
             ESP_LOGE(BLE_ANCS_TAG, "No Apple Notification Service found");
@@ -456,11 +462,13 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                                                                     &count);
         if (ret_status != ESP_GATT_OK) {
             ESP_LOGE(BLE_ANCS_TAG, "esp_ble_gattc_get_attr_count error, %d", __LINE__);
+            break;
         }
         if (count > 0) {
             descr_elem_result = malloc(sizeof(esp_gattc_descr_elem_t) * count);
             if (!descr_elem_result) {
                 ESP_LOGE(BLE_ANCS_TAG, "malloc error, gattc no mem");
+                break;
             } else {
                 ret_status = esp_ble_gattc_get_all_descr(gattc_if,
                                                          gl_profile_tab[PROFILE_A_APP_ID].conn_id,
@@ -470,6 +478,9 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                                                          offset);
                 if (ret_status != ESP_GATT_OK) {
                     ESP_LOGE(BLE_ANCS_TAG, "esp_ble_gattc_get_all_descr error, %d", __LINE__);
+                    free(descr_elem_result);
+                    descr_elem_result = NULL;
+                    break;
                 }
 
                     for (int i = 0; i < count; ++ i) {
@@ -487,6 +498,7 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                     }
                 }
                 free(descr_elem_result);
+                descr_elem_result = NULL;
             }
         break;
     }
@@ -626,7 +638,8 @@ void app_main(void)
     }
 
     ESP_LOGI(BLE_ANCS_TAG, "%s init bluetooth", __func__);
-    ret = esp_bluedroid_init();
+    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+    ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg);
     if (ret) {
         ESP_LOGE(BLE_ANCS_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
@@ -640,7 +653,7 @@ void app_main(void)
     //register the callback function to the gattc module
     ret = esp_ble_gattc_register_callback(esp_gattc_cb);
     if (ret) {
-        ESP_LOGE(BLE_ANCS_TAG, "%s gattc register error, error code = %x\n", __func__, ret);
+        ESP_LOGE(BLE_ANCS_TAG, "%s gattc register error, error code = %x", __func__, ret);
         return;
     }
 
@@ -652,7 +665,7 @@ void app_main(void)
 
     ret = esp_ble_gattc_app_register(PROFILE_A_APP_ID);
     if (ret) {
-        ESP_LOGE(BLE_ANCS_TAG, "%s gattc app register error, error code = %x\n", __func__, ret);
+        ESP_LOGE(BLE_ANCS_TAG, "%s gattc app register error, error code = %x", __func__, ret);
     }
 
     ret = esp_ble_gatt_set_local_mtu(500);

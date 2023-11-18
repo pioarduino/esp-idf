@@ -11,13 +11,31 @@ mainmenu "Espressif IoT Development Framework Configuration"
         default "y"
 
     config IDF_ENV_FPGA
-        # This option is for internal use only
         bool
         option env="IDF_ENV_FPGA"
+        help
+            - This option is for internal use only.
+            - Enabling this option will help enable all FPGA support so as to
+              run ESP-IDF on an FPGA. This can help reproduce some issues that
+              only happens on FPGA condition, or when you have to burn some
+              efuses multiple times.
+
+    config IDF_ENV_BRINGUP
+        bool
+        default "y" if IDF_TARGET_ESP32P4
+        help
+            - This option is ONLY used when doing new chip bringup.
+            - This option will only enable necessary hw / sw settings for running
+              a hello_world application.
+
 
     config IDF_CI_BUILD
         bool
         default y if "$(IDF_CI_BUILD)" = "y" || "$(IDF_CI_BUILD)" = 1
+
+    config IDF_DOC_BUILD
+        bool
+        default y if "$(IDF_DOC_BUILD)" = "y" || "$(IDF_DOC_BUILD)" = 1
 
     config IDF_TOOLCHAIN
         # This option records the IDF target when sdkconfig is generated the first time.
@@ -51,6 +69,12 @@ mainmenu "Espressif IoT Development Framework Configuration"
         # CONFIG_IDF_TARGET and $IDF_TARGET.
         string
         default "$IDF_TARGET"
+
+    config IDF_INIT_VERSION
+        # This option records the IDF version when sdkconfig is generated the first time.
+        # It is not updated if environment variable $IDF_VERSION changes later
+        string
+        default "$IDF_INIT_VERSION"
 
     config IDF_TARGET_LINUX
         bool
@@ -505,6 +529,13 @@ mainmenu "Espressif IoT Development Framework Configuration"
                 Enable this option if use GCC 12 or newer, and want to disable warnings which don't appear with
                 GCC 11.
 
+        config COMPILER_DISABLE_GCC13_WARNINGS
+            bool "Disable new warnings introduced in GCC 13"
+            default "n"
+            help
+                Enable this option if use GCC 13 or newer, and want to disable warnings which don't appear with
+                GCC 12.
+
         config COMPILER_DUMP_RTL_FILES
             bool "Dump RTL files during compilation"
             help
@@ -514,23 +545,30 @@ mainmenu "Espressif IoT Development Framework Configuration"
         choice COMPILER_RT_LIB
             prompt "Compiler runtime library"
             default COMPILER_RT_LIB_CLANGRT if IDF_TOOLCHAIN_CLANG
+            default COMPILER_RT_LIB_HOST if IDF_TARGET_LINUX
             default COMPILER_RT_LIB_GCCLIB
             help
                 Select runtime library to be used by compiler.
                 - GCC toolchain supports libgcc only.
                 - Clang allows to choose between libgcc or libclang_rt.
+                - For host builds ("linux" target), uses the default library.
 
             config COMPILER_RT_LIB_GCCLIB
+                depends on !IDF_TARGET_LINUX
                 bool "libgcc"
             config COMPILER_RT_LIB_CLANGRT
-                depends on IDF_TOOLCHAIN_CLANG
+                depends on IDF_TOOLCHAIN_CLANG && !IDF_TARGET_LINUX
                 bool "libclang_rt"
+            config COMPILER_RT_LIB_HOST
+                depends on IDF_TARGET_LINUX
+                bool "Host"
         endchoice
 
         config COMPILER_RT_LIB_NAME
             string
             default "clang_rt.builtins" if COMPILER_RT_LIB_CLANGRT
             default "gcc" if COMPILER_RT_LIB_GCCLIB
+            default "" if COMPILER_RT_LIB_HOST
 
     endmenu # Compiler Options
 
@@ -549,7 +587,7 @@ mainmenu "Espressif IoT Development Framework Configuration"
 
             Current experimental feature list:
 
-            - CONFIG_ESPTOOLPY_FLASHFREQ_120M
-            - CONFIG_SPIRAM_SPEED_120M
-            - CONFIG_SPI_FLASH_32BIT_ADDR_ENABLE
-            - CONFIG_FREERTOS_USE_KERNEL_10_5_1
+            - CONFIG_ESPTOOLPY_FLASHFREQ_120M && CONFIG_ESPTOOLPY_FLASH_SAMPLE_MODE_DTR
+            - CONFIG_SPIRAM_SPEED_120M && CONFIG_SPIRAM_MODE_OCT
+            - CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
+            - CONFIG_MBEDTLS_USE_CRYPTO_ROM_IMPL

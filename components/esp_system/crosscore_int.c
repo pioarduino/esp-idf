@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -24,15 +24,16 @@
 #else
 #include "soc/system_reg.h"
 #endif
+#if CONFIG_IDF_TARGET_ESP32P4
+#include "soc/hp_system_reg.h"
+#endif
 
 #define REASON_YIELD            BIT(0)
 #define REASON_FREQ_SWITCH      BIT(1)
-#define REASON_GDB_CALL         BIT(3)
-
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
 #define REASON_PRINT_BACKTRACE  BIT(2)
+#define REASON_GDB_CALL         BIT(3)
 #define REASON_TWDT_ABORT       BIT(4)
-#endif
+
 
 static portMUX_TYPE reason_spinlock = portMUX_INITIALIZER_UNLOCKED;
 static volatile uint32_t reason[portNUM_PROCESSORS];
@@ -66,6 +67,12 @@ static void IRAM_ATTR esp_crosscore_isr(void *arg) {
     } else {
         WRITE_PERI_REG(SYSTEM_CPU_INTR_FROM_CPU_1_REG, 0);
     }
+#elif CONFIG_IDF_TARGET_ESP32P4
+    if (esp_cpu_get_core_id() == 0) {
+        WRITE_PERI_REG(HP_SYSTEM_CPU_INT_FROM_CPU_0_REG, 0);
+    } else {
+        WRITE_PERI_REG(HP_SYSTEM_CPU_INT_FROM_CPU_1_REG, 0);
+    }
 #elif CONFIG_IDF_TARGET_ARCH_RISCV
     WRITE_PERI_REG(SYSTEM_CPU_INTR_FROM_CPU_0_REG, 0);
 #endif
@@ -91,20 +98,22 @@ static void IRAM_ATTR esp_crosscore_isr(void *arg) {
         update_breakpoints();
     }
 #endif // !CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
-#if CONFIG_IDF_TARGET_ARCH_XTENSA // IDF-2986
+
     if (my_reason_val & REASON_PRINT_BACKTRACE) {
         esp_backtrace_print(100);
     }
 
+
+
 #if CONFIG_ESP_TASK_WDT_EN
     if (my_reason_val & REASON_TWDT_ABORT) {
-        extern void task_wdt_timeout_abort_xtensa(bool);
+        extern void task_wdt_timeout_abort(bool);
         /* Called from a crosscore interrupt, thus, we are not the core that received
          * the TWDT interrupt, call the function with `false` as a parameter. */
-        task_wdt_timeout_abort_xtensa(false);
+        task_wdt_timeout_abort(false);
     }
 #endif // CONFIG_ESP_TASK_WDT_EN
-#endif // CONFIG_IDF_TARGET_ARCH_XTENSA
+
 }
 
 //Initialize the crosscore interrupt on this core. Call this once
@@ -147,6 +156,12 @@ static void IRAM_ATTR esp_crosscore_int_send(int core_id, uint32_t reason_mask) 
     } else {
         WRITE_PERI_REG(SYSTEM_CPU_INTR_FROM_CPU_1_REG, SYSTEM_CPU_INTR_FROM_CPU_1);
     }
+#elif CONFIG_IDF_TARGET_ESP32P4
+    if (core_id==0) {
+        WRITE_PERI_REG(HP_SYSTEM_CPU_INT_FROM_CPU_0_REG, HP_SYSTEM_CPU_INT_FROM_CPU_0);
+    } else {
+        WRITE_PERI_REG(HP_SYSTEM_CPU_INT_FROM_CPU_1_REG, HP_SYSTEM_CPU_INT_FROM_CPU_1);
+    }
 #elif CONFIG_IDF_TARGET_ARCH_RISCV
     WRITE_PERI_REG(SYSTEM_CPU_INTR_FROM_CPU_0_REG, SYSTEM_CPU_INTR_FROM_CPU_0);
 #endif
@@ -167,7 +182,6 @@ void IRAM_ATTR esp_crosscore_int_send_gdb_call(int core_id)
     esp_crosscore_int_send(core_id, REASON_GDB_CALL);
 }
 
-#if CONFIG_IDF_TARGET_ARCH_XTENSA
 void IRAM_ATTR esp_crosscore_int_send_print_backtrace(int core_id)
 {
     esp_crosscore_int_send(core_id, REASON_PRINT_BACKTRACE);
@@ -178,4 +192,3 @@ void IRAM_ATTR esp_crosscore_int_send_twdt_abort(int core_id) {
     esp_crosscore_int_send(core_id, REASON_TWDT_ABORT);
 }
 #endif // CONFIG_ESP_TASK_WDT_EN
-#endif

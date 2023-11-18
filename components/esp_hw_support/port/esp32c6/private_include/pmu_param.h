@@ -16,6 +16,37 @@
 extern "C" {
 #endif
 
+#define HP_CALI_DBIAS   25
+#define LP_CALI_DBIAS   26
+
+// FOR  XTAL FORCE PU IN SLEEP
+#define PMU_PD_CUR_SLEEP_ON    0
+#define PMU_BIASSLP_SLEEP_ON   0
+
+// FOR BOTH LIGHTSLEEP & DEEPSLEEP
+#define PMU_PD_CUR_SLEEP_DEFAULT        1
+#define PMU_BIASSLP_SLEEP_DEFAULT       1
+#define PMU_LP_XPD_SLEEP_DEFAULT        1
+#define PMU_LP_SLP_XPD_SLEEP_DEFAULT    0
+#define PMU_LP_SLP_DBIAS_SLEEP_DEFAULT  0
+
+// FOR LIGHTSLEEP
+#define PMU_HP_DRVB_LIGHTSLEEP      0
+#define PMU_LP_DRVB_LIGHTSLEEP      0
+#define PMU_HP_XPD_LIGHTSLEEP       1
+
+#define PMU_DBG_ATTEN_LIGHTSLEEP_DEFAULT    0
+#define PMU_HP_DBIAS_LIGHTSLEEP_0V6 1
+#define PMU_LP_DBIAS_LIGHTSLEEP_0V7 12
+
+// FOR DEEPSLEEP
+#define PMU_DBG_HP_DEEPSLEEP    0
+#define PMU_HP_XPD_DEEPSLEEP    0
+#define PMU_LP_DRVB_DEEPSLEEP   0
+
+#define PMU_DBG_ATTEN_DEEPSLEEP_DEFAULT 12
+#define PMU_LP_DBIAS_DEEPSLEEP_0V7      23
+
 typedef struct {
     pmu_hp_dig_power_reg_t  dig_power;
     pmu_hp_clk_power_reg_t  clk_power;
@@ -62,6 +93,8 @@ typedef struct {
 
 const pmu_lp_system_power_param_t* pmu_lp_system_power_param_default(pmu_lp_mode_t mode);
 
+
+
 typedef struct {
     pmu_lp_bias_reg_t       bias;
     pmu_lp_regulator0_reg_t regulator0;
@@ -69,6 +102,128 @@ typedef struct {
 } pmu_lp_system_analog_param_t;
 
 const pmu_lp_system_analog_param_t* pmu_lp_system_analog_param_default(pmu_lp_mode_t mode);
+
+
+
+/* Following software configuration instance type from pmu_struct.h used for the PMU state machine in sleep flow*/
+typedef union {
+    struct {
+        uint32_t reserved0    : 21;
+        uint32_t vdd_spi_pd_en: 1;
+        uint32_t mem_dslp     : 1;
+        uint32_t mem_pd_en    : 4;
+        uint32_t wifi_pd_en   : 1;
+        uint32_t reserved1    : 1;
+        uint32_t cpu_pd_en    : 1;
+        uint32_t aon_pd_en    : 1;
+        uint32_t top_pd_en    : 1;
+    };
+    struct {
+        uint32_t reserved2    : 26;
+        uint32_t i2c_iso_en   : 1;
+        uint32_t i2c_retention: 1;
+        uint32_t xpd_bb_i2c   : 1;
+        uint32_t xpd_bbpll_i2c: 1;
+        uint32_t xpd_bbpll    : 1;
+        uint32_t reserved3    : 1;
+    };
+    struct {
+        uint32_t reserved4    : 31;
+        uint32_t xpd_xtal     : 1;
+    };
+    uint32_t val;
+} pmu_hp_power_t;
+
+typedef union {
+    struct {
+        uint32_t reserved0 : 30;
+        uint32_t mem_dslp  : 1;
+        uint32_t peri_pd_en: 1;
+    };
+    struct {
+        uint32_t reserved1  : 28;
+        uint32_t xpd_xtal32k: 1;
+        uint32_t xpd_rc32k  : 1;
+        uint32_t xpd_fosc   : 1;
+        uint32_t pd_osc     : 1;
+    };
+    struct {
+        uint32_t reserved2  : 31;
+        uint32_t xpd_xtal   : 1;
+    };
+    uint32_t val;
+} pmu_lp_power_t;
+
+typedef struct {
+    struct {
+        uint32_t reserved0 : 25;
+        uint32_t xpd_bias  : 1;
+        uint32_t dbg_atten : 4;
+        uint32_t pd_cur    : 1;
+        uint32_t bias_sleep: 1;
+    };
+    struct {
+        uint32_t reserved1      : 16;
+        uint32_t slp_mem_xpd    : 1;
+        uint32_t slp_logic_xpd  : 1;
+        uint32_t xpd            : 1;
+        uint32_t slp_mem_dbias  : 4;
+        uint32_t slp_logic_dbias: 4;
+        uint32_t dbias          : 5;
+    };
+    struct {
+        uint32_t reserved2: 8;
+        uint32_t drv_b    : 24;
+    };
+} pmu_hp_analog_t;
+
+typedef struct {
+    struct {
+        uint32_t reserved0 : 25;
+        uint32_t xpd_bias  : 1;
+        uint32_t dbg_atten : 4;
+        uint32_t pd_cur    : 1;
+        uint32_t bias_sleep: 1;
+    };
+    struct {
+        uint32_t reserved1: 21;
+        uint32_t slp_xpd  : 1;
+        uint32_t xpd	  : 1;
+        uint32_t slp_dbias: 4;
+        uint32_t dbias    : 5;
+    };
+    struct {
+        uint32_t reserved2: 28;
+        uint32_t drv_b    : 4;
+    };
+} pmu_lp_analog_t;
+
+typedef struct {
+    uint32_t    modem_wakeup_wait_cycle;
+    uint16_t    analog_wait_target_cycle;
+    uint16_t    digital_power_down_wait_cycle;
+    uint16_t    digital_power_supply_wait_cycle;
+    uint16_t    digital_power_up_wait_cycle;
+    uint16_t    pll_stable_wait_cycle;
+    uint8_t     modify_icg_cntl_wait_cycle;
+    uint8_t     switch_icg_cntl_wait_cycle;
+    uint8_t     min_slp_slow_clk_cycle;
+} pmu_hp_param_t;
+
+typedef struct {
+    uint16_t    digital_power_supply_wait_cycle;
+    uint8_t     min_slp_slow_clk_cycle;
+    uint8_t     analog_wait_target_cycle;
+    uint8_t     digital_power_down_wait_cycle;
+    uint8_t     digital_power_up_wait_cycle;
+} pmu_lp_param_t;
+
+typedef struct {
+    union {
+        uint16_t    xtal_stable_wait_slow_clk_cycle;
+        uint16_t    xtal_stable_wait_cycle;
+    };
+} pmu_hp_lp_param_t;
 
 #define PMU_HP_SLEEP_MIN_SLOW_CLK_CYCLES        (10)
 #define PMU_LP_SLEEP_MIN_SLOW_CLK_CYCLES        (10)
@@ -87,6 +242,7 @@ const pmu_lp_system_analog_param_t* pmu_lp_system_analog_param_default(pmu_lp_mo
 #define PMU_LP_DIGITAL_POWER_SUPPLY_WAIT_CYCLES (32)    /* Fast OSC as PMU work clock source is about 2 us */
 #define PMU_LP_DIGITAL_POWER_UP_WAIT_CYCLES     (32)    /* Fast OSC as PMU work clock source is about 2 us */
 
+#define PMU_LP_ANALOG_WAIT_TARGET_TIME_DSLP_US  (500)    /* Slow OSC as PMU slow clock source in deepsleep is about 500 us */
 
 typedef struct {
     struct {
@@ -107,7 +263,7 @@ typedef struct {
             .vdd_spi_pd_en = ((pd_flags) & PMU_SLEEP_PD_VDDSDIO) ? 1 : 0,   \
             .wifi_pd_en    = ((pd_flags) & PMU_SLEEP_PD_MODEM)   ? 1 : 0,   \
             .cpu_pd_en     = ((pd_flags) & PMU_SLEEP_PD_CPU)     ? 1 : 0,   \
-            .aon_pd_en     = ((pd_flags) & PMU_SLEEP_PD_AON)     ? 1 : 0,   \
+            .aon_pd_en     = ((pd_flags) & PMU_SLEEP_PD_HP_AON)  ? 1 : 0,   \
             .top_pd_en     = ((pd_flags) & PMU_SLEEP_PD_TOP)     ? 1 : 0,   \
             .mem_pd_en     = 0,                                             \
             .mem_dslp      = 0                                              \
@@ -129,8 +285,8 @@ typedef struct {
             .mem_dslp      = 0                                              \
         },                                                                  \
         .clk_power = {                                                      \
-            .xpd_xtal32k   = 1,                                             \
-            .xpd_rc32k     = 1,                                             \
+            .xpd_xtal32k   = ((pd_flags) & PMU_SLEEP_PD_XTAL32K) ? 0 : 1,   \
+            .xpd_rc32k     = ((pd_flags) & PMU_SLEEP_PD_RC32K) ? 0 : 1,     \
             .xpd_fosc      = 1                                              \
         }                                                                   \
     },                                                                      \
@@ -169,84 +325,52 @@ typedef struct {
     } lp_sys[PMU_MODE_LP_MAX];
 } pmu_sleep_analog_config_t;
 
-#define PMU_SLEEP_ANALOG_LSLP_CONFIG_DEFAULT(pd_flags) {    \
-    .hp_sys = {                                             \
-        .analog = {                                         \
-            .xpd_bias        = 0,                           \
-            .dbg_atten       = 0,                           \
-            .pd_cur          = 1,                           \
-            .bias_sleep      = 1,                           \
-            .slp_mem_xpd     = 1,                           \
-            .slp_logic_xpd   = 1,                           \
-            .slp_mem_dbias   = 4,                           \
-            .slp_logic_dbias = 4,                           \
-            .xpd             = 0,                           \
-            .dbias           = 0,                           \
-            .drv_b           = 0                            \
-        }                                                   \
-    },                                                      \
-    .lp_sys[PMU_MODE_LP_ACTIVE] = {                         \
-        .analog = {                                         \
-            .slp_xpd       = 0,                             \
-            .slp_dbias     = 0,                             \
-            .xpd           = 1,                             \
-            .dbias         = 26,                            \
-            .drv_b         = 0                              \
-        }                                                   \
-    },                                                      \
-    .lp_sys[PMU_MODE_LP_SLEEP] = {                          \
-        .analog = {                                         \
-            .xpd_bias      = 0,                             \
-            .dbg_atten     = 0,                             \
-            .pd_cur        = 1,                             \
-            .bias_sleep    = 1,                             \
-            .xpd           = 0,                             \
-            .dbias         = 28,                            \
-            .slp_xpd       = 1,                             \
-            .slp_dbias     = 3,                             \
-            .drv_b         = 0                              \
-        }                                                   \
-    }                                                       \
+#define PMU_SLEEP_ANALOG_LSLP_CONFIG_DEFAULT(pd_flags) {            \
+    .hp_sys = {                                                     \
+        .analog = {                                                 \
+            .drv_b           = PMU_HP_DRVB_LIGHTSLEEP,              \
+            .pd_cur          = PMU_PD_CUR_SLEEP_DEFAULT,            \
+            .bias_sleep      = PMU_BIASSLP_SLEEP_DEFAULT,           \
+            .xpd             = PMU_HP_XPD_LIGHTSLEEP,               \
+            .dbg_atten       = PMU_DBG_ATTEN_LIGHTSLEEP_DEFAULT,    \
+            .dbias           = PMU_HP_DBIAS_LIGHTSLEEP_0V6          \
+        }                                                           \
+    },                                                              \
+    .lp_sys[PMU_MODE_LP_SLEEP] = {                                  \
+        .analog = {                                                 \
+            .drv_b         = PMU_LP_DRVB_DEEPSLEEP,                 \
+            .pd_cur        = PMU_PD_CUR_SLEEP_DEFAULT,              \
+            .bias_sleep    = PMU_BIASSLP_SLEEP_DEFAULT,             \
+            .slp_xpd       = PMU_LP_SLP_XPD_SLEEP_DEFAULT,          \
+            .slp_dbias     = PMU_LP_SLP_DBIAS_SLEEP_DEFAULT,        \
+            .xpd           = PMU_LP_XPD_SLEEP_DEFAULT,              \
+            .dbg_atten     = PMU_DBG_ATTEN_LIGHTSLEEP_DEFAULT,      \
+            .dbias         = PMU_LP_DBIAS_LIGHTSLEEP_0V7            \
+        }                                                           \
+    }                                                               \
 }
 
-#define PMU_SLEEP_ANALOG_DSLP_CONFIG_DEFAULT(pd_flags) {    \
-    .hp_sys = {                                             \
-        .analog = {                                         \
-            .xpd_bias        = 0,                           \
-            .dbg_atten       = 0,                           \
-            .pd_cur          = 0,                           \
-            .bias_sleep      = 0,                           \
-            .slp_mem_xpd     = 0,                           \
-            .slp_logic_xpd   = 0,                           \
-            .slp_mem_dbias   = 0,                           \
-            .slp_logic_dbias = 0,                           \
-            .xpd             = 0,                           \
-            .dbias           = 0,                           \
-            .drv_b           = 0                            \
-        }                                                   \
-    },                                                      \
-    .lp_sys[PMU_MODE_LP_ACTIVE] = {                         \
-        .analog = {                                         \
-            .slp_xpd       = 0,                             \
-            .slp_dbias     = 0,                             \
-            .xpd           = 1,                             \
-            .dbias         = 26,                            \
-            .drv_b         = 0                              \
-        }                                                   \
-    },                                                      \
-    .lp_sys[PMU_MODE_LP_SLEEP] = {                          \
-        .analog = {                                         \
-            .xpd_bias      = 0,                             \
-            .dbg_atten     = 14,                            \
-            .pd_cur        = 1,                             \
-            .bias_sleep    = 1,                             \
-            .xpd           = 0,                             \
-            .dbias         = 0,                             \
-            .slp_xpd       = 1,                             \
-            .slp_dbias     = 14,                            \
-            .drv_b         = 0                              \
-        }                                                   \
-    }                                                       \
+#define PMU_SLEEP_ANALOG_DSLP_CONFIG_DEFAULT(pd_flags) {            \
+    .hp_sys = {                                                     \
+        .analog = {                                                 \
+            .pd_cur        = PMU_PD_CUR_SLEEP_ON,                   \
+            .bias_sleep    = PMU_BIASSLP_SLEEP_ON,                  \
+            .xpd           = PMU_HP_XPD_DEEPSLEEP,                  \
+            .dbg_atten     = PMU_DBG_HP_DEEPSLEEP                   \
+        }                                                           \
+    },                                                              \
+    .lp_sys[PMU_MODE_LP_SLEEP] = {                                  \
+        .analog = {                                                 \
+            .drv_b         = PMU_LP_DRVB_DEEPSLEEP,                 \
+            .pd_cur        = PMU_PD_CUR_SLEEP_DEFAULT,              \
+            .bias_sleep    = PMU_BIASSLP_SLEEP_DEFAULT,             \
+            .slp_xpd       = PMU_LP_SLP_XPD_SLEEP_DEFAULT,          \
+            .slp_dbias     = PMU_LP_SLP_DBIAS_SLEEP_DEFAULT,        \
+            .xpd           = PMU_LP_XPD_SLEEP_DEFAULT,              \
+            .dbg_atten     = PMU_DBG_ATTEN_DEEPSLEEP_DEFAULT,       \
+            .dbias         = PMU_LP_DBIAS_DEEPSLEEP_0V7             \
+        }                                                           \
+    }                                                               \
 }
 
 typedef struct {

@@ -17,12 +17,12 @@
 #include "esp_log.h"
 #include "esp_coex_i154.h"
 #include "hal/ieee802154_ll.h"
+#include "hal/ieee802154_common_ll.h"
 
 esp_err_t esp_ieee802154_enable(void)
 {
-
     ieee802154_enable();
-    esp_phy_enable();
+    esp_phy_enable(PHY_MODEM_IEEE802154);
     esp_btbb_enable();
     return ieee802154_mac_init();
 }
@@ -168,13 +168,13 @@ esp_err_t esp_ieee802154_set_multipan_extended_address(esp_ieee802154_multipan_i
 
 uint8_t esp_ieee802154_get_multipan_enable(void)
 {
-    return ieee802154_pib_get_multipan_enable();
+    return ieee802154_ll_get_multipan_enable_mask();
 }
 
 esp_err_t esp_ieee802154_set_multipan_enable(uint8_t mask)
 {
-    assert(mask < ((1 << ESP_IEEE802154_MULTIPAN_MAX) - 1));
-    ieee802154_pib_set_multipan_enable(mask);
+    assert(mask < (1 << ESP_IEEE802154_MULTIPAN_MAX));
+    ieee802154_ll_set_multipan_enable_mask(mask);
     return ESP_OK;
 }
 
@@ -280,6 +280,9 @@ esp_ieee802154_state_t esp_ieee802154_get_state(void)
         return ESP_IEEE802154_RADIO_DISABLE;
 
     case IEEE802154_STATE_IDLE:
+        return ESP_IEEE802154_RADIO_IDLE;
+
+    case IEEE802154_STATE_SLEEP:
         return ESP_IEEE802154_RADIO_SLEEP;
 
     case IEEE802154_STATE_RX:
@@ -379,4 +382,14 @@ __attribute__((weak)) void esp_ieee802154_ed_failed(uint16_t error)
 __attribute__((weak)) esp_err_t esp_ieee802154_enh_ack_generator(uint8_t *frame, esp_ieee802154_frame_info_t *frame_info, uint8_t* enhack_frame)
 {
     return ESP_OK;
+}
+
+__attribute__((weak)) void esp_ieee802154_timer0_done(void)
+{
+
+}
+
+__attribute__((weak)) void esp_ieee802154_timer1_done(void)
+{
+
 }

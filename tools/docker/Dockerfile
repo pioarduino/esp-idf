@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -7,6 +7,7 @@ RUN : \
   && apt-get install -y \
     apt-utils \
     bison \
+    bzip2 \
     ca-certificates \
     ccache \
     check \
@@ -18,7 +19,10 @@ RUN : \
     lcov \
     libbsd-dev \
     libffi-dev \
+    libglib2.0-0 \
     libncurses-dev \
+    libpixman-1-0 \
+    libslirp0 \
     libusb-1.0-0-dev \
     make \
     ninja-build \
@@ -64,6 +68,7 @@ RUN echo IDF_CHECKOUT_REF=$IDF_CHECKOUT_REF IDF_CLONE_BRANCH_OR_TAG=$IDF_CLONE_B
       ${IDF_CLONE_SHALLOW:+--depth=1 --shallow-submodules} \
       ${IDF_CLONE_BRANCH_OR_TAG:+-b $IDF_CLONE_BRANCH_OR_TAG} \
       $IDF_CLONE_URL $IDF_PATH && \
+    git config --system --add safe.directory $IDF_PATH && \
     if [ -n "$IDF_CHECKOUT_REF" ]; then \
       cd $IDF_PATH && \
       if [ -n "$IDF_CLONE_SHALLOW" ]; then \
@@ -77,6 +82,7 @@ RUN echo IDF_CHECKOUT_REF=$IDF_CHECKOUT_REF IDF_CLONE_BRANCH_OR_TAG=$IDF_CLONE_B
 RUN : \
   && update-ca-certificates --fresh \
   && $IDF_PATH/tools/idf_tools.py --non-interactive install required --targets=${IDF_INSTALL_TARGETS} \
+  && $IDF_PATH/tools/idf_tools.py --non-interactive install qemu* --targets=${IDF_INSTALL_TARGETS} \
   && $IDF_PATH/tools/idf_tools.py --non-interactive install cmake \
   && $IDF_PATH/tools/idf_tools.py --non-interactive install-python-env \
   && rm -rf $IDF_TOOLS_PATH/dist \
@@ -88,26 +94,6 @@ ENV IDF_PYTHON_CHECK_CONSTRAINTS=no
 
 # Ccache is installed, enable it by default
 ENV IDF_CCACHE_ENABLE=1
-
-# Install QEMU runtime dependencies
-RUN : \
-  && apt-get update && apt-get install -y -q \
-    libglib2.0-0 \
-    libpixman-1-0 \
-  && rm -rf /var/lib/apt/lists/* \
-  && :
-
-# Install QEMU
-ARG QEMU_VER=esp-develop-20220919
-ARG QEMU_DIST=qemu-${QEMU_VER}.tar.bz2
-ARG QEMU_SHA256=f6565d3f0d1e463a63a7f81aec94cce62df662bd42fc7606de4b4418ed55f870
-RUN : \
-  && wget --no-verbose https://github.com/espressif/qemu/releases/download/${QEMU_VER}/${QEMU_DIST} \
-  && echo "${QEMU_SHA256} *${QEMU_DIST}" | sha256sum --check --strict - \
-  && tar -xf ${QEMU_DIST} -C /opt \
-  && rm ${QEMU_DIST} \
-  && :
-ENV PATH=/opt/qemu/bin:${PATH}
 
 COPY entrypoint.sh /opt/esp/entrypoint.sh
 ENTRYPOINT [ "/opt/esp/entrypoint.sh" ]

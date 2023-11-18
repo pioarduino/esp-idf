@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 from idf_build_apps import LOGGER, App, build_apps, find_apps, setup_logging
 from idf_build_apps.constants import SUPPORTED_TARGETS
-from idf_ci_utils import IDF_PATH, PytestApp, get_pytest_cases, get_ttfw_app_paths
+from idf_ci_utils import IDF_PATH
 
 CI_ENV_VARS = {
     'EXTRA_CFLAGS': '-Werror -Werror=deprecated-declarations -Werror=unused-variable '
@@ -39,6 +39,8 @@ def get_pytest_apps(
     modified_files: t.Optional[t.List[str]] = None,
     ignore_app_dependencies_filepatterns: t.Optional[t.List[str]] = None,
 ) -> t.List[App]:
+    from idf_pytest.script import get_pytest_cases
+
     pytest_cases = get_pytest_cases(paths, target, marker_expr, filter_expr)
 
     _paths: t.Set[str] = set()
@@ -46,15 +48,7 @@ def get_pytest_apps(
     for case in pytest_cases:
         for app in case.apps:
             _paths.add(app.path)
-
-            if os.getenv('INCLUDE_NIGHTLY_RUN') == '1':
-                test_related_app_configs[app.path].add(app.config)
-            elif os.getenv('NIGHTLY_RUN') == '1':
-                if case.nightly_run:
-                    test_related_app_configs[app.path].add(app.config)
-            else:
-                if not case.nightly_run:
-                    test_related_app_configs[app.path].add(app.config)
+            test_related_app_configs[app.path].add(app.config)
 
     if not extra_default_build_targets:
         extra_default_build_targets = []
@@ -103,7 +97,8 @@ def get_cmake_apps(
     modified_files: t.Optional[t.List[str]] = None,
     ignore_app_dependencies_filepatterns: t.Optional[t.List[str]] = None,
 ) -> t.List[App]:
-    ttfw_app_dirs = get_ttfw_app_paths(paths, target)
+    from idf_pytest.constants import PytestApp
+    from idf_pytest.script import get_pytest_cases
 
     apps = find_apps(
         paths,
@@ -126,7 +121,7 @@ def get_cmake_apps(
     apps_for_build = []
     pytest_cases_apps = [app for case in get_pytest_cases(paths, target) for app in case.apps]
     for app in apps:
-        if preserve_all or app.app_dir in ttfw_app_dirs:  # relpath
+        if preserve_all:  # relpath
             app.preserve = True
 
         if PytestApp(os.path.realpath(app.app_dir), app.target, app.config_name) in pytest_cases_apps:

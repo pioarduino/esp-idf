@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -11,6 +12,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/ringbuf.h"
+#include "esp_heap_caps.h"
 
 // ------------------------------------------------- Macros and Types --------------------------------------------------
 
@@ -73,9 +75,7 @@ typedef struct RingbufferDefinition {
     portMUX_TYPE mux;                           //Spinlock required for SMP
 } Ringbuffer_t;
 
-#if __GNUC_PREREQ(4, 6)
 _Static_assert(sizeof(StaticRingbuffer_t) == sizeof(Ringbuffer_t), "StaticRingbuffer_t != Ringbuffer_t");
-#endif
 
 // ------------------------------------------------ Forward Declares ---------------------------------------------------
 
@@ -1245,14 +1245,11 @@ void vRingbufferDelete(RingbufHandle_t xRingbuffer)
     Ringbuffer_t *pxRingbuffer = (Ringbuffer_t *)xRingbuffer;
     configASSERT(pxRingbuffer);
 
-#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
-    if (pxRingbuffer->uxRingbufferFlags & rbBUFFER_STATIC_FLAG) {
-        //Ring buffer was statically allocated, no need to free
-        return;
+    //Ring buffer was not statically allocated. Free its memory.
+    if ( !( pxRingbuffer->uxRingbufferFlags & rbBUFFER_STATIC_FLAG ) ) {
+        free(pxRingbuffer->pucHead);
+        free(pxRingbuffer);
     }
-#endif
-    free(pxRingbuffer->pucHead);
-    free(pxRingbuffer);
 }
 
 size_t xRingbufferGetMaxItemSize(RingbufHandle_t xRingbuffer)
@@ -1355,10 +1352,73 @@ void xRingbufferPrintInfo(RingbufHandle_t xRingbuffer)
 {
     Ringbuffer_t *pxRingbuffer = (Ringbuffer_t *)xRingbuffer;
     configASSERT(pxRingbuffer);
-    printf("Rb size:%d\tfree: %d\trptr: %d\tfreeptr: %d\twptr: %d, aptr: %d\n",
-           pxRingbuffer->xSize, prvGetFreeSize(pxRingbuffer),
-           pxRingbuffer->pucRead - pxRingbuffer->pucHead,
-           pxRingbuffer->pucFree - pxRingbuffer->pucHead,
-           pxRingbuffer->pucWrite - pxRingbuffer->pucHead,
-           pxRingbuffer->pucAcquire - pxRingbuffer->pucHead);
+    printf("Rb size:%" PRId32 "\tfree: %" PRId32 "\trptr: %" PRId32 "\tfreeptr: %" PRId32 "\twptr: %" PRId32 ", aptr: %" PRId32 "\n",
+           (int32_t)pxRingbuffer->xSize, (int32_t)prvGetFreeSize(pxRingbuffer),
+           (int32_t)(pxRingbuffer->pucRead - pxRingbuffer->pucHead),
+           (int32_t)(pxRingbuffer->pucFree - pxRingbuffer->pucHead),
+           (int32_t)(pxRingbuffer->pucWrite - pxRingbuffer->pucHead),
+           (int32_t)(pxRingbuffer->pucAcquire - pxRingbuffer->pucHead));
+}
+
+BaseType_t xRingbufferGetStaticBuffer(RingbufHandle_t xRingbuffer, uint8_t **ppucRingbufferStorage, StaticRingbuffer_t **ppxStaticRingbuffer)
+{
+    Ringbuffer_t *pxRingbuffer = (Ringbuffer_t *)xRingbuffer;
+    BaseType_t xReturn;
+
+    configASSERT(pxRingbuffer && ppucRingbufferStorage && ppxStaticRingbuffer);
+
+    if (pxRingbuffer->uxRingbufferFlags & rbBUFFER_STATIC_FLAG) {
+        *ppucRingbufferStorage = pxRingbuffer->pucHead;
+        *ppxStaticRingbuffer = (StaticRingbuffer_t *)pxRingbuffer;
+        xReturn = pdTRUE;
+    } else {
+        xReturn = pdFALSE;
+    }
+
+    return xReturn;
+}
+
+RingbufHandle_t xRingbufferCreateWithCaps(size_t xBufferSize, RingbufferType_t xBufferType, UBaseType_t uxMemoryCaps)
+{
+    RingbufHandle_t xRingbuffer;
+    StaticRingbuffer_t *pxStaticRingbuffer;
+    uint8_t *pucRingbufferStorage;
+
+    pxStaticRingbuffer = heap_caps_malloc(sizeof(StaticRingbuffer_t), (uint32_t)uxMemoryCaps);
+    pucRingbufferStorage = heap_caps_malloc(xBufferSize, (uint32_t)uxMemoryCaps);
+
+    if (pxStaticRingbuffer == NULL || pucRingbufferStorage == NULL) {
+        goto err;
+    }
+
+    // Create the ring buffer using static creation API
+    xRingbuffer = xRingbufferCreateStatic(xBufferSize, xBufferType, pucRingbufferStorage, pxStaticRingbuffer);
+    if (xRingbuffer == NULL) {
+        goto err;
+    }
+
+    return xRingbuffer;
+
+err:
+    heap_caps_free(pxStaticRingbuffer);
+    heap_caps_free(pucRingbufferStorage);
+    return NULL;
+}
+
+void vRingbufferDeleteWithCaps(RingbufHandle_t xRingbuffer)
+{
+    BaseType_t xResult;
+    StaticRingbuffer_t *pxStaticRingbuffer = NULL;
+    uint8_t *pucRingbufferStorage = NULL;
+
+    // Retrieve the buffers used to create the ring buffer before deleting it
+    xResult = xRingbufferGetStaticBuffer(xRingbuffer, &pucRingbufferStorage, &pxStaticRingbuffer);
+    configASSERT(xResult == pdTRUE);
+
+    // Delete the ring buffer
+    vRingbufferDelete(xRingbuffer);
+
+    // Free the memory buffers
+    heap_caps_free(pxStaticRingbuffer);
+    heap_caps_free(pucRingbufferStorage);
 }

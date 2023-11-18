@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +9,11 @@
 #include <ctype.h>
 #include <string.h>
 #include "sdkconfig.h"
+#if CONFIG_ADC_ENABLE_DEBUG_LOG
+// The local log level must be defined before including esp_log.h
+// Set the maximum log level for this source file
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
+#endif
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "esp_pm.h"
@@ -67,7 +72,7 @@ static void adc_dma_intr_handler(void *arg);
 
 static int8_t adc_digi_get_io_num(adc_unit_t adc_unit, uint8_t adc_channel)
 {
-    assert(adc_unit <= SOC_ADC_PERIPH_NUM);
+    assert(adc_unit < SOC_ADC_PERIPH_NUM);
     uint8_t adc_n = (adc_unit == ADC_UNIT_1) ? 0 : 1;
     return adc_channel_io_map[adc_n][adc_channel];
 }
@@ -102,6 +107,9 @@ static esp_err_t adc_digi_gpio_init(adc_unit_t adc_unit, uint16_t channel_mask)
 
 esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_config, adc_continuous_handle_t *ret_handle)
 {
+#if CONFIG_ADC_ENABLE_DEBUG_LOG
+    esp_log_level_set(ADC_TAG, ESP_LOG_DEBUG);
+#endif
     esp_err_t ret = ESP_OK;
     ESP_RETURN_ON_FALSE((hdl_config->conv_frame_size % SOC_ADC_DIGI_DATA_BYTES_PER_CONV == 0), ESP_ERR_INVALID_ARG, ADC_TAG, "conv_frame_size should be in multiples of `SOC_ADC_DIGI_DATA_BYTES_PER_CONV`");
 
@@ -197,7 +205,7 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     }
 
     ret = esp_intr_alloc(spicommon_irqdma_source_for_host(adc_ctx->spi_host), ESP_INTR_FLAG_IRAM, adc_dma_intr_handler,
-                        (void *)adc_ctx, &adc_ctx->dma_intr_hdl);
+                         (void *)adc_ctx, &adc_ctx->dma_intr_hdl);
     if (ret != ESP_OK) {
         goto cleanup;
     }
@@ -213,7 +221,7 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
 
     adc_ctx->i2s_host = I2S_NUM_0;
     ret = esp_intr_alloc(i2s_periph_signal[adc_ctx->i2s_host].irq, ESP_INTR_FLAG_IRAM, adc_dma_intr_handler,
-                        (void *)adc_ctx, &adc_ctx->dma_intr_hdl);
+                         (void *)adc_ctx, &adc_ctx->dma_intr_hdl);
     if (ret != ESP_OK) {
         goto cleanup;
     }
@@ -288,7 +296,7 @@ static IRAM_ATTR void adc_dma_intr_handler(void *arg)
 
 static IRAM_ATTR bool s_adc_dma_intr(adc_continuous_ctx_t *adc_digi_ctx)
 {
-    portBASE_TYPE taskAwoken = 0;
+    BaseType_t taskAwoken = 0;
     bool need_yield = false;
     BaseType_t ret;
     adc_hal_dma_desc_status_t status = false;
@@ -613,12 +621,27 @@ esp_err_t adc_continuous_register_event_callbacks(adc_continuous_handle_t handle
     return ESP_OK;
 }
 
-esp_err_t adc_continuous_io_to_channel(int io_num, adc_unit_t *unit_id, adc_channel_t *channel)
+esp_err_t adc_continuous_flush_pool(adc_continuous_handle_t handle)
+{
+    ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, ADC_TAG, "invalid argument");
+    ESP_RETURN_ON_FALSE(handle->fsm == ADC_FSM_INIT, ESP_ERR_INVALID_STATE, ADC_TAG, "ADC continuous mode isn't in the init state, it's started already");
+
+    size_t actual_size = 0;
+    uint8_t *old_data = NULL;
+
+    while ((old_data = xRingbufferReceiveUpTo(handle->ringbuf_hdl, &actual_size, 0, handle->ringbuf_size))) {
+        vRingbufferReturnItem(handle->ringbuf_hdl, old_data);
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t adc_continuous_io_to_channel(int io_num, adc_unit_t * const unit_id, adc_channel_t * const channel)
 {
     return adc_io_to_channel(io_num, unit_id, channel);
 }
 
-esp_err_t adc_continuous_channel_to_io(adc_unit_t unit_id, adc_channel_t channel, int *io_num)
+esp_err_t adc_continuous_channel_to_io(adc_unit_t unit_id, adc_channel_t channel, int * const io_num)
 {
     return adc_channel_to_io(unit_id, channel, io_num);
 }

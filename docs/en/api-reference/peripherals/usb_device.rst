@@ -13,7 +13,7 @@ Overview
 
 The driver allows you to use {IDF_TARGET_NAME} chips to develop USB devices on a top of TinyUSB stack. TinyUSB is integrated with ESP-IDF to provide USB features of the framework. Using this driver the chip works as simple or composite device supporting several USB devices simultaneously.
 
-TinyUSB stack is distributed via `IDF Component Registry <https://components.espressif.com/components/espressif/esp_tinyusb>`_.
+TinyUSB stack is distributed via `IDF Component Registry <https://components.espressif.com/components/espressif/esp_tinyusb>`__.
 
 Our USB-OTG implementation is limited to {IDF_TARGET_USB_EP_NUM} USB endpoints ({IDF_TARGET_USB_EP_NUM_INOUT} IN/OUT endpoints and {IDF_TARGET_USB_EP_NUM_IN} IN endpoint) . Please note that enabling Secure Boot or flash encryption disables the USB-OTG USB stack in the ROM, disallowing updates via the serial emulation or Device Firmware Update (DFU) on that port. For more details, please refer to `technical reference manual <{IDF_TARGET_TRM_EN_URL}>`_.
 
@@ -32,7 +32,7 @@ Hardware USB Connection
 
 - Any board with the {IDF_TARGET_NAME} chip with USB connectors or with exposed USB's D+ and D- (DATA+/DATA-) pins.
 
-If the board has no USB connector but has the pins, connect pins directly to the host (e.g. with do-it-yourself cable from any USB connection cable).
+If the board has no USB connector but has the pins, connect pins directly to the host (e.g., with do-it-yourself cable from any USB connection cable).
 
 On {IDF_TARGET_NAME}, connect GPIO {IDF_TARGET_USB_DP_GPIO_NUM} and {IDF_TARGET_USB_DM_GPIO_NUM} to D+/D- respectively:
 
@@ -59,6 +59,12 @@ On top of it the driver implements:
 
 Configuration
 -------------
+
+To use the component, you need to add it as a dependency via the following command. For more details, please refer to `IDF Component Registry <https://components.espressif.com/components/espressif/esp_tinyusb>`__.
+
+.. code:: bash
+
+  idf.py add-dependency esp_tinyusb
 
 Via Menuconfig options you can specify:
 
@@ -89,7 +95,7 @@ Install Driver
 
 To initialize the driver, users should call :cpp:func:`tinyusb_driver_install`. The driver's configuration is specified in a :cpp:type:`tinyusb_config_t` structure that is passed as an argument to :cpp:func:`tinyusb_driver_install`.
 
- Note that the :cpp:type:`tinyusb_config_t` structure can be zero initialized (e.g. ``const tinyusb_config_t tusb_cfg = { 0 };``) or partially (as shown below). For any member that is initialized to `0` or `NULL`, the driver will use its default configuration values for that member (see example below)
+ Note that the :cpp:type:`tinyusb_config_t` structure can be zero initialized (e.g., ``const tinyusb_config_t tusb_cfg = { 0 };``) or partially (as shown below). For any member that is initialized to `0` or `NULL`, the driver will use its default configuration values for that member (see example below)
 
 .. code-block:: c
 

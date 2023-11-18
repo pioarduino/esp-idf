@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +9,10 @@
 #include <stdlib.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#if ( !CONFIG_FREERTOS_SMP && ( configNUM_CORES > 1 ) )
+    /* Required for xTaskIncrementTickOtherCores() */
+    #include "esp_private/freertos_idf_additions_priv.h"
+#endif /* ( !CONFIG_FREERTOS_SMP && ( configNUM_CORES > 1 ) ) */
 
 #if CONFIG_FREERTOS_SYSTICK_USES_CCOUNT
     #if CONFIG_FREERTOS_CORETIMER_0
@@ -17,7 +21,7 @@
         #define SYSTICK_INTR_ID     (ETS_INTERNAL_TIMER1_INTR_SOURCE + ETS_INTERNAL_INTR_SOURCE_OFF)
     #endif
 #else /* CONFIG_FREERTOS_SYSTICK_USES_SYSTIMER */
-        #define SYSTICK_INTR_ID     (ETS_SYSTIMER_TARGET0_EDGE_INTR_SOURCE)
+        #define SYSTICK_INTR_ID     (ETS_SYSTIMER_TARGET0_INTR_SOURCE)
 #endif /* CONFIG_FREERTOS_SYSTICK_USES_CCOUNT */
 
 BaseType_t xPortSysTickHandler(void);
@@ -64,7 +68,8 @@ void vSystimerSetup(void)
     /* Systimer HAL layer object */
     static systimer_hal_context_t systimer_hal;
     /* set system timer interrupt vector */
-    ESP_ERROR_CHECK(esp_intr_alloc(ETS_SYSTIMER_TARGET0_EDGE_INTR_SOURCE + cpuid, ESP_INTR_FLAG_IRAM | level, SysTickIsrHandler, &systimer_hal, NULL));
+
+    ESP_ERROR_CHECK(esp_intr_alloc(ETS_SYSTIMER_TARGET0_INTR_SOURCE + cpuid, ESP_INTR_FLAG_IRAM | level, SysTickIsrHandler, &systimer_hal, NULL));
 
     if (cpuid == 0) {
         periph_module_enable(PERIPH_SYSTIMER_MODULE);
@@ -78,7 +83,10 @@ void vSystimerSetup(void)
         systimer_ll_apply_counter_value(systimer_hal.dev, SYSTIMER_COUNTER_OS_TICK);
 
         for (cpuid = 0; cpuid < SOC_CPU_CORES_NUM; cpuid++) {
+            // Set stall option and alarm mode to default state. Below they will be set to a required state.
             systimer_hal_counter_can_stall_by_cpu(&systimer_hal, SYSTIMER_COUNTER_OS_TICK, cpuid, false);
+            uint32_t alarm_id = SYSTIMER_ALARM_OS_TICK_CORE0 + cpuid;
+            systimer_hal_select_alarm_mode(&systimer_hal, alarm_id, SYSTIMER_ALARM_MODE_ONESHOT);
         }
 
         for (cpuid = 0; cpuid < portNUM_PROCESSORS; ++cpuid) {

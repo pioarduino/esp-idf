@@ -1,5 +1,9 @@
 idf_build_get_property(target IDF_TARGET)
 
+if(${target} STREQUAL "linux")
+    return() # This component is not supported by the POSIX/Linux simulator
+endif()
+
 set(includes "include")
 
 set(priv_requires heap spi_flash esp_mm)
@@ -24,6 +28,10 @@ if(CONFIG_SPIRAM)
         list(APPEND srcs "${target}/esp_psram_impl_quad.c")
     elseif(CONFIG_SPIRAM_MODE_OCT)
         list(APPEND srcs "${target}/esp_psram_impl_octal.c")
+    endif()
+
+    if(CONFIG_SPIRAM_MODE_HEX)
+        list(APPEND srcs "device/esp_psram_impl_ap_hex.c")
     endif()
 endif()
 

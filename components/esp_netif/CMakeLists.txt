@@ -24,7 +24,7 @@ if(${target} STREQUAL "linux")
 endif()
 
 if(CONFIG_PPP_SUPPORT)
-    list(APPEND srcs_lwip lwip/esp_netif_lwip_ppp.c)
+    list(APPEND srcs_lwip lwip/esp_netif_lwip_ppp.c lwip/netif/ppp.c)
 endif()
 
 
@@ -51,9 +51,18 @@ idf_component_register(SRCS "${srcs}"
                     LDFRAGMENTS linker.lf)
 
 if(CONFIG_ESP_NETIF_L2_TAP OR CONFIG_ESP_NETIF_BRIDGE_EN)
-    idf_component_optional_requires(PRIVATE esp_eth vfs)
+    set(optional_requires "")
+    if(CONFIG_ESP_NETIF_L2_TAP)
+        list(APPEND optional_requires "vfs")
+    endif()
+
+    if(CONFIG_ESP_NETIF_BRIDGE_EN)
+        list(APPEND optional_requires "esp_wifi")
+    endif()
+
+    list(APPEND optional_requires "esp_eth")
+    idf_component_optional_requires(PRIVATE "${optional_requires}")
 endif()
 
 
-target_compile_options(${COMPONENT_LIB} PRIVATE "-Wno-format")
 target_compile_definitions(${COMPONENT_LIB} PRIVATE ESP_NETIF_COMPONENT_BUILD)

@@ -83,6 +83,7 @@ void app_main(void)
     HANDLE_TEST(test_name, test_abort_cache_disabled);
     HANDLE_TEST(test_name, test_int_wdt);
     HANDLE_TEST(test_name, test_task_wdt_cpu0);
+    HANDLE_TEST(test_name, test_hw_stack_guard_cpu0);
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH && CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY
     HANDLE_TEST(test_name, test_panic_extram_stack);
 #endif
@@ -99,6 +100,9 @@ void app_main(void)
     HANDLE_TEST(test_name, test_ub);
     HANDLE_TEST(test_name, test_assert);
     HANDLE_TEST(test_name, test_assert_cache_disabled);
+#if CONFIG_IDF_TARGET_ESP32
+    HANDLE_TEST(test_name, test_illegal_access);
+#endif
 
 #if CONFIG_TEST_MEMPROT
 

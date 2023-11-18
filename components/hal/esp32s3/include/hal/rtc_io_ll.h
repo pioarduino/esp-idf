@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +13,9 @@
 #pragma once
 
 #include <stdlib.h>
+#include "soc/rtc_io_struct.h"
+#include "soc/rtc_io_reg.h"
 #include "soc/rtc_periph.h"
-#include "hal/gpio_types.h"
 #include "soc/io_mux_reg.h"
 #include "soc/usb_serial_jtag_reg.h"
 #include "soc/usb_serial_jtag_struct.h"
@@ -26,20 +27,31 @@ extern "C" {
 #define RTCIO_LL_PIN_FUNC     0
 
 typedef enum {
-    RTCIO_FUNC_RTC = 0x0,         /*!< The pin controled by RTC module. */
-    RTCIO_FUNC_DIGITAL = 0x1,     /*!< The pin controlled by DIGITAL module. */
+    RTCIO_LL_FUNC_RTC = 0x0,         /*!< The pin controled by RTC module. */
+    RTCIO_LL_FUNC_DIGITAL = 0x1,     /*!< The pin controlled by DIGITAL module. */
 } rtcio_ll_func_t;
 
 typedef enum {
-    RTCIO_WAKEUP_DISABLE    = 0,    /*!< Disable GPIO interrupt                             */
-    RTCIO_WAKEUP_LOW_LEVEL  = 0x4,  /*!< GPIO interrupt type : input low level trigger      */
-    RTCIO_WAKEUP_HIGH_LEVEL = 0x5,  /*!< GPIO interrupt type : input high level trigger     */
+    RTCIO_LL_WAKEUP_DISABLE    = 0,    /*!< Disable GPIO interrupt                             */
+    RTCIO_LL_WAKEUP_LOW_LEVEL  = 0x4,  /*!< GPIO interrupt type : input low level trigger      */
+    RTCIO_LL_WAKEUP_HIGH_LEVEL = 0x5,  /*!< GPIO interrupt type : input high level trigger     */
 } rtcio_ll_wake_type_t;
 
 typedef enum {
-    RTCIO_OUTPUT_NORMAL = 0,    /*!< RTCIO output mode is normal. */
-    RTCIO_OUTPUT_OD = 0x1,      /*!< RTCIO output mode is open-drain. */
+    RTCIO_LL_OUTPUT_NORMAL = 0,    /*!< RTCIO output mode is normal. */
+    RTCIO_LL_OUTPUT_OD = 0x1,      /*!< RTCIO output mode is open-drain. */
 } rtcio_ll_out_mode_t;
+
+/**
+ * @brief Select a RTC IOMUX function for the RTC IO
+ *
+ * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
+ * @param func Function to assign to the pin
+ */
+static inline void rtcio_ll_iomux_func_sel(int rtcio_num, int func)
+{
+    SET_PERI_REG_BITS(rtc_io_desc[rtcio_num].reg, 0x3, func, rtc_io_desc[rtcio_num].func);
+}
 
 /**
  * @brief Select the rtcio function.
@@ -50,17 +62,17 @@ typedef enum {
  */
 static inline void rtcio_ll_function_select(int rtcio_num, rtcio_ll_func_t func)
 {
-    if (func == RTCIO_FUNC_RTC) {
+    if (func == RTCIO_LL_FUNC_RTC) {
         // Disable USB Serial JTAG if pin 19 or pin 20 needs to select the rtc function
-        if (rtcio_num == rtc_io_num_map[USB_DM_GPIO_NUM] || rtcio_num == rtc_io_num_map[USB_DP_GPIO_NUM]) {
+        if (rtcio_num == rtc_io_num_map[USB_INT_PHY0_DM_GPIO_NUM] || rtcio_num == rtc_io_num_map[USB_INT_PHY0_DP_GPIO_NUM]) {
             USB_SERIAL_JTAG.conf0.usb_pad_enable = 0;
         }
         SENS.sar_peri_clk_gate_conf.iomux_clk_en = 1;
         // 0: GPIO connected to digital GPIO module. 1: GPIO connected to analog RTC module.
         SET_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, (rtc_io_desc[rtcio_num].mux));
         //0:RTC FUNCTION 1,2,3:Reserved
-        SET_PERI_REG_BITS(rtc_io_desc[rtcio_num].reg, RTC_IO_TOUCH_PAD1_FUN_SEL_V, RTCIO_LL_PIN_FUNC, rtc_io_desc[rtcio_num].func);
-    } else if (func == RTCIO_FUNC_DIGITAL) {
+        rtcio_ll_iomux_func_sel(rtcio_num, RTCIO_LL_PIN_FUNC);
+    } else if (func == RTCIO_LL_FUNC_DIGITAL) {
         CLEAR_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, (rtc_io_desc[rtcio_num].mux));
         SENS.sar_peri_clk_gate_conf.iomux_clk_en = 0;
         // USB Serial JTAG pad re-enable won't be done here (it requires both DM and DP pins not in rtc function)
@@ -191,8 +203,8 @@ static inline void rtcio_ll_pullup_disable(int rtcio_num)
     // The pull-up value of the USB pins are controlled by the pins’ pull-up value together with USB pull-up value
     // USB DP pin is default to PU enabled
     // Note that from esp32s3 ECO1, USB_EXCHG_PINS feature has been supported. If this efuse is burnt, the gpio pin
-    // which should be checked is USB_DM_GPIO_NUM instead.
-    if (rtcio_num == USB_DP_GPIO_NUM) {
+    // which should be checked is USB_INT_PHY0_DM_GPIO_NUM instead.
+    if (rtcio_num == USB_INT_PHY0_DP_GPIO_NUM) {
         SET_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_PAD_PULL_OVERRIDE);
         CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_DP_PULLUP);
     }
@@ -298,7 +310,7 @@ static inline void rtcio_ll_wakeup_enable(int rtcio_num, rtcio_ll_wake_type_t ty
 static inline void rtcio_ll_wakeup_disable(int rtcio_num)
 {
     RTCIO.pin[rtcio_num].wakeup_enable = 0;
-    RTCIO.pin[rtcio_num].int_type = RTCIO_WAKEUP_DISABLE;
+    RTCIO.pin[rtcio_num].int_type = RTCIO_LL_WAKEUP_DISABLE;
 }
 
 /**
@@ -306,10 +318,10 @@ static inline void rtcio_ll_wakeup_disable(int rtcio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_enable_output_in_sleep(gpio_num_t gpio_num)
+static inline void rtcio_ll_enable_output_in_sleep(int rtcio_num)
 {
-    if (rtc_io_desc[gpio_num].slpoe) {
-        SET_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpoe);
+    if (rtc_io_desc[rtcio_num].slpoe) {
+        SET_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpoe);
     }
 }
 
@@ -318,10 +330,10 @@ static inline void rtcio_ll_enable_output_in_sleep(gpio_num_t gpio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_disable_output_in_sleep(gpio_num_t gpio_num)
+static inline void rtcio_ll_disable_output_in_sleep(int rtcio_num)
 {
-    if (rtc_io_desc[gpio_num].slpoe) {
-        CLEAR_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpoe);
+    if (rtc_io_desc[rtcio_num].slpoe) {
+        CLEAR_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpoe);
     }
 }
 
@@ -330,9 +342,9 @@ static inline void rtcio_ll_disable_output_in_sleep(gpio_num_t gpio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_enable_input_in_sleep(gpio_num_t gpio_num)
+static inline void rtcio_ll_enable_input_in_sleep(int rtcio_num)
 {
-    SET_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpie);
+    SET_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpie);
 }
 
 /**
@@ -340,9 +352,9 @@ static inline void rtcio_ll_enable_input_in_sleep(gpio_num_t gpio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_disable_input_in_sleep(gpio_num_t gpio_num)
+static inline void rtcio_ll_disable_input_in_sleep(int rtcio_num)
 {
-    CLEAR_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpie);
+    CLEAR_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpie);
 }
 
 /**
@@ -350,9 +362,9 @@ static inline void rtcio_ll_disable_input_in_sleep(gpio_num_t gpio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_enable_sleep_setting(gpio_num_t gpio_num)
+static inline void rtcio_ll_enable_sleep_setting(int rtcio_num)
 {
-    SET_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpsel);
+    SET_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpsel);
 }
 
 /**
@@ -360,9 +372,9 @@ static inline void rtcio_ll_enable_sleep_setting(gpio_num_t gpio_num)
  *
  * @param rtcio_num The index of rtcio. 0 ~ MAX(rtcio).
  */
-static inline void rtcio_ll_disable_sleep_setting(gpio_num_t gpio_num)
+static inline void rtcio_ll_disable_sleep_setting(int rtcio_num)
 {
-    CLEAR_PERI_REG_MASK(rtc_io_desc[gpio_num].reg, rtc_io_desc[gpio_num].slpsel);
+    CLEAR_PERI_REG_MASK(rtc_io_desc[rtcio_num].reg, rtc_io_desc[rtcio_num].slpsel);
 }
 
 /**

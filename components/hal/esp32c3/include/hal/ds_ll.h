@@ -1,16 +1,8 @@
-// Copyright 2020 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 /*******************************************************************************
  * NOTICE
@@ -25,10 +17,39 @@
 
 #include "soc/hwcrypto_reg.h"
 #include "soc/soc_caps.h"
+#include "soc/system_struct.h"
+#include "hal/ds_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Enable the bus clock for Digital Signature peripheral module
+ *
+ * @param true to enable the module, false to disable the module
+ */
+static inline void ds_ll_enable_bus_clock(bool enable)
+{
+    SYSTEM.perip_clk_en1.reg_crypto_ds_clk_en = enable;
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
+#define ds_ll_enable_bus_clock(...) (void)__DECLARE_RCC_ATOMIC_ENV; ds_ll_enable_bus_clock(__VA_ARGS__)
+
+/**
+ * @brief Reset the Digital Signature peripheral module
+ */
+static inline void ds_ll_reset_register(void)
+{
+    SYSTEM.perip_rst_en1.reg_crypto_ds_rst = 1;
+    SYSTEM.perip_rst_en1.reg_crypto_ds_rst = 0;
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_ATOMIC_ENV variable in advance
+#define ds_ll_reset_register(...) (void)__DECLARE_RCC_ATOMIC_ENV; ds_ll_reset_register(__VA_ARGS__)
 
 static inline void ds_ll_start(void)
 {

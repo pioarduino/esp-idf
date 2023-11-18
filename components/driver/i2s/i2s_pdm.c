@@ -57,6 +57,9 @@ static esp_err_t i2s_pdm_tx_set_clock(i2s_chan_handle_t handle, const i2s_pdm_tx
 {
     esp_err_t ret = ESP_OK;
     i2s_pdm_tx_config_t *pdm_tx_cfg = (i2s_pdm_tx_config_t *)(handle->mode_info);
+#if SOC_I2S_HW_VERSION_2
+    ESP_RETURN_ON_FALSE(clk_cfg->clk_src != I2S_CLK_SRC_EXTERNAL, ESP_ERR_INVALID_ARG, TAG, "not support external clock source in pdm mode");
+#endif
     ESP_RETURN_ON_FALSE(clk_cfg->up_sample_fs <= 480, ESP_ERR_INVALID_ARG, TAG, "up_sample_fs should be within 480");
 
     i2s_hal_clock_info_t clk_info;
@@ -67,11 +70,13 @@ static esp_err_t i2s_pdm_tx_set_clock(i2s_chan_handle_t handle, const i2s_pdm_tx
 
     portENTER_CRITICAL(&g_i2s.spinlock);
     /* Set clock configurations in HAL*/
-    i2s_hal_set_tx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+    I2S_CLOCK_SRC_ATOMIC() {
+        i2s_hal_set_tx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+    }
 #if SOC_I2S_HW_VERSION_2
     /* Work around for PDM TX clock, overwrite the raw division directly to reduce the noise
      * This set of coefficients is a special division to reduce the background noise in PDM TX mode */
-    i2s_ll_tx_set_raw_clk_div(handle->controller->hal.dev, 1, 1, 0, 0);
+    i2s_ll_tx_set_raw_clk_div(handle->controller->hal.dev, clk_info.mclk_div, 1, 1, 0, 0);
 #endif
     portEXIT_CRITICAL(&g_i2s.spinlock);
 
@@ -98,15 +103,20 @@ static esp_err_t i2s_pdm_tx_set_slot(i2s_chan_handle_t handle, const i2s_pdm_tx_
     /* Share bck and ws signal in full-duplex mode */
     i2s_ll_share_bck_ws(handle->controller->hal.dev, handle->controller->full_duplex);
 
-    portENTER_CRITICAL(&g_i2s.spinlock);
-    /* Configure the hardware to apply PDM format */
-    bool is_slave = handle->role == I2S_ROLE_SLAVE;
-    i2s_hal_pdm_set_tx_slot(&(handle->controller->hal), is_slave, (i2s_hal_slot_config_t *)slot_cfg);
-    portEXIT_CRITICAL(&g_i2s.spinlock);
-
     /* Update the mode info: slot configuration */
     i2s_pdm_tx_config_t *pdm_tx_cfg = (i2s_pdm_tx_config_t *)handle->mode_info;
     memcpy(&(pdm_tx_cfg->slot_cfg), slot_cfg, sizeof(i2s_pdm_tx_slot_config_t));
+
+    portENTER_CRITICAL(&g_i2s.spinlock);
+    /* Configure the hardware to apply PDM format */
+    bool is_slave = handle->role == I2S_ROLE_SLAVE;
+    i2s_hal_slot_config_t *slot_hal_cfg = (i2s_hal_slot_config_t *)(&(pdm_tx_cfg->slot_cfg));
+#if SOC_I2S_HW_VERSION_2
+    /* Times 10 to transform the float type to integer because we should avoid float type in hal */
+    slot_hal_cfg->pdm_tx.hp_cut_off_freq_hzx10 = (uint32_t)(slot_cfg->hp_cut_off_freq_hz * 10);
+#endif
+    i2s_hal_pdm_set_tx_slot(&(handle->controller->hal), is_slave, slot_hal_cfg);
+    portEXIT_CRITICAL(&g_i2s.spinlock);
 
     return ESP_OK;
 }
@@ -184,10 +194,7 @@ esp_err_t i2s_channel_init_pdm_tx_mode(i2s_chan_handle_t handle, const i2s_pdm_t
     ESP_GOTO_ON_ERROR(i2s_init_dma_intr(handle, I2S_INTR_ALLOC_FLAGS), err, TAG, "initialize dma interrupt failed");
 
     i2s_ll_tx_enable_pdm(handle->controller->hal.dev);
-#if SOC_I2S_HW_VERSION_2
-    /* Enable clock to start outputting mclk signal. Some codecs will reset once mclk stop */
-    i2s_ll_tx_enable_clock(handle->controller->hal.dev);
-#endif
+
 #ifdef CONFIG_PM_ENABLE
     esp_pm_lock_type_t pm_type = ESP_PM_APB_FREQ_MAX;
 #if SOC_I2S_SUPPORTS_APLL
@@ -342,6 +349,9 @@ static esp_err_t i2s_pdm_rx_set_clock(i2s_chan_handle_t handle, const i2s_pdm_rx
 {
     esp_err_t ret = ESP_OK;
     i2s_pdm_rx_config_t *pdm_rx_cfg = (i2s_pdm_rx_config_t *)(handle->mode_info);
+#if SOC_I2S_HW_VERSION_2
+    ESP_RETURN_ON_FALSE(clk_cfg->clk_src != I2S_CLK_SRC_EXTERNAL, ESP_ERR_INVALID_ARG, TAG, "not support external clock source in pdm mode");
+#endif
 
     i2s_hal_clock_info_t clk_info;
     /* Calculate clock parameters */
@@ -351,7 +361,9 @@ static esp_err_t i2s_pdm_rx_set_clock(i2s_chan_handle_t handle, const i2s_pdm_rx
 
     portENTER_CRITICAL(&g_i2s.spinlock);
     /* Set clock configurations in HAL*/
-    i2s_hal_set_rx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+    I2S_CLOCK_SRC_ATOMIC() {
+        i2s_hal_set_rx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+    }
     portEXIT_CRITICAL(&g_i2s.spinlock);
 
     /* Update the mode info: clock configuration */
@@ -377,15 +389,20 @@ static esp_err_t i2s_pdm_rx_set_slot(i2s_chan_handle_t handle, const i2s_pdm_rx_
     /* Share bck and ws signal in full-duplex mode */
     i2s_ll_share_bck_ws(handle->controller->hal.dev, handle->controller->full_duplex);
 
-    portENTER_CRITICAL(&g_i2s.spinlock);
-    /* Configure the hardware to apply PDM format */
-    bool is_slave = (handle->role == I2S_ROLE_SLAVE) | handle->controller->full_duplex;
-    i2s_hal_pdm_set_rx_slot(&(handle->controller->hal), is_slave, (i2s_hal_slot_config_t *)slot_cfg);
-    portEXIT_CRITICAL(&g_i2s.spinlock);
-
     /* Update the mode info: slot configuration */
     i2s_pdm_rx_config_t *pdm_rx_cfg = (i2s_pdm_rx_config_t *)handle->mode_info;
     memcpy(&(pdm_rx_cfg->slot_cfg), slot_cfg, sizeof(i2s_pdm_rx_slot_config_t));
+
+    portENTER_CRITICAL(&g_i2s.spinlock);
+    /* Configure the hardware to apply PDM format */
+    bool is_slave = (handle->role == I2S_ROLE_SLAVE) | handle->controller->full_duplex;
+    i2s_hal_slot_config_t *slot_hal_cfg = (i2s_hal_slot_config_t *)(&(pdm_rx_cfg->slot_cfg));
+#if SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
+    /* Times 10 to transform the float type to integer because we should avoid float type in hal */
+    slot_hal_cfg->pdm_rx.hp_cut_off_freq_hzx10 = (uint32_t)(slot_cfg->hp_cut_off_freq_hz * 10);
+#endif
+    i2s_hal_pdm_set_rx_slot(&(handle->controller->hal), is_slave, slot_hal_cfg);
+    portEXIT_CRITICAL(&g_i2s.spinlock);
 
     return ESP_OK;
 }
@@ -461,10 +478,7 @@ esp_err_t i2s_channel_init_pdm_rx_mode(i2s_chan_handle_t handle, const i2s_pdm_r
     ESP_GOTO_ON_ERROR(i2s_init_dma_intr(handle, I2S_INTR_ALLOC_FLAGS), err, TAG, "initialize dma interrupt failed");
 
     i2s_ll_rx_enable_pdm(handle->controller->hal.dev);
-#if SOC_I2S_HW_VERSION_2
-    /* Enable clock to start outputting mclk signal. Some codecs will reset once mclk stop */
-    i2s_ll_rx_enable_clock(handle->controller->hal.dev);
-#endif
+
 #ifdef CONFIG_PM_ENABLE
     esp_pm_lock_type_t pm_type = ESP_PM_APB_FREQ_MAX;
 #if SOC_I2S_SUPPORTS_APLL

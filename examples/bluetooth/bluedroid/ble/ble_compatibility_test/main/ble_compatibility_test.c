@@ -248,6 +248,10 @@ static void show_bonded_devices(void)
     int dev_num = esp_ble_get_bond_device_num();
 
     esp_ble_bond_dev_t *dev_list = (esp_ble_bond_dev_t *)malloc(sizeof(esp_ble_bond_dev_t) * dev_num);
+    if (!dev_list) {
+        ESP_LOGE(EXAMPLE_TAG, "malloc failed, return\n");
+        return;
+    }
     esp_ble_get_bond_device_list(&dev_num, dev_list);
     EXAMPLE_DEBUG(EXAMPLE_TAG, "Bonded devices number : %d\n", dev_num);
 
@@ -266,6 +270,10 @@ static void __attribute__((unused)) remove_all_bonded_devices(void)
     int dev_num = esp_ble_get_bond_device_num();
 
     esp_ble_bond_dev_t *dev_list = (esp_ble_bond_dev_t *)malloc(sizeof(esp_ble_bond_dev_t) * dev_num);
+    if (!dev_list) {
+        ESP_LOGE(EXAMPLE_TAG, "malloc failed, return\n");
+        return;
+    }
     esp_ble_get_bond_device_list(&dev_num, dev_list);
     for (int i = 0; i < dev_num; i++) {
         esp_ble_remove_bond_device(dev_list[i].bd_addr);
@@ -309,7 +317,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS) {
                 ESP_LOGE(EXAMPLE_TAG, "advertising start failed");
             }else{
-                ESP_LOGI(EXAMPLE_TAG, "(0) ***** advertising start successfully ***** \n");
+                ESP_LOGI(EXAMPLE_TAG, "(0) ***** advertising start successfully ***** ");
             }
             break;
         case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
@@ -317,7 +325,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                 ESP_LOGE(EXAMPLE_TAG, "Advertising stop failed");
             }
             else {
-                ESP_LOGI(EXAMPLE_TAG, "Stop adv successfully\n");
+                ESP_LOGI(EXAMPLE_TAG, "Stop adv successfully");
             }
             break;
         case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
@@ -360,10 +368,10 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                     (bd_addr[4] << 8) + bd_addr[5]);
             EXAMPLE_DEBUG(EXAMPLE_TAG, "address type = %d", param->ble_security.auth_cmpl.addr_type);
             if (param->ble_security.auth_cmpl.success){
-                ESP_LOGI(EXAMPLE_TAG, "(1) ***** pair status = success ***** \n");
+                ESP_LOGI(EXAMPLE_TAG, "(1) ***** pair status = success ***** ");
             }
             else {
-                ESP_LOGI(EXAMPLE_TAG, "***** pair status = fail, reason = 0x%x *****\n", param->ble_security.auth_cmpl.fail_reason);
+                ESP_LOGI(EXAMPLE_TAG, "***** pair status = fail, reason = 0x%x *****", param->ble_security.auth_cmpl.fail_reason);
             }
             show_bonded_devices();
             break;
@@ -414,7 +422,8 @@ void example_prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t 
             }
             free(gatt_rsp);
         }else{
-            ESP_LOGE(EXAMPLE_TAG, "%s, malloc failed", __func__);
+            ESP_LOGE(EXAMPLE_TAG, "%s, malloc failed, and no resource to send response", __func__);
+            status = ESP_GATT_NO_RESOURCES;
         }
     }
     if (status != ESP_GATT_OK){
@@ -438,7 +447,7 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
                 }
             }
             if(long_write_success) {
-                ESP_LOGI(EXAMPLE_TAG, "(4) ***** long write success ***** \n");
+                ESP_LOGI(EXAMPLE_TAG, "(4) ***** long write success ***** ");
             }
         }
     }else{
@@ -493,10 +502,10 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         case ESP_GATTS_READ_EVT:
             //ESP_LOGE(EXAMPLE_TAG, "ESP_GATTS_READ_EVT, handle=0x%d, offset=%d", param->read.handle, param->read.offset);
             if(gatt_db_handle_table[IDX_CHAR_VAL_A] == param->read.handle) {
-                ESP_LOGE(EXAMPLE_TAG, "(2) ***** read char1 ***** \n");
+                ESP_LOGE(EXAMPLE_TAG, "(2) ***** read char1 ***** ");
             }
             if(gatt_db_handle_table[IDX_CHAR_VAL_B] == param->read.handle) {
-                ESP_LOGE(EXAMPLE_TAG, "(5) ***** read char2 ***** \n");
+                ESP_LOGE(EXAMPLE_TAG, "(5) ***** read char2 ***** ");
             }
        	    break;
         case ESP_GATTS_WRITE_EVT:
@@ -512,7 +521,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                         //the size of notify_data[] need less than MTU size
                         esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gatt_db_handle_table[IDX_CHAR_VAL_C],
                                                 sizeof(notify_data), notify_data, false);
-                        ESP_LOGI(EXAMPLE_TAG, "(6) ***** send notify AA BB ***** \n");
+                        ESP_LOGI(EXAMPLE_TAG, "(6) ***** send notify AA BB ***** ");
                     }else if (descr_value == 0x0002){
                         //the size of indicate_data[] need less than MTU size
                         esp_ble_gatts_send_indicate(gatts_if, param->write.conn_id, gatt_db_handle_table[IDX_CHAR_VAL_C],
@@ -529,7 +538,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 if(gatt_db_handle_table[IDX_CHAR_VAL_A] == param->write.handle && param->write.len == 2) {
                     uint8_t write_data[2] = {0x88, 0x99};
                     if(memcmp(write_data, param->write.value, param->write.len) == 0) {
-                        ESP_LOGI(EXAMPLE_TAG, "(3)***** short write success ***** \n");
+                        ESP_LOGI(EXAMPLE_TAG, "(3)***** short write success ***** ");
                     }
                 }
 
@@ -574,7 +583,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                         doesn't equal to HRS_IDX_NB(%d)", param->add_attr_tab.num_handle, HRS_IDX_NB);
             }
             else {
-                ESP_LOGI(EXAMPLE_TAG, "create attribute table successfully, the number handle = %d\n",param->add_attr_tab.num_handle);
+                ESP_LOGI(EXAMPLE_TAG, "create attribute table successfully, the number handle = %d",param->add_attr_tab.num_handle);
                 memcpy(gatt_db_handle_table, param->add_attr_tab.handles, sizeof(gatt_db_handle_table));
                 esp_ble_gatts_start_service(gatt_db_handle_table[IDX_SVC]);
             }
@@ -640,7 +649,8 @@ void app_main(void)
         return;
     }
 
-    ret = esp_bluedroid_init();
+    esp_bluedroid_config_t bluedroid_cfg = BT_BLUEDROID_INIT_CONFIG_DEFAULT();
+    ret = esp_bluedroid_init_with_cfg(&bluedroid_cfg);
     if (ret) {
         ESP_LOGE(EXAMPLE_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;

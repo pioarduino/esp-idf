@@ -62,12 +62,27 @@ def action_extensions(base_actions: Dict, project_path: str) -> Any:
         Menuconfig target is build_target extended with the style argument for setting the value for the environment
         variable.
         """
+        if sys.platform != 'win32':
+            try:
+                import curses  # noqa: F401
+            except ImportError:
+                raise FatalError('\n'.join(
+                    ['', "menuconfig failed to import the standard Python 'curses' library.",
+                     'Please re-run the install script which might be able to fix the issue.']))
         if sys.version_info[0] < 3:
             # The subprocess lib cannot accept environment variables as "unicode".
             # This encoding step is required only in Python 2.
             style = style.encode(sys.getfilesystemencoding() or 'utf-8')
         os.environ['MENUCONFIG_STYLE'] = style
         args.no_hints = True
+        build_target(target_name, ctx, args)
+
+    def save_defconfig(target_name: str, ctx: Context, args: PropertyDict, add_menu_labels: bool) -> None:
+        if add_menu_labels:
+            os.environ['ESP_IDF_KCONFIG_MIN_LABELS'] = '1'
+        else:
+            # unset variable
+            os.environ.pop('ESP_IDF_KCONFIG_MIN_LABELS', None)
         build_target(target_name, ctx, args)
 
     def fallback_target(target_name: str, ctx: Context, args: PropertyDict) -> None:
@@ -484,9 +499,13 @@ def action_extensions(base_actions: Dict, project_path: str) -> Any:
                 ]
             },
             'save-defconfig': {
-                'callback': build_target,
+                'callback': save_defconfig,
                 'help': 'Generate a sdkconfig.defaults with options different from the default ones',
-                'options': global_options
+                'options': global_options + [{
+                    'names': ['--add-menu-labels'],
+                    'is_flag': True,
+                    'help': 'Add menu labels to minimal config.',
+                }]
             }
         }
     }

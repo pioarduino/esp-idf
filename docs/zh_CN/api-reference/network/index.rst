@@ -3,20 +3,22 @@
 
 :link_to_translation:`en:[English]`
 
-Wi-Fi
-=====
+.. only:: SOC_WIFI_SUPPORTED
 
-.. toctree::
-   :maxdepth: 1
+   Wi-Fi
+   =====
 
-   esp_now
-   :SOC_WIFI_MESH_SUPPORT: esp-wifi-mesh
-   esp_smartconfig
-   esp_wifi
-   esp_dpp
-   esp_nan
+   .. toctree::
+      :maxdepth: 1
 
-本部分的 Wi-Fi API 示例代码存放在 ESP-IDF 示例项目的 :example:`wifi` 目录下。
+      esp_now
+      :SOC_WIFI_MESH_SUPPORT: esp-wifi-mesh
+      esp_smartconfig
+      esp_wifi
+      esp_dpp
+      :SOC_WIFI_NAN_SUPPORT: esp_nan
+
+   本部分的 Wi-Fi API 示例代码存放在 ESP-IDF 示例项目的 :example:`wifi` 目录下。
 
 .. only:: SOC_WIFI_MESH_SUPPORT
 
@@ -43,10 +45,11 @@ Thread
    esp_openthread
 
 Thread 是一种基于 IPv6 的物联网网状网络技术。
-本部分的Thread API 示例代码存放在 ESP-IDF 示例项目的 :example:`openthread` 目录下。
 
-IP 网络层协议
-================
+本部分的 Thread API 示例代码存放在 ESP-IDF 示例项目的 :example:`openthread` 目录下。
+
+ESP-NETIF
+=========
 
 .. toctree::
    :maxdepth: 1

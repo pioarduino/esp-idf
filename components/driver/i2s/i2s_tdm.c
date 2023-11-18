@@ -56,11 +56,12 @@ static esp_err_t i2s_tdm_calculate_clock(i2s_chan_handle_t handle, const i2s_tdm
         clk_info->bclk = rate * handle->total_slot * slot_bits;
         clk_info->mclk = clk_info->bclk * clk_info->bclk_div;
     }
-    clk_info->sclk = i2s_get_source_clk_freq(clk_cfg->clk_src, clk_info->mclk);
+    clk_info->sclk = clk_cfg->clk_src == I2S_CLK_SRC_EXTERNAL ?
+                     clk_cfg->ext_clk_freq_hz : i2s_get_source_clk_freq(clk_cfg->clk_src, clk_info->mclk);
     clk_info->mclk_div = clk_info->sclk / clk_info->mclk;
 
     /* Check if the configuration is correct */
-    ESP_RETURN_ON_FALSE(clk_info->mclk_div, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_info->mclk_div, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large for the current clock source");
 
     return ESP_OK;
 }
@@ -78,10 +79,12 @@ static esp_err_t i2s_tdm_set_clock(i2s_chan_handle_t handle, const i2s_tdm_clk_c
 
     portENTER_CRITICAL(&g_i2s.spinlock);
     /* Set clock configurations in HAL*/
-    if (handle->dir == I2S_DIR_TX) {
-        i2s_hal_set_tx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
-    } else {
-        i2s_hal_set_rx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+    I2S_CLOCK_SRC_ATOMIC() {
+        if (handle->dir == I2S_DIR_TX) {
+            i2s_hal_set_tx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+        } else {
+            i2s_hal_set_rx_clock(&handle->controller->hal, &clk_info, clk_cfg->clk_src);
+        }
     }
     portEXIT_CRITICAL(&g_i2s.spinlock);
 
@@ -146,6 +149,7 @@ static esp_err_t i2s_tdm_set_gpio(i2s_chan_handle_t handle, const i2s_tdm_gpio_c
                         ESP_ERR_INVALID_ARG, TAG, "bclk invalid");
     ESP_RETURN_ON_FALSE((gpio_cfg->ws   == -1 || GPIO_IS_VALID_GPIO(gpio_cfg->ws)),
                         ESP_ERR_INVALID_ARG, TAG, "ws invalid");
+    i2s_tdm_config_t *tdm_cfg = (i2s_tdm_config_t *)(handle->mode_info);
     /* Loopback if dout = din */
     if (gpio_cfg->dout != -1 &&
         gpio_cfg->dout == gpio_cfg->din) {
@@ -157,6 +161,9 @@ static esp_err_t i2s_tdm_set_gpio(i2s_chan_handle_t handle, const i2s_tdm_gpio_c
         /* Set data input GPIO */
         i2s_gpio_check_and_set(gpio_cfg->din, i2s_periph_signal[id].data_in_sig, true, false);
     }
+
+    /* Set mclk pin */
+    ESP_RETURN_ON_ERROR(i2s_check_set_mclk(id, gpio_cfg->mclk, tdm_cfg->clk_cfg.clk_src, gpio_cfg->invert_flags.mclk_inv), TAG, "mclk config failed");
 
     if (handle->role == I2S_ROLE_SLAVE) {
         /* For "tx + slave" mode, select TX signal index for ws and bck */
@@ -172,8 +179,6 @@ static esp_err_t i2s_tdm_set_gpio(i2s_chan_handle_t handle, const i2s_tdm_gpio_c
             i2s_gpio_check_and_set(gpio_cfg->bclk, i2s_periph_signal[id].s_rx_bck_sig, true, gpio_cfg->invert_flags.bclk_inv);
         }
     } else {
-        /* mclk only available in master mode */
-        ESP_RETURN_ON_ERROR(i2s_check_set_mclk(id, gpio_cfg->mclk, false, gpio_cfg->invert_flags.mclk_inv), TAG, "mclk config failed");
         /* For "rx + master" mode, select RX signal index for ws and bck */
         if (handle->dir == I2S_DIR_RX && !handle->controller->full_duplex) {
 #if SOC_I2S_HW_VERSION_2
@@ -188,7 +193,6 @@ static esp_err_t i2s_tdm_set_gpio(i2s_chan_handle_t handle, const i2s_tdm_gpio_c
         }
     }
     /* Update the mode info: gpio configuration */
-    i2s_tdm_config_t *tdm_cfg = (i2s_tdm_config_t *)(handle->mode_info);
     memcpy(&(tdm_cfg->gpio_cfg), gpio_cfg, sizeof(i2s_tdm_gpio_config_t));
 
     return ESP_OK;
@@ -212,7 +216,6 @@ esp_err_t i2s_channel_init_tdm_mode(i2s_chan_handle_t handle, const i2s_tdm_conf
     }
     handle->mode_info = calloc(1, sizeof(i2s_tdm_config_t));
     ESP_GOTO_ON_FALSE(handle->mode_info, ESP_ERR_NO_MEM, err, TAG, "no memory for storing the configurations");
-    ESP_GOTO_ON_ERROR(i2s_tdm_set_gpio(handle, &tdm_cfg->gpio_cfg), err, TAG, "initialize channel failed while setting gpio pins");
     /* i2s_set_tdm_slot should be called before i2s_set_tdm_clock while initializing, because clock is relay on the slot */
     ESP_GOTO_ON_ERROR(i2s_tdm_set_slot(handle, &tdm_cfg->slot_cfg), err, TAG, "initialize channel failed while setting slot");
 #if SOC_I2S_SUPPORTS_APLL
@@ -223,16 +226,16 @@ esp_err_t i2s_channel_init_tdm_mode(i2s_chan_handle_t handle, const i2s_tdm_conf
     }
 #endif
     ESP_GOTO_ON_ERROR(i2s_tdm_set_clock(handle, &tdm_cfg->clk_cfg), err, TAG, "initialize channel failed while setting clock");
+    /* i2s_tdm_set_gpio should be called after i2s_tdm_set_clock as mclk relies on the clock source */
+    ESP_GOTO_ON_ERROR(i2s_tdm_set_gpio(handle, &tdm_cfg->gpio_cfg), err, TAG, "initialize channel failed while setting gpio pins");
     ESP_GOTO_ON_ERROR(i2s_init_dma_intr(handle, I2S_INTR_ALLOC_FLAGS), err, TAG, "initialize dma interrupt failed");
 
 #if SOC_I2S_HW_VERSION_2
     /* Enable clock to start outputting mclk signal. Some codecs will reset once mclk stop */
     if (handle->dir == I2S_DIR_TX) {
         i2s_ll_tx_enable_tdm(handle->controller->hal.dev);
-        i2s_ll_tx_enable_clock(handle->controller->hal.dev);
     } else {
         i2s_ll_rx_enable_tdm(handle->controller->hal.dev);
-        i2s_ll_rx_enable_clock(handle->controller->hal.dev);
     }
 #endif
 #ifdef CONFIG_PM_ENABLE
@@ -272,12 +275,12 @@ esp_err_t i2s_channel_reconfig_tdm_clock(i2s_chan_handle_t handle, const i2s_tdm
 
 #if SOC_I2S_SUPPORTS_APLL
     /* Enable APLL and acquire its lock when the clock source is changed to APLL */
-    if (clk_cfg->clk_src == I2S_CLK_SRC_APLL && clk_cfg->clk_cfg.clk_src != I2S_CLK_SRC_APLL) {
+    if (clk_cfg->clk_src == I2S_CLK_SRC_APLL && tdm_cfg->clk_cfg.clk_src != I2S_CLK_SRC_APLL) {
         periph_rtc_apll_acquire();
         handle->apll_en = true;
     }
     /* Disable APLL and release its lock when clock source is changed to 160M_PLL */
-    if (clk_cfg->clk_src != I2S_CLK_SRC_APLL && clk_cfg->clk_cfg.clk_src == I2S_CLK_SRC_APLL) {
+    if (clk_cfg->clk_src != I2S_CLK_SRC_APLL && tdm_cfg->clk_cfg.clk_src == I2S_CLK_SRC_APLL) {
         periph_rtc_apll_release();
         handle->apll_en = false;
     }

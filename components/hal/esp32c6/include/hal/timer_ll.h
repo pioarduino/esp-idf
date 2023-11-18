@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,6 +49,51 @@ extern "C" {
                             [GPTIMER_ETM_EVENT_ALARM_MATCH] = TIMER1_EVT_CNT_CMP_TIMER0,   \
                         }},                                                                \
     }[group][timer][event]
+
+/**
+ * @brief Enable the bus clock for timer group module
+ *
+ * @param group_id Group ID
+ * @param enable true to enable, false to disable
+ */
+static inline void timer_ll_enable_bus_clock(int group_id, bool enable)
+{
+    if (group_id == 0) {
+        PCR.timergroup0_conf.tg0_clk_en = enable;
+    } else {
+        PCR.timergroup1_conf.tg1_clk_en = enable;
+    }
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_RC_ATOMIC_ENV variable in advance
+#define timer_ll_enable_bus_clock(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; timer_ll_enable_bus_clock(__VA_ARGS__)
+
+/**
+ * @brief Reset the timer group module
+ *
+ * @note  After reset the register, the "flash boot protection" will be enabled again.
+ *        FLash boot protection is not used anymore after system boot up.
+ *        This function will disable it by default in order to prevent the system from being reset unexpectedly.
+ *
+ * @param group_id Group ID
+ */
+static inline void timer_ll_reset_register(int group_id)
+{
+    if (group_id == 0) {
+        PCR.timergroup0_conf.tg0_rst_en = 1;
+        PCR.timergroup0_conf.tg0_rst_en = 0;
+        TIMERG0.wdtconfig0.wdt_flashboot_mod_en = 0;
+    } else {
+        PCR.timergroup1_conf.tg1_rst_en = 1;
+        PCR.timergroup1_conf.tg1_rst_en = 0;
+        TIMERG1.wdtconfig0.wdt_flashboot_mod_en = 0;
+    }
+}
+
+/// use a macro to wrap the function, force the caller to use it in a critical section
+/// the critical section needs to declare the __DECLARE_RCC_RC_ATOMIC_ENV variable in advance
+#define timer_ll_reset_register(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; timer_ll_reset_register(__VA_ARGS__)
 
 /**
  * @brief Set clock source for timer
@@ -235,6 +280,7 @@ static inline void timer_ll_set_reload_value(timg_dev_t *hw, uint32_t timer_num,
  * @param timer_num Timer number in the group
  * @return reload count value
  */
+__attribute__((always_inline))
 static inline uint64_t timer_ll_get_reload_value(timg_dev_t *hw, uint32_t timer_num)
 {
     return ((uint64_t)hw->hw_timer[timer_num].loadhi.tx_load_hi << 32) | (hw->hw_timer[timer_num].loadlo.tx_load_lo);
@@ -246,6 +292,7 @@ static inline uint64_t timer_ll_get_reload_value(timg_dev_t *hw, uint32_t timer_
  * @param hw Timer Group register base address
  * @param timer_num Timer number in the group
  */
+__attribute__((always_inline))
 static inline void timer_ll_trigger_soft_reload(timg_dev_t *hw, uint32_t timer_num)
 {
     hw->hw_timer[timer_num].load.tx_load = 1;

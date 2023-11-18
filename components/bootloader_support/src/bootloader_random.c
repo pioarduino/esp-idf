@@ -1,14 +1,15 @@
 /*
- * SPDX-FileCopyrightText: 2010-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2010-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "sdkconfig.h"
+#include "esp_log.h"
 #include "bootloader_random.h"
 #include "esp_cpu.h"
 #include "soc/wdev_reg.h"
 
-#if defined CONFIG_IDF_TARGET_ESP32C6
+#if SOC_LP_TIMER_SUPPORTED
 #include "hal/lp_timer_hal.h"
 #endif
 
@@ -34,20 +35,6 @@
   #define RNG_CPU_WAIT_CYCLE_NUM (80 * 23) /* 45 KHz reading frequency is the maximum we have tested so far on S3 */
 #endif
 
-#if defined CONFIG_IDF_TARGET_ESP32H2
-
-// TODO: temporary definition until IDF-6270 is implemented
-#include "soc/lp_timer_reg.h"
-
-static inline uint32_t lp_timer_hal_get_cycle_count(void)
-{
-    REG_SET_BIT(LP_TIMER_UPDATE_REG, LP_TIMER_MAIN_TIMER_UPDATE);
-
-    uint32_t lo = REG_GET_FIELD(LP_TIMER_MAIN_BUF0_LOW_REG, LP_TIMER_MAIN_TIMER_BUF0_LOW);
-    return lo;
-}
-#endif
-
  __attribute__((weak)) void bootloader_fill_random(void *buffer, size_t length)
 {
     uint8_t *buffer_bytes = (uint8_t *)buffer;
@@ -57,7 +44,7 @@ static inline uint32_t lp_timer_hal_get_cycle_count(void)
     assert(buffer != NULL);
 
     for (size_t i = 0; i < length; i++) {
-#if (defined CONFIG_IDF_TARGET_ESP32C6 || defined CONFIG_IDF_TARGET_ESP32H2)
+#if SOC_LP_TIMER_SUPPORTED
         random = REG_READ(WDEV_RND_REG);
         start = esp_cpu_get_cycle_count();
         do {
@@ -91,12 +78,9 @@ static inline uint32_t lp_timer_hal_get_cycle_count(void)
 #endif
     }
 }
+#endif // BOOTLOADER_BUILD
 
-#ifndef CONFIG_IDF_ENV_FPGA
-
-#else // CONFIG_IDF_ENV_FPGA
-#include "esp_log.h"
-
+#if CONFIG_IDF_ENV_FPGA
 static void s_non_functional(const char *func)
 {
     ESP_EARLY_LOGW("rand", "%s non-functional for FPGA builds", func);
@@ -111,7 +95,4 @@ void bootloader_random_disable()
 {
     s_non_functional(__func__);
 }
-
 #endif // CONFIG_IDF_ENV_FPGA
-
-#endif // BOOTLOADER_BUILD

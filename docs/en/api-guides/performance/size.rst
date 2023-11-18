@@ -337,7 +337,7 @@ The map file itself is broken into parts and each part has a heading. The parts 
     - If you are wondering why some object file in particular was included in the binary, this part may give a clue. This part can be used in conjunction with the ``Cross Reference Table`` at the end of the file.
 
     .. note::
-        
+
         Not every object file shown in this list ends up included in the final binary, some end up in the ``Discarded input sections`` list instead.
 
 - ``Allocating common symbols``
@@ -411,6 +411,7 @@ The following binary size optimizations apply to a particular component or a fun
 
     - Disabling :ref:`CONFIG_ESP_WIFI_ENABLE_WPA3_SAE` will save some Wi-Fi binary size if WPA3 support is not needed. Note that WPA3 is mandatory for new Wi-Fi device certifications.
     - Disabling :ref:`CONFIG_ESP_WIFI_SOFTAP_SUPPORT` will save some Wi-Fi binary size if soft-AP support is not needed.
+    - Disabling :ref:`CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT` will save some Wi-Fi binary size if enterprise support is not needed.
 
 .. only:: esp32
 
@@ -449,7 +450,7 @@ lwIP IPv4
 
   .. note::
 
-      Before disabling IPv4 support, please note that IPv6 only network environments are not ubiquitous and must be supported in the local network, e.g. by your internet service provider or using constrained local network settings.
+      Before disabling IPv4 support, please note that IPv6 only network environments are not ubiquitous and must be supported in the local network, e.g., by your internet service provider or using constrained local network settings.
 
 .. _newlib-nano-formatting:
 
@@ -460,7 +461,7 @@ By default, ESP-IDF uses Newlib "full" formatting for I/O functions (``printf()`
 
 .. only:: CONFIG_ESP_ROM_HAS_NEWLIB_NANO_FORMAT
 
-    Enabling the config option :ref:`CONFIG_NEWLIB_NANO_FORMAT` will switch Newlib to the “Nano” formatting mode. This is smaller in code size, and a large part of the implementation is compiled into the {IDF_TARGET_NAME} ROM, so it does not need to be included in the binary at all.
+    Enabling the config option :ref:`CONFIG_NEWLIB_NANO_FORMAT` will switch Newlib to the "Nano" formatting mode. This is smaller in code size, and a large part of the implementation is compiled into the {IDF_TARGET_NAME} ROM, so it does not need to be included in the binary at all.
 
     The exact difference in binary size depends on which features the firmware uses, but 25 KB ~ 50 KB is typical.
 
@@ -502,8 +503,10 @@ These include:
 - :ref:`CONFIG_MBEDTLS_CCM_C`
 - :ref:`CONFIG_MBEDTLS_GCM_C`
 - :ref:`CONFIG_MBEDTLS_ECP_C` (Alternatively: Leave this option enabled but disable some of the elliptic curves listed in the sub-menu.)
+- :ref:`CONFIG_MBEDTLS_ECP_NIST_OPTIM`
+- :ref:`CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM`
 - Change :ref:`CONFIG_MBEDTLS_TLS_MODE` if both server & client functionalities are not needed
-- Consider disabling some cipher suites listed in the ``TLS Key Exchange Methods`` sub-menu (i.e. :ref:`CONFIG_MBEDTLS_KEY_EXCHANGE_RSA`)
+- Consider disabling some cipher suites listed in the ``TLS Key Exchange Methods`` sub-menu (i.e., :ref:`CONFIG_MBEDTLS_KEY_EXCHANGE_RSA`)
 
 The help text for each option has some more information for reference.
 
@@ -515,6 +518,11 @@ The help text for each option has some more information for reference.
    - Ensure that any TLS client(s) that connect to the device can still connect with supported/recommended cipher suites. Note that future versions of client operating systems may remove support for some features, so it is recommended to enable multiple supported cipher suites, or algorithms for redundancy.
 
    If depending on third party clients or servers, always pay attention to announcements about future changes to supported TLS features. If not, the {IDF_TARGET_NAME} device may become inaccessible if support changes.
+
+.. only:: CONFIG_ESP_ROM_HAS_MBEDTLS_CRYPTO_LIB
+
+   Enabling the config option :ref:`CONFIG_MBEDTLS_USE_CRYPTO_ROM_IMPL` will use the crypto algorithms from mbedTLS library inside the chip ROM.
+   Disabling the config option :ref:`CONFIG_MBEDTLS_USE_CRYPTO_ROM_IMPL` will use the crypto algorithms from the ESP-IDF mbedtls component library. This will increase the binary size (flash footprint).
 
 .. note::
 
@@ -558,6 +566,3 @@ IRAM Binary Size
 ----------------
 
 If the IRAM section of a binary is too large, this issue can be resolved by reducing IRAM memory usage. See :ref:`optimize-iram-usage`.
-
-
-

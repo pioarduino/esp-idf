@@ -13,6 +13,7 @@
 #include "esp_timer.h"
 #include "soc/soc_caps.h"
 #include "test_util_rmt_encoders.h"
+#include "test_board.h"
 
 #if CONFIG_RMT_ISR_IRAM_SAFE
 #define TEST_RMT_CALLBACK_ATTR IRAM_ATTR
@@ -27,7 +28,8 @@ TEST_CASE("rmt bytes encoder", "[rmt]")
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 1000000, // 1MHz, 1 tick = 1us
         .trans_queue_depth = 4,
-        .gpio_num = 0,
+        .gpio_num = TEST_RMT_GPIO_NUM_A,
+        .intr_priority = 3
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel = NULL;
@@ -75,6 +77,10 @@ TEST_CASE("rmt bytes encoder", "[rmt]")
     printf("remove tx channel and encoder\r\n");
     TEST_ESP_OK(rmt_del_channel(tx_channel));
     TEST_ESP_OK(rmt_del_encoder(bytes_encoder));
+
+    // Test if intr_priority check works
+    tx_channel_cfg.intr_priority = 4;  // 4 is an invalid interrupt priority
+    TEST_ESP_ERR(rmt_new_tx_channel(&tx_channel_cfg, &tx_channel), ESP_ERR_INVALID_ARG);
 }
 
 static void test_rmt_channel_single_trans(size_t mem_block_symbols, bool with_dma)
@@ -84,8 +90,9 @@ static void test_rmt_channel_single_trans(size_t mem_block_symbols, bool with_dm
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10000000, // 10MHz, 1 tick = 0.1us (led strip needs a high resolution)
         .trans_queue_depth = 4,
-        .gpio_num = 0,
+        .gpio_num = TEST_RMT_GPIO_NUM_A,
         .flags.with_dma = with_dma,
+        .intr_priority = 2
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel_single_led = NULL;
@@ -133,13 +140,18 @@ TEST_CASE("rmt single transaction", "[rmt]")
 
 static void test_rmt_ping_pong_trans(size_t mem_block_symbols, bool with_dma)
 {
+    const int test_led_num = 10000;
+    uint8_t *leds_grb = heap_caps_malloc(3 * test_led_num, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    TEST_ASSERT_NOT_NULL(leds_grb);
+
     rmt_tx_channel_config_t tx_channel_cfg = {
         .mem_block_symbols = mem_block_symbols,
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10000000, // 10MHz, 1 tick = 0.1us (led strip needs a high resolution)
         .trans_queue_depth = 4,
-        .gpio_num = 0,
+        .gpio_num = TEST_RMT_GPIO_NUM_A,
         .flags.with_dma = with_dma,
+        .intr_priority = 1
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel_multi_leds = NULL;
@@ -151,22 +163,21 @@ static void test_rmt_ping_pong_trans(size_t mem_block_symbols, bool with_dma)
     TEST_ESP_OK(rmt_enable(tx_channel_multi_leds));
 
     // Mutiple LEDs (ping-pong in the background)
-    printf("ping pong transmission: light up 100 RGB LEDs\r\n");
+    printf("ping pong transmission: light up %d RGB LEDs\r\n", test_led_num);
     rmt_transmit_config_t transmit_config = {
         .loop_count = 0, // no loop
     };
-#define TEST_LED_NUM 100
-    uint8_t leds_grb[TEST_LED_NUM * 3] = {};
+
     // color: Material Design Green-A200 (#69F0AE)
-    for (int i = 0; i < TEST_LED_NUM * 3; i += 3) {
+    for (int i = 0; i < test_led_num * 3; i += 3) {
         leds_grb[i + 0] = 0xF0;
         leds_grb[i + 1] = 0x69;
         leds_grb[i + 2] = 0xAE;
     }
     printf("start transmission and stop immediately, only a few LEDs are light up\r\n");
-    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, test_led_num * 3, &transmit_config));
     // this second transmission will stay in the queue and shouldn't be dispatched until we restart the tx channel later
-    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, test_led_num * 3, &transmit_config));
     esp_rom_delay_us(100);
     TEST_ESP_OK(rmt_disable(tx_channel_multi_leds));
     vTaskDelay(pdTICKS_TO_MS(500));
@@ -176,38 +187,37 @@ static void test_rmt_ping_pong_trans(size_t mem_block_symbols, bool with_dma)
     // adding extra delay here for visualizing
     vTaskDelay(pdTICKS_TO_MS(500));
     // color: Material Design Pink-A200 (#FF4081)
-    for (int i = 0; i < TEST_LED_NUM * 3; i += 3) {
+    for (int i = 0; i < test_led_num * 3; i += 3) {
         leds_grb[i + 0] = 0x40;
         leds_grb[i + 1] = 0xFF;
         leds_grb[i + 2] = 0x81;
     }
-    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, test_led_num * 3, &transmit_config));
     vTaskDelay(pdTICKS_TO_MS(500));
     // color: Material Design Orange-900 (#E65100)
-    for (int i = 0; i < TEST_LED_NUM * 3; i += 3) {
+    for (int i = 0; i < test_led_num * 3; i += 3) {
         leds_grb[i + 0] = 0x51;
         leds_grb[i + 1] = 0xE6;
         leds_grb[i + 2] = 0x00;
     }
-    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, TEST_LED_NUM * 3, &transmit_config));
-    vTaskDelay(pdTICKS_TO_MS(500));
+    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, test_led_num * 3, &transmit_config));
+    vTaskDelay(pdTICKS_TO_MS(2000));
 
     printf("disable tx channel\r\n");
     TEST_ESP_OK(rmt_disable(tx_channel_multi_leds));
     printf("remove tx channel and led strip encoder\r\n");
     TEST_ESP_OK(rmt_del_channel(tx_channel_multi_leds));
     TEST_ESP_OK(rmt_del_encoder(led_strip_encoder));
-#undef TEST_LED_NUM
+    free(leds_grb);
 }
 
 TEST_CASE("rmt ping-pong transaction", "[rmt]")
 {
-    test_rmt_ping_pong_trans(SOC_RMT_MEM_WORDS_PER_CHANNEL, false);
+    test_rmt_ping_pong_trans(SOC_RMT_MEM_WORDS_PER_CHANNEL * 2, false);
 #if SOC_RMT_SUPPORT_DMA
     test_rmt_ping_pong_trans(1024, true);
 #endif
 }
-
 
 TEST_RMT_CALLBACK_ATTR
 static bool test_rmt_tx_done_cb_check_event_data(rmt_channel_handle_t channel, const rmt_tx_done_event_data_t *edata, void *user_data)
@@ -224,8 +234,9 @@ static void test_rmt_trans_done_event(size_t mem_block_symbols, bool with_dma)
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10000000, // 10MHz, 1 tick = 0.1us (led strip needs a high resolution)
         .trans_queue_depth = 1,
-        .gpio_num = 0,
+        .gpio_num = TEST_RMT_GPIO_NUM_A,
         .flags.with_dma = with_dma,
+        .intr_priority = 3
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel_multi_leds = NULL;
@@ -249,15 +260,15 @@ static void test_rmt_trans_done_event(size_t mem_block_symbols, bool with_dma)
     };
 
     printf("transmit dynamic number of LEDs\r\n");
-#define TEST_LED_NUM 40
-    uint8_t leds_grb[TEST_LED_NUM * 3] = {};
+    const int test_led_num = 40;
+    uint8_t leds_grb[test_led_num * 3];
     // color: Material Design Purple-800 (6A1B9A)
-    for (int i = 0; i < TEST_LED_NUM * 3; i += 3) {
+    for (int i = 0; i < test_led_num * 3; i += 3) {
         leds_grb[i + 0] = 0x1B;
         leds_grb[i + 1] = 0x6A;
         leds_grb[i + 2] = 0x9A;
     }
-    for (int i = 1; i <= TEST_LED_NUM; i++) {
+    for (int i = 1; i <= test_led_num; i++) {
         expected_encoded_size = 2 + i * 24; // 2 = 1 reset symbol + 1 eof symbol, 24 = 8*3(RGB)
         TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, i * 3, &transmit_config));
         // wait for the transmission finished and recycled
@@ -269,7 +280,6 @@ static void test_rmt_trans_done_event(size_t mem_block_symbols, bool with_dma)
     printf("remove tx channel and led strip encoder\r\n");
     TEST_ESP_OK(rmt_del_channel(tx_channel_multi_leds));
     TEST_ESP_OK(rmt_del_encoder(led_strip_encoder));
-#undef TEST_LED_NUM
 }
 
 TEST_CASE("rmt trans_done event callback", "[rmt]")
@@ -297,8 +307,9 @@ static void test_rmt_loop_trans(size_t mem_block_symbols, bool with_dma)
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10000000, // 10MHz, 1 tick = 0.1us (led strip needs a high resolution)
         .trans_queue_depth = 4,
-        .gpio_num = 0,
+        .gpio_num = TEST_RMT_GPIO_NUM_A,
         .flags.with_dma = with_dma,
+        .intr_priority = 2
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel_multi_leds = NULL;
@@ -321,13 +332,13 @@ static void test_rmt_loop_trans(size_t mem_block_symbols, bool with_dma)
     rmt_transmit_config_t transmit_config = {
         .loop_count = 5,
     };
-#define TEST_LED_NUM 3
-    uint8_t leds_grb[TEST_LED_NUM * 3] = {};
-    for (int i = 0; i < TEST_LED_NUM * 3; i++) {
+    const int test_led_num = 3;
+    uint8_t leds_grb[test_led_num * 3];
+    for (int i = 0; i < test_led_num * 3; i++) {
         leds_grb[i] = 0x10 + i;
     }
-    expected_encoded_size = 2 + 24 * TEST_LED_NUM;
-    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    expected_encoded_size = 2 + 24 * test_led_num;
+    TEST_ESP_OK(rmt_transmit(tx_channel_multi_leds, led_strip_encoder, leds_grb, test_led_num * 3, &transmit_config));
     vTaskDelay(pdTICKS_TO_MS(100));
 
     printf("wait for loop transactions done\r\n");
@@ -337,7 +348,6 @@ static void test_rmt_loop_trans(size_t mem_block_symbols, bool with_dma)
     printf("remove tx channel and led strip encoder\r\n");
     TEST_ESP_OK(rmt_del_channel(tx_channel_multi_leds));
     TEST_ESP_OK(rmt_del_encoder(led_strip_encoder));
-#undef TEST_LED_NUM
 }
 
 TEST_CASE("rmt finite loop transaction", "[rmt]")
@@ -356,8 +366,9 @@ TEST_CASE("rmt infinite loop transaction", "[rmt]")
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 1000000, // 1MHz, 1 tick = 1us
         .mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL,
-        .gpio_num = 2,
-        .trans_queue_depth = 3,
+        .gpio_num = TEST_RMT_GPIO_NUM_B,
+        .trans_queue_depth = 5,
+        .intr_priority = 1
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel = NULL;
@@ -373,6 +384,7 @@ TEST_CASE("rmt infinite loop transaction", "[rmt]")
 
     rmt_transmit_config_t transmit_config = {
         .loop_count = -1, // infinite loop transmission
+        .flags.queue_nonblocking = true, // return immediately if the queue is full
     };
 
     printf("infinite loop transmission: keep spinning stepper motor\r\n");
@@ -434,9 +446,10 @@ static void test_rmt_tx_nec_carrier(size_t mem_block_symbols, bool with_dma)
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 1000000, // 1MHz, 1 tick = 1us
         .mem_block_symbols = mem_block_symbols,
-        .gpio_num = 2,
+        .gpio_num = TEST_RMT_GPIO_NUM_B,
         .trans_queue_depth = 4,
         .flags.with_dma = with_dma,
+        .intr_priority = 3
     };
     printf("install tx channel\r\n");
     rmt_channel_handle_t tx_channel = NULL;
@@ -492,7 +505,6 @@ TEST_CASE("rmt tx nec with carrier", "[rmt]")
 #endif
 }
 
-
 TEST_RMT_CALLBACK_ATTR
 static bool test_rmt_tx_done_cb_record_time(rmt_channel_handle_t channel, const rmt_tx_done_event_data_t *edata, void *user_data)
 {
@@ -501,23 +513,24 @@ static bool test_rmt_tx_done_cb_record_time(rmt_channel_handle_t channel, const 
     return false;
 }
 
-static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, size_t channel1_mem_block_symbols, bool channel0_with_dma, bool channel1_with_dma)
-{
-#define TEST_RMT_CHANS 2
-#define TEST_LED_NUM   1
 #define TEST_STOP_TIME_NO_SYNCHRO_DELTA     300
 #define TEST_STOP_TIME_SYNCHRO_DELTA        60
+static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, size_t channel1_mem_block_symbols, bool channel0_with_dma, bool channel1_with_dma)
+{
+    const int test_led_num = 1;
     rmt_tx_channel_config_t tx_channel_cfg = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .resolution_hz = 10000000, // 10MHz, 1 tick = 0.1us (led strip needs a high resolution)
         .trans_queue_depth = 4,
+        .intr_priority = 3
     };
     printf("install tx channels\r\n");
-    rmt_channel_handle_t tx_channels[TEST_RMT_CHANS] = {NULL};
-    int gpio_nums[TEST_RMT_CHANS] = {0, 2};
-    size_t mem_blk_syms[TEST_RMT_CHANS] = {channel0_mem_block_symbols, channel1_mem_block_symbols};
-    bool dma_flags[TEST_RMT_CHANS] = {channel0_with_dma, channel1_with_dma};
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    rmt_channel_handle_t tx_channels[] = {NULL, NULL};
+    const int test_rmt_chans = sizeof(tx_channels) / sizeof(tx_channels[0]);
+    int gpio_nums[] = {TEST_RMT_GPIO_NUM_A, TEST_RMT_GPIO_NUM_B};
+    size_t mem_blk_syms[] = {channel0_mem_block_symbols, channel1_mem_block_symbols};
+    bool dma_flags[] = {channel0_with_dma, channel1_with_dma};
+    for (int i = 0; i < test_rmt_chans; i++) {
         tx_channel_cfg.gpio_num = gpio_nums[i];
         tx_channel_cfg.mem_block_symbols = mem_blk_syms[i];
         tx_channel_cfg.flags.with_dma = dma_flags[i];
@@ -525,8 +538,8 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
     }
 
     printf("install led strip encoders\r\n");
-    rmt_encoder_handle_t led_strip_encoders[TEST_RMT_CHANS] = {NULL};
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    rmt_encoder_handle_t led_strip_encoders[test_rmt_chans];
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(test_rmt_new_led_strip_encoder(&led_strip_encoders[i]));
     }
 
@@ -534,19 +547,19 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
     rmt_tx_event_callbacks_t cbs = {
         .on_trans_done = test_rmt_tx_done_cb_record_time
     };
-    int64_t record_stop_time[TEST_RMT_CHANS] = {};
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    int64_t record_stop_time[test_rmt_chans];
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_tx_register_event_callbacks(tx_channels[i], &cbs, &record_stop_time[i]));
     }
 
     printf("enable tx channels\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_enable(tx_channels[i]));
     }
 
-    uint8_t leds_grb[TEST_LED_NUM * 3] = {};
+    uint8_t leds_grb[test_led_num * 3];
     // color: Material Design Green-A200 (#69F0AE)
-    for (int i = 0; i < TEST_LED_NUM * 3; i += 3) {
+    for (int i = 0; i < test_led_num * 3; i += 3) {
         leds_grb[i + 0] = 0xF0;
         leds_grb[i + 1] = 0x69;
         leds_grb[i + 2] = 0xAE;
@@ -557,14 +570,14 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
         .loop_count = 0, // no loop
     };
     // the channels should work independently, without synchronization
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
-        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    for (int i = 0; i < test_rmt_chans; i++) {
+        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, test_led_num * 3, &transmit_config));
     }
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_tx_wait_all_done(tx_channels[i], -1));
     }
     printf("stop time (no sync):\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         printf("\t%lld\r\n", record_stop_time[i]);
     }
     // without synchronization, there will be obvious time shift
@@ -574,7 +587,7 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
     rmt_sync_manager_handle_t synchro = NULL;
     rmt_sync_manager_config_t synchro_config = {
         .tx_channel_array = tx_channels,
-        .array_size = TEST_RMT_CHANS,
+        .array_size = test_rmt_chans,
     };
 #if SOC_RMT_SUPPORT_TX_SYNCHRO
     TEST_ESP_OK(rmt_new_sync_manager(&synchro_config, &synchro));
@@ -584,16 +597,16 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
 
 #if SOC_RMT_SUPPORT_TX_SYNCHRO
     printf("transmit with synchronization\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
-        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    for (int i = 0; i < test_rmt_chans; i++) {
+        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, test_led_num * 3, &transmit_config));
         // manually introduce the delay, to show the managed channels are indeed in sync
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_tx_wait_all_done(tx_channels[i], -1));
     }
     printf("stop time (with sync):\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         printf("\t%lld\r\n", record_stop_time[i]);
     }
     // because of synchronization, the managed channels will stop at the same time
@@ -603,16 +616,16 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
     printf("reset sync manager\r\n");
     TEST_ESP_OK(rmt_sync_reset(synchro));
     printf("transmit with synchronization again\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
-        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, TEST_LED_NUM * 3, &transmit_config));
+    for (int i = 0; i < test_rmt_chans; i++) {
+        TEST_ESP_OK(rmt_transmit(tx_channels[i], led_strip_encoders[i], leds_grb, test_led_num * 3, &transmit_config));
         // manually introduce the delay, ensure the channels get synchronization
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_tx_wait_all_done(tx_channels[i], -1));
     }
     printf("stop time (with sync):\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         printf("\t%lld\r\n", record_stop_time[i]);
     }
     TEST_ASSERT_INT64_WITHIN(TEST_STOP_TIME_SYNCHRO_DELTA, record_stop_time[0], record_stop_time[1]);
@@ -622,18 +635,16 @@ static void test_rmt_multi_channels_trans(size_t channel0_mem_block_symbols, siz
 #endif // SOC_RMT_SUPPORT_TX_SYNCHRO
 
     printf("disable tx channels\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_disable(tx_channels[i]));
     }
     printf("delete channels and encoders\r\n");
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_del_channel(tx_channels[i]));
     }
-    for (int i = 0; i < TEST_RMT_CHANS; i++) {
+    for (int i = 0; i < test_rmt_chans; i++) {
         TEST_ESP_OK(rmt_del_encoder(led_strip_encoders[i]));
     }
-#undef TEST_LED_NUM
-#undef TEST_RMT_CHANS
 }
 
 TEST_CASE("rmt multiple channels transaction", "[rmt]")

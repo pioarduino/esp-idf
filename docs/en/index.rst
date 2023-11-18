@@ -1,5 +1,6 @@
 ESP-IDF Programming Guide
 =========================
+
 :link_to_translation:`zh_CN:[中文]`
 
 .. only:: fast_build
@@ -8,7 +9,7 @@ ESP-IDF Programming Guide
 
         The function API documentation is excluded from the preview. Add docs_full label to the MR to generate the complete documentation.
 
-This is the documentation for Espressif IoT Development Framework (`esp-idf <https://github.com/espressif/esp-idf>`_). ESP-IDF is the official development framework for the `ESP32, ESP32-S and ESP32-C Series SoCs <https://www.espressif.com/en/products/socs>`_.
+This is the documentation for Espressif IoT Development Framework (`esp-idf <https://github.com/espressif/esp-idf>`_). ESP-IDF is the official development framework for the `ESP32, ESP32-S, ESP32-C, ESP32-H and ESP32-P Series SoCs <https://www.espressif.com/en/products/socs>`_.
 
 .. only:: html
 
@@ -43,6 +44,7 @@ This is the documentation for Espressif IoT Development Framework (`esp-idf <htt
    api-reference/index
    hw-reference/index
    api-guides/index
+   security/index
    migration-guides/index
    libraries-and-frameworks/index
    contribute/index

@@ -122,7 +122,7 @@ HEAP_IRAM_ATTR static void *heap_caps_malloc_base( size_t size, uint32_t caps)
 {
     void *ret = NULL;
 
-    if (size == 0 || size > HEAP_SIZE_MAX ) {
+    if (size == 0 || MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size) > HEAP_SIZE_MAX ) {
         // Avoids int overflow when adding small numbers to size, or
         // calculating 'end' from start+size, by limiting 'size' to the possible range
         return NULL;
@@ -164,17 +164,20 @@ HEAP_IRAM_ATTR static void *heap_caps_malloc_base( size_t size, uint32_t caps)
                         //This is special, insofar that what we're going to get back is a DRAM address. If so,
                         //we need to 'invert' it (lowest address in DRAM == highest address in IRAM and vice-versa) and
                         //add a pointer to the DRAM equivalent before the address we're going to return.
-                        ret = multi_heap_malloc(heap->heap, size + 4);  // int overflow checked above
-
+                        ret = multi_heap_malloc(heap->heap, MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size) + 4);  // int overflow checked above
                         if (ret != NULL) {
+                            MULTI_HEAP_SET_BLOCK_OWNER(ret);
+                            ret = MULTI_HEAP_ADD_BLOCK_OWNER_OFFSET(ret);
                             uint32_t *iptr = dram_alloc_to_iram_addr(ret, size + 4);  // int overflow checked above
                             CALL_HOOK(esp_heap_trace_alloc_hook, iptr, size, caps);
                             return iptr;
                         }
                     } else {
                         //Just try to alloc, nothing special.
-                        ret = multi_heap_malloc(heap->heap, size);
+                        ret = multi_heap_malloc(heap->heap, MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size));
                         if (ret != NULL) {
+                            MULTI_HEAP_SET_BLOCK_OWNER(ret);
+                            ret = MULTI_HEAP_ADD_BLOCK_OWNER_OFFSET(ret);
                             CALL_HOOK(esp_heap_trace_alloc_hook, ret, size, caps);
                             return ret;
                         }
@@ -382,10 +385,10 @@ HEAP_IRAM_ATTR void heap_caps_free( void *ptr)
         uint32_t *dramAddrPtr = (uint32_t *)ptr;
         ptr = (void *)dramAddrPtr[-1];
     }
-
-    heap_t *heap = find_containing_heap(ptr);
+    void *block_owner_ptr = MULTI_HEAP_REMOVE_BLOCK_OWNER_OFFSET(ptr);
+    heap_t *heap = find_containing_heap(block_owner_ptr);
     assert(heap != NULL && "free() target pointer is outside heap areas");
-    multi_heap_free(heap->heap, ptr);
+    multi_heap_free(heap->heap, block_owner_ptr);
 
     CALL_HOOK(esp_heap_trace_free_hook, ptr);
 }
@@ -409,7 +412,7 @@ HEAP_IRAM_ATTR static void *heap_caps_realloc_base( void *ptr, size_t size, uint
         return NULL;
     }
 
-    if (size > HEAP_SIZE_MAX) {
+    if (MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size) > HEAP_SIZE_MAX) {
         return NULL;
     }
 
@@ -439,8 +442,10 @@ HEAP_IRAM_ATTR static void *heap_caps_realloc_base( void *ptr, size_t size, uint
     if (compatible_caps && !ptr_in_diram_case) {
         // try to reallocate this memory within the same heap
         // (which will resize the block if it can)
-        void *r = multi_heap_realloc(heap->heap, ptr, size);
+        void *r = multi_heap_realloc(heap->heap, ptr, MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size));
         if (r != NULL) {
+            MULTI_HEAP_SET_BLOCK_OWNER(r);
+            r = MULTI_HEAP_ADD_BLOCK_OWNER_OFFSET(r);
             CALL_HOOK(esp_heap_trace_alloc_hook, r, size, caps);
             return r;
         }
@@ -652,34 +657,11 @@ size_t heap_caps_get_allocated_size( void *ptr )
     heap_t *heap = find_containing_heap(ptr);
     assert(heap);
     size_t size = multi_heap_get_allocated_size(heap->heap, ptr);
-    return size;
+    return MULTI_HEAP_REMOVE_BLOCK_OWNER_SIZE(size);
 }
 
-HEAP_IRAM_ATTR void *heap_caps_aligned_alloc(size_t alignment, size_t size, uint32_t caps)
+static HEAP_IRAM_ATTR void *heap_caps_aligned_alloc_base(size_t alignment, size_t size, uint32_t caps)
 {
-    void *ret = NULL;
-
-    if(!alignment) {
-        return NULL;
-    }
-
-    //Alignment must be a power of two:
-    if((alignment & (alignment - 1)) != 0) {
-        return NULL;
-    }
-
-    if (size == 0) {
-        return NULL;
-    }
-
-    if (size > HEAP_SIZE_MAX) {
-        // Avoids int overflow when adding small numbers to size, or
-        // calculating 'end' from start+size, by limiting 'size' to the possible range
-        heap_caps_alloc_failed(size, caps, __func__);
-
-        return NULL;
-    }
-
     for (int prio = 0; prio < SOC_MEMORY_TYPE_NO_PRIOS; prio++) {
         //Iterate over heaps and check capabilities at this priority
         heap_t *heap;
@@ -692,8 +674,10 @@ HEAP_IRAM_ATTR void *heap_caps_aligned_alloc(size_t alignment, size_t size, uint
                 //doesn't cover, see if they're available in other prios.
                 if ((get_all_caps(heap) & caps) == caps) {
                     //Just try to alloc, nothing special.
-                    ret = multi_heap_aligned_alloc(heap->heap, size, alignment);
+                    void *ret = multi_heap_aligned_alloc(heap->heap, MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size), alignment);
                     if (ret != NULL) {
+                        MULTI_HEAP_SET_BLOCK_OWNER(ret);
+                        ret = MULTI_HEAP_ADD_BLOCK_OWNER_OFFSET(ret);
                         CALL_HOOK(esp_heap_trace_alloc_hook, ret, size, caps);
                         return ret;
                     }
@@ -702,10 +686,81 @@ HEAP_IRAM_ATTR void *heap_caps_aligned_alloc(size_t alignment, size_t size, uint
         }
     }
 
-    heap_caps_alloc_failed(size, caps, __func__);
-
     //Nothing usable found.
     return NULL;
+}
+
+static HEAP_IRAM_ATTR esp_err_t heap_caps_aligned_check_args(size_t alignment, size_t size, uint32_t caps, const char *funcname)
+{
+    if (!alignment) {
+        return ESP_FAIL;
+    }
+
+    // Alignment must be a power of two:
+    if ((alignment & (alignment - 1)) != 0) {
+        return ESP_FAIL;
+    }
+
+    if (size == 0) {
+        return ESP_FAIL;
+    }
+
+    if (MULTI_HEAP_ADD_BLOCK_OWNER_SIZE(size) > HEAP_SIZE_MAX) {
+        // Avoids int overflow when adding small numbers to size, or
+        // calculating 'end' from start+size, by limiting 'size' to the possible range
+        heap_caps_alloc_failed(size, caps, funcname);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+HEAP_IRAM_ATTR void *heap_caps_aligned_alloc_default(size_t alignment, size_t size)
+{
+    void *ret = NULL;
+
+    if (malloc_alwaysinternal_limit == MALLOC_DISABLE_EXTERNAL_ALLOCS) {
+        return heap_caps_aligned_alloc(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
+    }
+
+    if (heap_caps_aligned_check_args(alignment, size, MALLOC_CAP_DEFAULT, __func__) != ESP_OK) {
+        return NULL;
+    }
+
+    if (size <= (size_t)malloc_alwaysinternal_limit) {
+        ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
+    } else {
+        ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM);
+    }
+
+    if (ret != NULL) {
+        return ret;
+    }
+
+    ret = heap_caps_aligned_alloc_base(alignment, size, MALLOC_CAP_DEFAULT);
+
+    if (ret == NULL) {
+        heap_caps_alloc_failed(size, MALLOC_CAP_DEFAULT, __func__);
+    }
+
+    return ret;
+}
+
+HEAP_IRAM_ATTR void *heap_caps_aligned_alloc(size_t alignment, size_t size, uint32_t caps)
+{
+    void *ret = NULL;
+
+    if (heap_caps_aligned_check_args(alignment, size, caps, __func__) != ESP_OK) {
+        return NULL;
+    }
+
+    ret = heap_caps_aligned_alloc_base(alignment, size, caps);
+
+    if (ret == NULL) {
+        heap_caps_alloc_failed(size, caps, __func__);
+    }
+
+    return ret;
 }
 
 HEAP_IRAM_ATTR void heap_caps_aligned_free(void *ptr)

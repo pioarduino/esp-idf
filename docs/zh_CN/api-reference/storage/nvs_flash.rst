@@ -35,12 +35,9 @@ NVS 的操作对象为键值对，其中键是 ASCII 字符串，当前支持的
 
 后续可能会增加对 ``float`` 和 ``double`` 等其他类型数据的支持。
 
-键必须唯一。为现有的键写入新的值可能产生如下结果：
+键必须唯一。为现有的键写入新值时，会将旧的值及数据类型更新为写入操作指定的值和数据类型。
 
--  如果新旧值数据类型相同，则更新值；
--  如果新旧值数据类型不同，则返回错误。
-
-读取值时也会执行数据类型检查。如果读取操作的数据类型与该值的数据类型不匹配，则返回错误。
+读取值时会执行数据类型检查。如果读取操作预期的数据类型与对应键的数据类型不匹配，则返回错误。
 
 
 命名空间
@@ -53,20 +50,27 @@ NVS 迭代器
 
 迭代器允许根据指定的分区名称、命名空间和数据类型轮询 NVS 中存储的键值对。
 
-您可以使用以下函数，执行相关操作：
+使用以下函数，可执行相关操作：
 
 - ``nvs_entry_find``：创建一个不透明句柄，用于后续调用 ``nvs_entry_next`` 和 ``nvs_entry_info`` 函数；
 - ``nvs_entry_next``：让迭代器指向下一个键值对；
 - ``nvs_entry_info``：返回每个键值对的信息。
 
 总的来说，所有通过 :cpp:func:`nvs_entry_find` 获得的迭代器（包括 ``NULL`` 迭代器）都必须使用 :cpp:func:`nvs_release_iterator` 释放。
+
 一般情况下，:cpp:func:`nvs_entry_find` 和 :cpp:func:`nvs_entry_next` 会将给定的迭代器设置为 ``NULL`` 或为一个有效的迭代器。但如果出现参数错误（如返回 ``ESP_ERR_NVS_NOT_FOUND``），给定的迭代器不会被修改。因此，在调用 :cpp:func:`nvs_entry_find` 之前最好将迭代器初始化为 ``NULL``，这样可以避免在释放迭代器之前进行复杂的错误检查。
 
 
 安全性、篡改性及鲁棒性
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-NVS 与 {IDF_TARGET_NAME} flash 加密系统不直接兼容。但如果 NVS 加密与 {IDF_TARGET_NAME} flash 加密一起使用时，数据仍可以加密形式存储。详情请参阅 :ref:`nvs_encryption`。
+.. only:: not SOC_HMAC_SUPPORTED
+
+    NVS 与 {IDF_TARGET_NAME} flash 加密系统不直接兼容。然而，如果 NVS 加密与 {IDF_TARGET_NAME} flash 加密一起使用，数据仍可以加密形式存储。详情请参考 :doc:`nvs_encryption`。
+
+.. only:: SOC_HMAC_SUPPORTED
+
+    NVS 与 {IDF_TARGET_NAME} flash 加密系统不直接兼容。然而，如果 NVS 加密与 {IDF_TARGET_NAME} flash 加密或 HMAC 外设一起使用，数据仍可以加密形式存储。详情请参考 :doc:`nvs_encryption`。
 
 如果未启用 NVS 加密，任何对 flash 芯片有物理访问权限的用户都可以修改、擦除或添加键值对。NVS 加密启用后，如果不知道相应的 NVS 加密密钥，则无法修改或添加键值对并将其识别为有效键值对。但是，针对擦除操作没有相应的防篡改功能。
 
@@ -78,91 +82,46 @@ NVS 与 {IDF_TARGET_NAME} flash 加密系统不直接兼容。但如果 NVS 加�
 NVS 加密
 --------------
 
-NVS 分区内存储的数据可使用 XTS-AES 进行加密，类似于 IEEE P1619 磁盘加密标准中提到的加密方式。为了实现加密，每个条目被均视为一个扇区，并将条目相对地址（相对于分区开头）传递给加密算法，用作扇区号。可通过 :ref:`CONFIG_NVS_ENCRYPTION` 启用 NVS 加密。NVS 加密所需的密钥存储于其他分区，并且被 :doc:`Flash 加密 <../../security/flash-encryption>` 保护。因此，在使用 NVS 加密前应先启用 :doc:`Flash 加密 <../../security/flash-encryption>`。
-
-启用 :doc:`Flash 加密 <../../security/flash-encryption>` 时，默认启用 NVS 加密。这是因为 Wi-Fi 驱动在默认的 NVS 分区中存储了凭证（如 SSID 和密码）。如已启用平台级加密，那么同时默认启用 NVS 加密有其必要性。
-
-使用 NVS 加密，分区表必须包含 :ref:`nvs_key_partition`。在分区表选项 (``menuconfig`` > ``Partition Table``) 下，为 NVS 加密提供了两个包含 :ref:`nvs_key_partition` 的分区表，您可以通过工程配置菜单 (``idf.py menuconfig``) 进行选择。请参考 :example:`security/flash_encryption` 中的例子，了解如何配置和使用 NVS 加密功能。
-
-.. _nvs_key_partition:
-
-NVS 密钥分区
-^^^^^^^^^^^^^^^^^
-
-应用程序如果想使用 NVS 加密，则需要编译进一个类型为 `data`，子类型为 `key` 的密钥分区。该分区应标记为 `已加密` 且最小为 4096 字节。如需了解更多详细信息，请参考 :doc:`分区表 <../../api-guides/partition-tables>`。在分区表选项 (``menuconfig`` > ``Partition Table``) 下提供了两个包含 :ref:`nvs_key_partition` 的额外分区表，可以直接用于 :ref:`nvs_encryption`。这些分区的具体结构见下表：
-
-.. highlight:: none
-
-::
-
-    +-----------+--------------+-------------+----+
-    |              XTS encryption key (32)        |
-    +---------------------------------------------+
-    |              XTS tweak key (32)             |
-    +---------------------------------------------+
-    |                  CRC32 (4)                  |
-    +---------------------------------------------+
-
-可以通过以下两种方式生成 :ref:`nvs_key_partition` 中的 XTS 加密密钥：
-
-1. 在 ESP 芯片上生成密钥：
-
-    启用 NVS 加密时，可用 :cpp:func:`nvs_flash_init` API 函数来初始化加密的默认 NVS 分区，在内部生成 ESP 芯片上的 XTS 加密密钥。在找到 :ref:`nvs_key_partition` 后，API 函数利用 :component_file:`nvs_flash/include/nvs_flash.h` 提供的 :cpp:func:`nvs_flash_generate_keys` 函数，自动生成并存储该分区中的 NVS 密钥。只有当各自的密钥分区为空时，才会生成并存储新的密钥。可以借助 :cpp:func:`nvs_flash_secure_init_partition` 用同一个密钥分区来读取安全配置，以初始化一个定制的加密 NVS 分区。
-
-    API 函数 :cpp:func:`nvs_flash_secure_init` 和 :cpp:func:`nvs_flash_secure_init_partition` 不在内部产生密钥。当这些 API 函数用于初始化加密的 NVS 分区时，可以在启动后使用 `nvs_flash.h` 提供的 :cpp:func:`nvs_flash_generate_keys` API 函数生成密钥，以加密的形式把密钥写到密钥分区上。
-
-    .. note:: 请注意，使用该方法启动应用前，必须先完全擦除 `nvs_keys` 分区，否则该应用可能会认为 `nvs_keys` 分区不为空，并且包含数据格式错误，从而导致 :c:macro:`ESP_ERR_NVS_CORRUPT_KEY_PART` 报错。如果遇到这种情况，可以使用以下命令：
-        ::
-
-            parttool.py --port PORT --partition-table-file=PARTITION_TABLE_FILE --partition-table-offset PARTITION_TABLE_OFFSET erase_partition --partition-type=data --partition-subtype=nvs_keys
-
-2. 使用预先生成的密钥分区：
-
-    若 :ref:`nvs_key_partition` 中的密钥不是由应用程序生成，则需要使用预先生成的密钥分区。可以使用 :doc:`NVS 分区生成工具 </api-reference/storage/nvs_partition_gen>` 生成包含 XTS 加密密钥的 :ref:`nvs_key_partition`。用户可以借助以下两个命令，将预先生成的密钥分区储存在 flash 上：
-
-    i) 建立并烧录分区表
-    ::
-
-        idf.py partition-table partition-table-flash
-
-    ii) 调用 :component_file:`parttool.py<partition_table/parttool.py>`，将密钥存储在 flash 上的 :ref:`nvs_key_partition` 中。详见 :doc:` 分区表 </api-guides/partition-tables>` 的分区工具部分。
-    ::
-
-        parttool.py --port PORT --partition-table-offset PARTITION_TABLE_OFFSET write_partition --partition-name="name of nvs_key partition" --input NVS_KEY_PARTITION_FILE
-
-    .. note:: 如需在设备处于 flash 加密开发模式时更新 NVS 密钥分区，请调用 :component_file:`parttool.py <partition_table/parttool.py>` 对 NVS 密钥分区进行加密。同时，由于设备上的分区表也已加密，您还需要在构建目录（build/partition_table）中提供一个指向未加密分区表的指针。您可以使用如下命令：
-        ::
-
-            parttool.py --esptool-write-args encrypt --port PORT --partition-table-file=PARTITION_TABLE_FILE --partition-table-offset PARTITION_TABLE_OFFSET write_partition --partition-name="name of nvs_key partition" --input NVS_KEY_PARTITION_FILE
-
-由于分区已标记为 `已加密`，而且启用了 :doc:`Flash 加密 <../../security/flash-encryption>`，引导程序在首次启动时将使用 flash 加密对密钥分区进行加密。
-
-应用程序可以使用不同的密钥对不同的 NVS 分区进行加密，这样就会需要多个加密密钥分区。应用程序应为加解密操作提供正确的密钥或密钥分区。
-
-加密读取/写入
-^^^^^^^^^^^^^^^^^^^^
-
-``nvs_get_*`` 和 ``nvs_set_*`` 等 NVS API 函数同样可以对 NVS 加密分区执行读写操作。
-
-**加密默认的 NVS 分区：**
-无需额外步骤即可启用默认 NVS 分区的加密。启用 :ref:`CONFIG_NVS_ENCRYPTION` 时， :cpp:func:`nvs_flash_init` API 函数会在内部使用找到的第一个 :ref:`nvs_key_partition` 执行额外步骤，以启用默认 NVS 分区的加密（详情请参考 API 文档）。另外，:cpp:func:`nvs_flash_secure_init` API 函数也可以用来启用默认 NVS 分区的加密。
-
-**加密一个自定义的 NVS 分区：**
-使用 :cpp:func:`nvs_flash_secure_init_partition` API 函数启用自定义 NVS 分区的加密，而非 :cpp:func:`nvs_flash_init_partition`。
-
-使用 :cpp:func:`nvs_flash_secure_init` 和 :cpp:func:`nvs_flash_secure_init_partition` API 函数时，应用程序如需在加密状态下执行 NVS 读写操作，应遵循以下步骤：
-
-    1. 使用 ``esp_partition_find*`` API 查找密钥分区和 NVS 数据分区；
-    2. 使用 ``nvs_flash_read_security_cfg`` 或 ``nvs_flash_generate_keys`` API 填充 ``nvs_sec_cfg_t`` 结构；
-    3. 使用 ``nvs_flash_secure_init`` 或 ``nvs_flash_secure_init_partition`` API 初始化 NVS flash 分区；
-    4. 使用 ``nvs_open`` 或 ``nvs_open_from_partition`` API 打开命名空间；
-    5. 使用 ``nvs_get_*`` 或 ``nvs_set_*`` API 执行 NVS 读取/写入操作；
-    6. 使用 ``nvs_flash_deinit`` API 释放已初始化的 NVS 分区。
+详情请参考 :doc:`nvs_encryption`。
 
 NVS 分区生成程序
 ------------------
 
-NVS 分区生成程序帮助生成 NVS 分区二进制文件，可使用烧录程序将二进制文件单独烧录至特定分区。烧录至分区上的键值对由 CSV 文件提供，详情请参考 :doc:`NVS 分区生成程序 <nvs_partition_gen>`。
+NVS 分区生成程序帮助生成 NVS 分区二进制文件，可使用烧录程序将二进制文件单独烧录至特定分区。烧录至分区上的键值对由 CSV 文件提供，详情请参考 :doc:`nvs_partition_gen`。
+
+可以直接使用函数 ``nvs_create_partition_image`` 通过 CMake 创建分区二进制文件，无需手动调用 ``nvs_partition_gen.py`` 工具::
+
+    nvs_create_partition_image(<partition> <csv> [FLASH_IN_PROJECT] [DEPENDS  dep dep dep ...])
+
+**位置参数**:
+
+.. list-table::
+    :header-rows: 1
+
+    * - 参数
+      - 描述
+    * - ``partition``
+      - NVS 分区名
+    * - ``csv``
+      - 解析的 CSV 文件路径
+
+
+**可选参数**:
+
+.. list-table::
+   :header-rows: 1
+
+   * - 参数
+     - 描述
+   * - ``FLASH_IN_PROJECT``
+     - NVS 分区名
+   * - ``DEPENDS``
+     - 指定命令依赖的文件
+
+
+在没有指定 ``FLASH_IN_PROJECT`` 的情况下，也支持生成分区镜像，不过此时需要使用 ``idf.py <partition>-flash`` 手动进行烧录。举个例子，如果分区名为 ``nvs``，则需使用的命令为 ``idf.py nvs-flash``。
+
+目前，仅支持从组件中的 ``CMakeLists.txt`` 文件调用 ``nvs_create_partition_image``，且此选项仅适用于非加密分区。
 
 应用示例
 -------------------
@@ -175,9 +134,9 @@ ESP-IDF :example:`storage` 目录下提供了数个代码示例：
 
   此示例中的值表示 {IDF_TARGET_NAME} 模组重启次数。NVS 中数据不会因为模组重启而丢失，因此只有将这一值存储于 NVS 中，才能起到重启次数计数器的作用。
 
-  该示例也演示了如何检测读取/写入操作是否成功，以及某个特定值是否在 NVS 中尚未初始化。诊断程序以纯文本形式提供，帮助您追踪程序流程，及时发现问题。
+  该示例也演示了如何检测读取/写入操作是否成功，以及某个特定值是否在 NVS 中尚未初始化。诊断程序以纯文本形式提供，有助于追踪程序流程，及时发现问题。
 
-:example:`storage/nvs_rw_blob`　
+:example:`storage/nvs_rw_blob`
 
   演示如何读取及写入 NVS 单个整数值和 BLOB（二进制大对象），并在 NVS 中存储这一数值，即便 {IDF_TARGET_NAME} 模组重启也不会消失。
 
@@ -210,7 +169,7 @@ NVS 库在其操作中主要使用两个实体：页面和条目。页面是一�
     此时 flash 已完成初始化，页头部写入 flash，页面已具备有效序列号。页面中存在一些空条目，可写入数据。任意时刻，至多有一个页面处于活跃状态。
 
 写满状态
-    Flash 已写满键值对，状态不再改变。
+    flash 已写满键值对，状态不再改变。
     用户无法向写满状态下的页面写入新键值对，但仍可将一些键值对标记为已擦除。
 
 擦除状态
@@ -219,7 +178,7 @@ NVS 库在其操作中主要使用两个实体：页面和条目。页面是一�
 损坏状态
     页头部包含无效数据，无法进一步解析该页面中的数据，因此之前写入该页面的所有条目均无法访问。相应的 flash 扇区并不会被立即擦除，而是与其他处于未初始化状态的扇区一起等待后续使用。这一状态可能对调试有用。
 
-Flash 扇区映射至逻辑页面并没有特定的顺序，NVS 库会检查存储在 flash 扇区的页面序列号，并根据序列号组织页面。
+flash 扇区映射至逻辑页面并没有特定的顺序，NVS 库会检查存储在 flash 扇区的页面序列号，并根据序列号组织页面。
 
 ::
 
@@ -354,7 +313,7 @@ CRC32
     - CRC32
         数据所有字节的校验和，该字段仅用于字符串和 BLOB 类型条目。
 
-可变长度值（字符串和 BLOB）写入后续条目，每个条目 32 字节。第一个条目的 `Span` 字段将指明使用了多少条目。
+可变长度值（字符串和 BLOB）写入后续条目，每个条目 32 字节。第一个条目的 ``Span`` 字段将指明使用了多少条目。
 
 
 命名空间

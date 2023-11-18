@@ -134,6 +134,9 @@ static const esp_err_msg_t esp_err_msg_table[] = {
 #   ifdef      ESP_ERR_NOT_FINISHED
     ERR_TBL_IT(ESP_ERR_NOT_FINISHED),                           /*   268 0x10c Operation has not fully completed */
 #   endif
+#   ifdef      ESP_ERR_NOT_ALLOWED
+    ERR_TBL_IT(ESP_ERR_NOT_ALLOWED),                            /*   269 0x10d Operation is not allowed */
+#   endif
     // components/nvs_flash/include/nvs.h
 #   ifdef      ESP_ERR_NVS_BASE
     ERR_TBL_IT(ESP_ERR_NVS_BASE),                               /*  4352 0x1100 Starting number of error codes */
@@ -404,6 +407,15 @@ static const esp_err_msg_t esp_err_msg_table[] = {
     ERR_TBL_IT(ESP_ERR_WIFI_TWT_SETUP_TIMEOUT),                 /* 12312 0x3018 Timeout of receiving twt setup response
                                                                                 frame, timeout times can be set during
                                                                                 twt setup */
+#   endif
+#   ifdef      ESP_ERR_WIFI_TWT_SETUP_TXFAIL
+    ERR_TBL_IT(ESP_ERR_WIFI_TWT_SETUP_TXFAIL),                  /* 12313 0x3019 TWT setup frame tx failed */
+#   endif
+#   ifdef      ESP_ERR_WIFI_TWT_SETUP_REJECT
+    ERR_TBL_IT(ESP_ERR_WIFI_TWT_SETUP_REJECT),                  /* 12314 0x301a The twt setup request was rejected by the AP */
+#   endif
+#   ifdef      ESP_ERR_WIFI_DISCARD
+    ERR_TBL_IT(ESP_ERR_WIFI_DISCARD),                           /* 12315 0x301b Discard frame */
 #   endif
     // components/wpa_supplicant/esp_supplicant/include/esp_wps.h
 #   ifdef      ESP_ERR_WIFI_REGISTRAR

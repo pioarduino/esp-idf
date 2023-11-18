@@ -9,7 +9,7 @@ This example demonstrates an [OpenThread CLI](https://github.com/openthread/open
 
 ### Hardware Required
 
-To run this example, an ESP32-H2 board is required.
+To run this example, a board with IEEE 802.15.4 module (for example ESP32-H2) is required.
 
 ### Configure the project
 
@@ -17,7 +17,11 @@ To run this example, an ESP32-H2 board is required.
 idf.py menuconfig
 ```
 
-The example can run with the default configuration.
+The example can run with the default configuration. OpenThread Command Line is enabled with UART as the default interface. Additionally, USB JTAG is also supported and can be activated through the menuconfig:
+
+```
+Component config → ESP System Settings → Channel for console output → USB Serial/JTAG Controller
+```
 
 ### Build, Flash, and Run
 

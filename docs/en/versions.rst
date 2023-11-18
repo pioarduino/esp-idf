@@ -37,7 +37,7 @@ The full history of releases can be found on the GitHub repository `Releases pag
 Which Version Should I Start With?
 ----------------------------------
 
-- For production purposes, use the `current stable version`_. Stable versions have been manually tested, and are updated with "bugfix releases" which fix bugs without changing other functionality (see `Versioning Scheme`_ for more details). Every stable release version can be found on the `Releases page`_.
+- For production purposes, use the `current stable version`_. Stable versions have been manually tested, and are updated with "bugfix releases" which fix bugs without changing other functionality (see `Versioning Scheme`_ for more details). Every stable release version can be found on the `Releases page`_. Also refer to `Compatibility Between ESP-IDF Releases and Revisions of Espressif SoCs <https://github.com/espressif/esp-idf/blob/master/COMPATIBILITY.md>`_ to make sure the ESP-IDF version you selected is compatible with the chip revision you are going to produce with.
 
 - For prototyping, experimentation or for developing new ESP-IDF features, use the `latest version (master branch in Git) <https://docs.espressif.com/projects/esp-idf/en/latest/>`_. The latest version in the master branch has all the latest features and has passed automated testing, but has not been completely manually tested ("bleeding edge").
 
@@ -106,11 +106,11 @@ During the Service period, bugfixes releases are more frequent. In some cases, s
 
 During the Maintenance period, the version is still supported but only bugfixes for high severity issues or security issues will be applied.
 
-Using an “In Service” version is recommended when starting a new project.
+Using an "In Service" version is recommended when starting a new project.
 
 Users are encouraged to upgrade all projects to a newer ESP-IDF release before the support period finishes and the release becomes End of Life (EOL). It is our policy to not continue fixing bugs in End of Life releases.
 
-Pre-release versions (betas, previews, `-rc` and `-dev` versions, etc) are not covered by any support period. Sometimes a particular feature is marked as "Preview" in a release, which means it is also not covered by the support period.
+Pre-release versions (betas, previews, ``-rc`` and ``-dev`` versions, etc) are not covered by any support period. Sometimes a particular feature is marked as "Preview" in a release, which means it is also not covered by the support period.
 
 The ESP-IDF Programming Guide has information about the `different versions of ESP-IDF <https://docs.espressif.com/projects/esp-idf/en/latest/versions.html>`_ (major, minor, bugfix, etc).
 
@@ -127,7 +127,7 @@ The local ESP-IDF version can be checked by using idf.py::
 
 The ESP-IDF version is also compiled into the firmware and can be accessed (as a string) via the macro ``IDF_VER``. The default ESP-IDF bootloader will print the version on boot (the version information is not always updated if the code in the GitHub repo is updated, it only changes if there is a clean build or if that particular source file is recompiled).
 
-If writing code that needs to support multiple ESP-IDF versions, the version can be checked at compile time using :ref:`compile-time macros<idf-version-h>`.
+If writing code that needs to support multiple ESP-IDF versions, the version can be checked at compile time using :ref:`compile-time macros <idf-version-h>`.
 
 Examples of ESP-IDF versions:
 
@@ -160,7 +160,7 @@ The development (Git) workflow of the Espressif ESP-IDF team is as follows:
 - Once testing is nearly complete a new release candidate is tagged on the release branch, for example ``v3.1-rc1``. This is still a pre-release version.
 - If no more significant bugs are found or reported, then the final Major or Minor Version is tagged, for example ``v3.1``. This version appears on the `Releases page`_.
 - As bugs are reported in released versions, the fixes will continue to be committed to the same release branch.
-- Regular bugfix releases are made from the same release branch. After manual testing is complete, a bugfix release is tagged (i.e. ``v3.1.1``) and appears on the `Releases page`_.
+- Regular bugfix releases are made from the same release branch. After manual testing is complete, a bugfix release is tagged (i.e., ``v3.1.1``) and appears on the `Releases page`_.
 
 
 .. _updating:
@@ -174,7 +174,9 @@ Updating ESP-IDF depends on which version(s) you wish to follow:
 - :ref:`updating-master` is recommended for the latest features, development use, and testing.
 - :ref:`updating-release-branch` is a compromise between the first two.
 
-.. note:: These guides assume that you already have a local copy of ESP-IDF cloned. To get one, check Step 2 in the :doc:`Getting Started </get-started/index>` guide for any ESP-IDF version.
+.. note::
+
+  These guides assume that you already have a local copy of ESP-IDF cloned. To get one, check Step 2 in the :doc:`Getting Started </get-started/index>` guide for any ESP-IDF version.
 
 
 .. _`updating-stable-releases`:
@@ -198,7 +200,9 @@ To update to a new ESP-IDF release (recommended for production use), this is the
 - In the Windows system, please replace ``cd $IDF_PATH`` with ``cd %IDF_PATH%``.
 - When major or minor updates are released, check the Release Notes on the releases page and decide if you want to update or to stay with your current release. Updating is via the same Git commands shown above.
 
-.. note:: If you installed the stable release via zip file instead of using git, it might not be possible to update versions using the commands. In this case, update by downloading a new zip file and replacing the entire ``IDF_PATH`` directory with its contents.
+.. note::
+
+  If you installed the stable release via zip file instead of using git, it might not be possible to update versions using the commands. In this case, update by downloading a new zip file and replacing the entire ``IDF_PATH`` directory with its contents.
 
 
 .. _`updating-pre-release`:
@@ -215,7 +219,9 @@ Pre-release tags are not always found on the `Releases page`_. Consult the `list
 Updating to Master Branch
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. note:: Using Master branch means living "on the bleeding edge" with the latest ESP-IDF code.
+.. note::
+
+  Using Master branch means living "on the bleeding edge" with the latest ESP-IDF code.
 
 To use the latest version on the ESP-IDF master branch, this is the process to follow:
 

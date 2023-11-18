@@ -11,41 +11,64 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/queue.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "usb/usb_host.h"
 #include "errno.h"
 #include "driver/gpio.h"
 
-#include "hid_host.h"
-#include "hid_usage_keyboard.h"
-#include "hid_usage_mouse.h"
+#include "usb/hid_host.h"
+#include "usb/hid_usage_keyboard.h"
+#include "usb/hid_usage_mouse.h"
 
+/* GPIO Pin number for quit from example logic */
 #define APP_QUIT_PIN                GPIO_NUM_0
-#define APP_QUIT_PIN_POLL_MS        500
 
-#define READY_TO_UNINSTALL          (HOST_NO_CLIENT | HOST_ALL_FREE)
+static const char *TAG = "example";
 
-/* Main char symbol for ENTER key */
-#define KEYBOARD_ENTER_MAIN_CHAR    '\r'
-/* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
-#define KEYBOARD_ENTER_LF_EXTEND    1
+QueueHandle_t app_event_queue = NULL;
 
 /**
- * @brief Application Event from USB Host driver
+ * @brief APP event group
  *
+ * Application logic can be different. There is a one among other ways to distingiush the
+ * event by application event group.
+ * In this example we have two event groups:
+ * APP_EVENT            - General event, which is APP_QUIT_PIN press event (Generally, it is IO0).
+ * APP_EVENT_HID_HOST   - HID Host Driver event, such as device connection/disconnection or input report.
  */
 typedef enum {
-    HOST_NO_CLIENT = 0x1,
-    HOST_ALL_FREE = 0x2,
-    DEVICE_CONNECTED = 0x4,
-    DEVICE_DISCONNECTED = 0x8,
-    DEVICE_ADDRESS_MASK = 0xFF0,
-} app_event_t;
+    APP_EVENT = 0,
+    APP_EVENT_HID_HOST
+} app_event_group_t;
+
+/**
+ * @brief APP event queue
+ *
+ * This event is used for delivering the HID Host event from callback to a task.
+ */
+typedef struct {
+    app_event_group_t event_group;
+    /* HID Host - Device related info */
+    struct {
+        hid_host_device_handle_t handle;
+        hid_host_driver_event_t event;
+        void *arg;
+    } hid_host_device;
+} app_event_queue_t;
+
+/**
+ * @brief HID Protocol string names
+ */
+static const char *hid_proto_name_str[] = {
+    "NONE",
+    "KEYBOARD",
+    "MOUSE"
+};
 
 /**
  * @brief Key event
- *
  */
 typedef struct {
     enum key_state {
@@ -56,14 +79,10 @@ typedef struct {
     uint8_t key_code;
 } key_event_t;
 
-#define USB_EVENTS_TO_WAIT      (DEVICE_CONNECTED | DEVICE_ADDRESS_MASK | DEVICE_DISCONNECTED)
-
-static const char *TAG = "example";
-static EventGroupHandle_t usb_flags;
-static bool hid_device_connected = false;
-
-hid_host_interface_handle_t keyboard_handle = NULL;
-hid_host_interface_handle_t mouse_handle = NULL;
+/* Main char symbol for ENTER key */
+#define KEYBOARD_ENTER_MAIN_CHAR    '\r'
+/* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
+#define KEYBOARD_ENTER_LF_EXTEND    1
 
 /**
  * @brief Scancode to ascii table
@@ -135,16 +154,17 @@ const uint8_t keycode2ascii [57][2] = {
  */
 static void hid_print_new_device_report_header(hid_protocol_t proto)
 {
-    static hid_protocol_t prev_proto_output = HID_PROTOCOL_NONE;
+    static hid_protocol_t prev_proto_output = -1;
 
     if (prev_proto_output != proto) {
         prev_proto_output = proto;
         printf("\r\n");
         if (proto == HID_PROTOCOL_MOUSE) {
             printf("Mouse\r\n");
-        }
-        if (proto == HID_PROTOCOL_KEYBOARD) {
+        } else if (proto == HID_PROTOCOL_KEYBOARD) {
             printf("Keyboard\r\n");
+        } else {
+            printf("Generic\r\n");
         }
         fflush(stdout);
     }
@@ -160,8 +180,8 @@ static void hid_print_new_device_report_header(hid_protocol_t proto)
  */
 static inline bool hid_keyboard_is_modifier_shift(uint8_t modifier)
 {
-    if ((modifier && HID_LEFT_SHIFT) ||
-            (modifier && HID_RIGHT_SHIFT)) {
+    if (((modifier & HID_LEFT_SHIFT) == HID_LEFT_SHIFT) ||
+            ((modifier & HID_RIGHT_SHIFT) == HID_RIGHT_SHIFT)) {
         return true;
     }
     return false;
@@ -178,8 +198,8 @@ static inline bool hid_keyboard_is_modifier_shift(uint8_t modifier)
  * @return false Key scancode unknown
  */
 static inline bool hid_keyboard_get_char(uint8_t modifier,
-        uint8_t key_code,
-        unsigned char *key_char)
+                                         uint8_t key_code,
+                                         unsigned char *key_char)
 {
     uint8_t mod = (hid_keyboard_is_modifier_shift(modifier)) ? 1 : 0;
 
@@ -324,192 +344,273 @@ static void hid_host_mouse_report_callback(const uint8_t *const data, const int 
 }
 
 /**
- * @brief USB HID Host event callback. Handle such event as device connection and removing
+ * @brief USB HID Host Generic Interface report callback handler
  *
- * @param[in] event  HID device event
- * @param[in] arg    Pointer to arguments, does not used
+ * 'generic' means anything else than mouse or keyboard
+ *
+ * @param[in] data    Pointer to input report data buffer
+ * @param[in] length  Length of input report data buffer
  */
-static void hid_host_event_callback(const hid_host_event_t *event, void *arg)
+static void hid_host_generic_report_callback(const uint8_t *const data, const int length)
 {
-    if (event->event == HID_DEVICE_CONNECTED) {
-        // Obtained USB device address is placed after application events
-        xEventGroupSetBits(usb_flags, DEVICE_CONNECTED | (event->device.address << 4));
-    } else if (event->event == HID_DEVICE_DISCONNECTED) {
-        xEventGroupSetBits(usb_flags, DEVICE_DISCONNECTED);
+    hid_print_new_device_report_header(HID_PROTOCOL_NONE);
+    for (int i = 0; i < length; i++) {
+        printf("%02X", data[i]);
     }
+    putchar('\r');
 }
 
 /**
  * @brief USB HID Host interface callback
  *
- * @param[in] event  HID interface event
- * @param[in] arg    Pointer to arguments, does not used
+ * @param[in] hid_device_handle  HID Device handle
+ * @param[in] event              HID Host interface event
+ * @param[in] arg                Pointer to arguments, does not used
  */
-static void hid_host_interface_event_callback(const hid_host_interface_event_t *event, void *arg)
+void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle,
+                                 const hid_host_interface_event_t event,
+                                 void *arg)
 {
-    switch (event->event) {
-    case HID_DEVICE_INTERFACE_INIT:
-        ESP_LOGI(TAG, "Interface number %d, protocol %s",
-                 event->interface.num,
-                 (event->interface.proto == HID_PROTOCOL_KEYBOARD)
-                 ? "Keyboard"
-                 : "Mouse");
+    uint8_t data[64] = { 0 };
+    size_t data_length = 0;
+    hid_host_dev_params_t dev_params;
+    ESP_ERROR_CHECK(hid_host_device_get_params(hid_device_handle, &dev_params));
 
-        if (event->interface.proto == HID_PROTOCOL_KEYBOARD) {
-            const hid_host_interface_config_t hid_keyboard_config = {
-                .proto = HID_PROTOCOL_KEYBOARD,
-                .callback = hid_host_keyboard_report_callback,
-            };
+    switch (event) {
+    case HID_HOST_INTERFACE_EVENT_INPUT_REPORT:
+        ESP_ERROR_CHECK(hid_host_device_get_raw_input_report_data(hid_device_handle,
+                                                                  data,
+                                                                  64,
+                                                                  &data_length));
 
-            hid_host_claim_interface(&hid_keyboard_config, &keyboard_handle);
-        }
-
-        if (event->interface.proto == HID_PROTOCOL_MOUSE) {
-            const hid_host_interface_config_t hid_mouse_config = {
-                .proto = HID_PROTOCOL_MOUSE,
-                .callback = hid_host_mouse_report_callback,
-            };
-
-            hid_host_claim_interface(&hid_mouse_config, &mouse_handle);
+        if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
+            if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
+                hid_host_keyboard_report_callback(data, data_length);
+            } else if (HID_PROTOCOL_MOUSE == dev_params.proto) {
+                hid_host_mouse_report_callback(data, data_length);
+            }
+        } else {
+            hid_host_generic_report_callback(data, data_length);
         }
 
         break;
-    case HID_DEVICE_INTERFACE_TRANSFER_ERROR:
-        ESP_LOGD(TAG, "Interface number %d, transfer error",
-                 event->interface.num);
+    case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
+        ESP_LOGI(TAG, "HID Device, protocol '%s' DISCONNECTED",
+                 hid_proto_name_str[dev_params.proto]);
+        ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
         break;
-
-    case HID_DEVICE_INTERFACE_CLAIM:
-    case HID_DEVICE_INTERFACE_RELEASE:
-        // ... do nothing here for now
+    case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
+        ESP_LOGI(TAG, "HID Device, protocol '%s' TRANSFER_ERROR",
+                 hid_proto_name_str[dev_params.proto]);
         break;
-
     default:
-        ESP_LOGI(TAG, "%s Unhandled event %X, Interface number %d",
-                 __FUNCTION__,
-                 event->event,
-                 event->interface.num);
+        ESP_LOGE(TAG, "HID Device, protocol '%s' Unhandled event",
+                 hid_proto_name_str[dev_params.proto]);
         break;
     }
 }
 
 /**
- * @brief Handle common USB host library events
+ * @brief USB HID Host Device event
  *
- * @param[in] args  Pointer to arguments, does not used
+ * @param[in] hid_device_handle  HID Device handle
+ * @param[in] event              HID Host Device event
+ * @param[in] arg                Pointer to arguments, does not used
  */
-static void handle_usb_events(void *args)
+void hid_host_device_event(hid_host_device_handle_t hid_device_handle,
+                           const hid_host_driver_event_t event,
+                           void *arg)
 {
-    while (1) {
+    hid_host_dev_params_t dev_params;
+    ESP_ERROR_CHECK(hid_host_device_get_params(hid_device_handle, &dev_params));
+
+    switch (event) {
+    case HID_HOST_DRIVER_EVENT_CONNECTED:
+        ESP_LOGI(TAG, "HID Device, protocol '%s' CONNECTED",
+                 hid_proto_name_str[dev_params.proto]);
+
+        const hid_host_device_config_t dev_config = {
+            .callback = hid_host_interface_callback,
+            .callback_arg = NULL
+        };
+
+        ESP_ERROR_CHECK(hid_host_device_open(hid_device_handle, &dev_config));
+        if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
+            ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_BOOT));
+            if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
+                ESP_ERROR_CHECK(hid_class_request_set_idle(hid_device_handle, 0, 0));
+            }
+        }
+        ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * @brief Start USB Host install and handle common USB host library events while app pin not low
+ *
+ * @param[in] arg  Not used
+ */
+static void usb_lib_task(void *arg)
+{
+    const usb_host_config_t host_config = {
+        .skip_phy_setup = false,
+        .intr_flags = ESP_INTR_FLAG_LEVEL1,
+    };
+
+    ESP_ERROR_CHECK(usb_host_install(&host_config));
+    xTaskNotifyGive(arg);
+
+    while (true) {
         uint32_t event_flags;
         usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
-
-        // Release devices once all clients has deregistered
+        // In this example, there is only one client registered
+        // So, once we deregister the client, this call must succeed with ESP_OK
         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
-            usb_host_device_free_all();
-            xEventGroupSetBits(usb_flags, HOST_NO_CLIENT);
-        }
-        // Give ready_to_uninstall_usb semaphore to indicate that USB Host library
-        // can be deinitialized, and terminate this task.
-        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
-            xEventGroupSetBits(usb_flags, HOST_ALL_FREE);
+            ESP_ERROR_CHECK(usb_host_device_free_all());
+            break;
         }
     }
 
+    ESP_LOGI(TAG, "USB shutdown");
+    // Clean up USB Host
+    vTaskDelay(10); // Short delay to allow clients clean-up
+    ESP_ERROR_CHECK(usb_host_uninstall());
     vTaskDelete(NULL);
 }
 
-static bool wait_for_event(EventBits_t event, TickType_t timeout)
+/**
+ * @brief BOOT button pressed callback
+ *
+ * Signal application to exit the HID Host task
+ *
+ * @param[in] arg Unused
+ */
+static void gpio_isr_cb(void *arg)
 {
-    return xEventGroupWaitBits(usb_flags, event, pdTRUE, pdTRUE, timeout) & event;
+    BaseType_t xTaskWoken = pdFALSE;
+    const app_event_queue_t evt_queue = {
+        .event_group = APP_EVENT,
+    };
+
+    if (app_event_queue) {
+        xQueueSendFromISR(app_event_queue, &evt_queue, &xTaskWoken);
+    }
+
+    if (xTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+/**
+ * @brief HID Host Device callback
+ *
+ * Puts new HID Device event to the queue
+ *
+ * @param[in] hid_device_handle HID Device handle
+ * @param[in] event             HID Device event
+ * @param[in] arg               Not used
+ */
+void hid_host_device_callback(hid_host_device_handle_t hid_device_handle,
+                              const hid_host_driver_event_t event,
+                              void *arg)
+{
+    const app_event_queue_t evt_queue = {
+        .event_group = APP_EVENT_HID_HOST,
+        // HID Host Device related info
+        .hid_host_device.handle = hid_device_handle,
+        .hid_host_device.event = event,
+        .hid_host_device.arg = arg
+    };
+
+    if (app_event_queue) {
+        xQueueSend(app_event_queue, &evt_queue, 0);
+    }
 }
 
 void app_main(void)
 {
-    TaskHandle_t usb_events_task_handle;
-    hid_host_device_handle_t hid_device;
-
     BaseType_t task_created;
+    app_event_queue_t evt_queue;
+    ESP_LOGI(TAG, "HID Host example");
 
+    // Init BOOT button: Pressing the button simulates app request to exit
+    // It will disconnect the USB device and uninstall the HID driver and USB Host Lib
     const gpio_config_t input_pin = {
         .pin_bit_mask = BIT64(APP_QUIT_PIN),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
+        .intr_type = GPIO_INTR_NEGEDGE,
     };
-    ESP_ERROR_CHECK( gpio_config(&input_pin) );
+    ESP_ERROR_CHECK(gpio_config(&input_pin));
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(APP_QUIT_PIN, gpio_isr_cb, NULL));
 
-    ESP_LOGI(TAG, "HID HOST example");
+    /*
+    * Create usb_lib_task to:
+    * - initialize USB Host library
+    * - Handle USB Host events while APP pin in in HIGH state
+    */
+    task_created = xTaskCreatePinnedToCore(usb_lib_task,
+                                           "usb_events",
+                                           4096,
+                                           xTaskGetCurrentTaskHandle(),
+                                           2, NULL, 0);
+    assert(task_created == pdTRUE);
 
-    usb_flags = xEventGroupCreate();
-    assert(usb_flags);
+    // Wait for notification from usb_lib_task to proceed
+    ulTaskNotifyTake(false, 1000);
 
-    const usb_host_config_t host_config = {
-        .skip_phy_setup = false,
-        .intr_flags = ESP_INTR_FLAG_LEVEL1
-    };
-
-    ESP_ERROR_CHECK( usb_host_install(&host_config) );
-    task_created = xTaskCreate(handle_usb_events, "usb_events", 4096, NULL, 2, &usb_events_task_handle);
-    assert(task_created);
-
-    // hid host driver config
-    const hid_host_driver_config_t hid_host_config = {
+    /*
+    * HID host driver configuration
+    * - create background task for handling low level event inside the HID driver
+    * - provide the device callback to get new HID Device connection event
+    */
+    const hid_host_driver_config_t hid_host_driver_config = {
         .create_background_task = true,
         .task_priority = 5,
         .stack_size = 4096,
         .core_id = 0,
-        .callback = hid_host_event_callback,
+        .callback = hid_host_device_callback,
         .callback_arg = NULL
     };
 
-    ESP_ERROR_CHECK( hid_host_install(&hid_host_config) );
+    ESP_ERROR_CHECK(hid_host_install(&hid_host_driver_config));
 
-    do {
-        EventBits_t event = xEventGroupWaitBits(usb_flags, USB_EVENTS_TO_WAIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(APP_QUIT_PIN_POLL_MS));
+    // Create queue
+    app_event_queue = xQueueCreate(10, sizeof(app_event_queue_t));
 
-        if (event & DEVICE_CONNECTED) {
-            xEventGroupClearBits(usb_flags, DEVICE_CONNECTED);
-            hid_device_connected = true;
+    ESP_LOGI(TAG, "Waiting for HID Device to be connected");
+
+    while (1) {
+        // Wait queue
+        if (xQueueReceive(app_event_queue, &evt_queue, portMAX_DELAY)) {
+            if (APP_EVENT == evt_queue.event_group) {
+                // User pressed button
+                usb_host_lib_info_t lib_info;
+                ESP_ERROR_CHECK(usb_host_lib_info(&lib_info));
+                if (lib_info.num_devices == 0) {
+                    // End while cycle
+                    break;
+                } else {
+                    ESP_LOGW(TAG, "To shutdown example, remove all USB devices and press button again.");
+                    // Keep polling
+                }
+            }
+
+            if (APP_EVENT_HID_HOST ==  evt_queue.event_group) {
+                hid_host_device_event(evt_queue.hid_host_device.handle,
+                                      evt_queue.hid_host_device.event,
+                                      evt_queue.hid_host_device.arg);
+            }
         }
-
-        if (event & DEVICE_ADDRESS_MASK) {
-            xEventGroupClearBits(usb_flags, DEVICE_ADDRESS_MASK);
-
-            const hid_host_device_config_t hid_host_device_config = {
-                .dev_addr = (event & DEVICE_ADDRESS_MASK) >> 4,
-                        .iface_event_cb = hid_host_interface_event_callback,
-                        .iface_event_arg = NULL,
-            };
-
-            ESP_ERROR_CHECK( hid_host_install_device(&hid_host_device_config, &hid_device) );
-        }
-
-        if (event & DEVICE_DISCONNECTED) {
-            xEventGroupClearBits(usb_flags, DEVICE_DISCONNECTED);
-
-            hid_host_release_interface(keyboard_handle);
-            hid_host_release_interface(mouse_handle);
-
-            ESP_ERROR_CHECK( hid_host_uninstall_device(hid_device) );
-
-            hid_device_connected = false;
-        }
-
-    } while (gpio_get_level(APP_QUIT_PIN) != 0);
-
-    if (hid_device_connected) {
-        ESP_LOGI(TAG, "Uninitializing HID Device");
-        hid_host_release_interface(keyboard_handle);
-        hid_host_release_interface(mouse_handle);
-        ESP_ERROR_CHECK( hid_host_uninstall_device(hid_device) );
-        hid_device_connected = false;
     }
 
-    ESP_LOGI(TAG, "Uninitializing USB");
-    ESP_ERROR_CHECK( hid_host_uninstall() );
-    wait_for_event(READY_TO_UNINSTALL, portMAX_DELAY);
-    ESP_ERROR_CHECK( usb_host_uninstall() );
-    vTaskDelete(usb_events_task_handle);
-    vEventGroupDelete(usb_flags);
-    ESP_LOGI(TAG, "Done");
+    ESP_LOGI(TAG, "HID Driver uninstall");
+    ESP_ERROR_CHECK(hid_host_uninstall());
+    gpio_isr_handler_remove(APP_QUIT_PIN);
+    xQueueReset(app_event_queue);
+    vQueueDelete(app_event_queue);
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -75,7 +75,7 @@ void esp_startup_start_app(void)
     // Initialize the cross-core interrupt on CPU0
     esp_crosscore_int_init();
 
-#if CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME && !CONFIG_IDF_TARGET_ESP32C2
+#if CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
     void esp_gdbstub_init(void);
     esp_gdbstub_init();
 #endif // CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
@@ -96,7 +96,7 @@ void esp_startup_start_app(void)
         port_start_app_hook();
     }
 
-    ESP_EARLY_LOGI(APP_START_TAG, "Starting scheduler on CPU0");
+    ESP_EARLY_LOGD(APP_START_TAG, "Starting scheduler on CPU0");
     vTaskStartScheduler();
 }
 
@@ -130,7 +130,7 @@ void esp_startup_start_app_other_cores(void)
     // Initialize the cross-core interrupt on CPU1
     esp_crosscore_int_init();
 
-    ESP_EARLY_LOGI(APP_START_TAG, "Starting scheduler on CPU%d", xPortGetCoreID());
+    ESP_EARLY_LOGD(APP_START_TAG, "Starting scheduler on CPU%d", xPortGetCoreID());
     xPortStartScheduler();
     abort(); // Only get to here if FreeRTOS somehow very broken
 }
@@ -157,7 +157,7 @@ static bool other_cpu_startup_idle_hook_cb(void)
 
 static void main_task(void* args)
 {
-    ESP_LOGI(MAIN_TAG, "Started on CPU%d", xPortGetCoreID());
+    ESP_LOGI(MAIN_TAG, "Started on CPU%d", (int)xPortGetCoreID());
 #if !CONFIG_FREERTOS_UNICORE
     // Wait for FreeRTOS initialization to finish on other core, before replacing its startup stack
     esp_register_freertos_idle_hook_for_cpu(other_cpu_startup_idle_hook_cb, !xPortGetCoreID());

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -112,6 +112,7 @@ We have two bits to control the interrupt:
 
 #include <string.h>
 #include <sys/param.h>
+#include "esp_private/periph_ctrl.h"
 #include "esp_private/spi_common_internal.h"
 #include "driver/spi_master.h"
 #include "esp_clk_tree.h"
@@ -126,6 +127,9 @@ We have two bits to control the interrupt:
 #include "hal/spi_hal.h"
 #include "hal/spi_ll.h"
 #include "esp_heap_caps.h"
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+#include "esp_cache.h"
+#endif
 
 typedef struct spi_device_t spi_device_t;
 
@@ -172,6 +176,11 @@ static spi_host_t* bus_driver_ctx[SOC_SPI_PERIPH_NUM] = {};
 static const char *SPI_TAG = "spi_master";
 #define SPI_CHECK(a, str, ret_val)  ESP_RETURN_ON_FALSE_ISR(a, ret_val, SPI_TAG, str)
 
+#if SOC_PERIPH_CLK_CTRL_SHARED
+#define SPI_MASTER_PERI_CLOCK_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define SPI_MASTER_PERI_CLOCK_ATOMIC()
+#endif
 
 static void spi_intr(void *arg);
 static void spi_bus_intr_enable(void *host);
@@ -232,13 +241,13 @@ static esp_err_t spi_master_init_driver(spi_host_device_t host_id)
     // interrupts are not allowed on SPI1 bus
     if (host_id != SPI1_HOST) {
 #if (SOC_CPU_CORES_NUM > 1) && (!CONFIG_FREERTOS_UNICORE)
-        if(bus_attr->bus_cfg.isr_cpu_id > INTR_CPU_ID_AUTO) {
-            SPI_CHECK(bus_attr->bus_cfg.isr_cpu_id <= INTR_CPU_ID_1, "invalid core id", ESP_ERR_INVALID_ARG);
+        if (bus_attr->bus_cfg.isr_cpu_id > ESP_INTR_CPU_AFFINITY_AUTO) {
+            SPI_CHECK(bus_attr->bus_cfg.isr_cpu_id <= ESP_INTR_CPU_AFFINITY_1, "invalid core id", ESP_ERR_INVALID_ARG);
             spi_ipc_param_t ipc_arg = {
                 .spi_host = host,
                 .err = &err,
             };
-            esp_ipc_call_blocking(INTR_CPU_CONVERT_ID(bus_attr->bus_cfg.isr_cpu_id), ipc_isr_reg_to_core, (void *) &ipc_arg);
+            esp_ipc_call_blocking(ESP_INTR_CPU_AFFINITY_TO_CORE_ID(bus_attr->bus_cfg.isr_cpu_id), ipc_isr_reg_to_core, (void *) &ipc_arg);
         } else
 #endif
         {
@@ -261,6 +270,9 @@ static esp_err_t spi_master_init_driver(spi_host_device_t host_id)
         .rx_dma_chan = bus_attr->rx_dma_chan,
         .dmadesc_n = bus_attr->dma_desc_num,
     };
+    SPI_MASTER_PERI_CLOCK_ATOMIC() {
+        spi_ll_enable_clock(host_id, true);
+    }
     spi_hal_init(&host->hal, host_id, &hal_config);
 
     if (host_id != SPI1_HOST) {
@@ -547,6 +559,9 @@ static SPI_MASTER_ISR_ATTR void spi_setup_device(spi_device_t *dev)
     if (spi_bus_lock_touch(dev_lock)) {
         /* Configuration has not been applied yet. */
         spi_hal_setup_device(hal, hal_dev);
+        SPI_MASTER_PERI_CLOCK_ATOMIC() {
+            spi_ll_set_clk_source(hal->hw, hal_dev->timing_conf.clock_source);
+        }
     }
 }
 
@@ -680,12 +695,23 @@ static void SPI_MASTER_ISR_ATTR spi_intr(void *arg)
         const int cs = host->cur_cs;
         //Tell common code DMA workaround that our DMA channel is idle. If needed, the code will do a DMA reset.
 
-#if CONFIG_IDF_TARGET_ESP32
         if (bus_attr->dma_enabled) {
+#if CONFIG_IDF_TARGET_ESP32
             //This workaround is only for esp32, where tx_dma_chan and rx_dma_chan are always same
             spicommon_dmaworkaround_idle(bus_attr->tx_dma_chan);
-        }
 #endif  //#if CONFIG_IDF_TARGET_ESP32
+
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE   //invalidate here to let user access rx data in post_cb if possible
+            if (host->cur_trans_buf.buffer_to_rcv) {
+                uint16_t alignment = bus_attr->internal_mem_align_size;
+                uint32_t buffer_byte_len = (host->cur_trans_buf.trans->rxlength + 7) / 8;
+                buffer_byte_len = (buffer_byte_len + alignment - 1) & (~(alignment - 1));
+                // invalidate priv_trans.buffer_to_rcv anyway, only user provide aligned buffer can rcv correct data in post_cb
+                esp_err_t ret = esp_cache_msync((void *)host->cur_trans_buf.buffer_to_rcv, buffer_byte_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+                assert(ret == ESP_OK);
+            }
+#endif
+        }
 
         //cur_cs is changed to DEV_NUM_MAX here
         spi_post_trans(host);
@@ -824,9 +850,7 @@ static SPI_MASTER_ISR_ATTR void uninstall_priv_desc(spi_trans_priv_t* trans_buf)
         free((void *)trans_buf->buffer_to_send); //force free, ignore const
     }
     // copy data from temporary DMA-capable buffer back to IRAM buffer and free the temporary one.
-    if (trans_buf->buffer_to_rcv &&
-        (void *)trans_buf->buffer_to_rcv != &trans_desc->rx_data[0] &&
-        trans_buf->buffer_to_rcv != trans_desc->rx_buffer) { // NOLINT(clang-analyzer-unix.Malloc)
+    if (trans_buf->buffer_to_rcv && (void *)trans_buf->buffer_to_rcv != &trans_desc->rx_data[0] && trans_buf->buffer_to_rcv != trans_desc->rx_buffer) { // NOLINT(clang-analyzer-unix.Malloc)
         if (trans_desc->flags & SPI_TRANS_USE_RXDATA) {
             memcpy((uint8_t *) & trans_desc->rx_data[0], trans_buf->buffer_to_rcv, (trans_desc->rxlength + 7) / 8);
         } else {
@@ -836,9 +860,11 @@ static SPI_MASTER_ISR_ATTR void uninstall_priv_desc(spi_trans_priv_t* trans_buf)
     }
 }
 
-static SPI_MASTER_ISR_ATTR esp_err_t setup_priv_desc(spi_transaction_t *trans_desc, spi_trans_priv_t* new_desc, bool isdma)
+static SPI_MASTER_ISR_ATTR esp_err_t setup_priv_desc(spi_host_t *host, spi_trans_priv_t* priv_desc)
 {
-    *new_desc = (spi_trans_priv_t) { .trans = trans_desc, };
+    spi_transaction_t *trans_desc = priv_desc->trans;
+    const spi_bus_attr_t *bus_attr = host->bus_attr;
+    uint16_t alignment = bus_attr->internal_mem_align_size;
 
     // rx memory assign
     uint32_t* rcv_ptr;
@@ -848,13 +874,6 @@ static SPI_MASTER_ISR_ATTR esp_err_t setup_priv_desc(spi_transaction_t *trans_de
         //if not use RXDATA neither rx_buffer, buffer_to_rcv assigned to NULL
         rcv_ptr = trans_desc->rx_buffer;
     }
-    if (rcv_ptr && isdma && (!esp_ptr_dma_capable(rcv_ptr) || ((int)rcv_ptr % 4 != 0))) {
-        //if rxbuf in the desc not DMA-capable, malloc a new one. The rx buffer need to be length of multiples of 32 bits to avoid heap corruption.
-        ESP_LOGD(SPI_TAG, "Allocate RX buffer for DMA" );
-        rcv_ptr = heap_caps_malloc(((trans_desc->rxlength + 31) / 32) * 4, MALLOC_CAP_DMA);
-        if (rcv_ptr == NULL) goto clean_up;
-    }
-    new_desc->buffer_to_rcv = rcv_ptr;
 
     // tx memory assign
     const uint32_t *send_ptr;
@@ -864,21 +883,53 @@ static SPI_MASTER_ISR_ATTR esp_err_t setup_priv_desc(spi_transaction_t *trans_de
         //if not use TXDATA neither tx_buffer, tx data assigned to NULL
         send_ptr = trans_desc->tx_buffer ;
     }
-    if (send_ptr && isdma && !esp_ptr_dma_capable( send_ptr )) {
-        //if txbuf in the desc not DMA-capable, malloc a new one
-        ESP_LOGD(SPI_TAG, "Allocate TX buffer for DMA" );
-        uint32_t *temp = heap_caps_malloc((trans_desc->length + 7) / 8, MALLOC_CAP_DMA);
-        if (temp == NULL) goto clean_up;
 
-        memcpy( temp, send_ptr, (trans_desc->length + 7) / 8 );
-        send_ptr = temp;
+    uint32_t tx_byte_len = (trans_desc->length + 7) / 8;
+    uint32_t rx_byte_len = (trans_desc->rxlength + 7) / 8;
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+    bool tx_unaligned = ((((uint32_t)send_ptr) | tx_byte_len) & (alignment - 1));
+    bool rx_unaligned = ((((uint32_t)rcv_ptr) | rx_byte_len) & (alignment - 1));
+#else
+    bool tx_unaligned = false;   //tx don't need align on addr or length, for other chips
+    bool rx_unaligned = (((uint32_t)rcv_ptr) & (alignment - 1));
+#endif
+
+    if (send_ptr && bus_attr->dma_enabled) {
+        if ((!esp_ptr_dma_capable(send_ptr) || tx_unaligned )) {
+            ESP_RETURN_ON_FALSE(!(trans_desc->flags & SPI_TRANS_DMA_BUFFER_ALIGN_MANUAL), ESP_ERR_INVALID_ARG, SPI_TAG, "Set flag SPI_TRANS_DMA_BUFFER_ALIGN_MANUAL but TX buffer addr&len not align to %d, or not dma_capable", alignment);
+            //if txbuf in the desc not DMA-capable, or not bytes aligned to alignment, malloc a new one
+            ESP_EARLY_LOGD(SPI_TAG, "Allocate TX buffer for DMA" );
+            tx_byte_len = (tx_byte_len + alignment - 1) & (~(alignment - 1));   // up align alignment
+            uint32_t *temp = heap_caps_aligned_alloc(alignment, tx_byte_len, MALLOC_CAP_DMA);
+            if (temp == NULL) {
+                goto clean_up;
+            }
+
+            memcpy( temp, send_ptr, (trans_desc->length + 7) / 8 );
+            send_ptr = temp;
+        }
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+        esp_err_t ret = esp_cache_msync((void *)send_ptr, tx_byte_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+        assert(ret == ESP_OK);
+#endif
     }
-    new_desc->buffer_to_send = send_ptr;
 
+    if (rcv_ptr && bus_attr->dma_enabled && (!esp_ptr_dma_capable(rcv_ptr) || rx_unaligned )) {
+        ESP_RETURN_ON_FALSE(!(trans_desc->flags & SPI_TRANS_DMA_BUFFER_ALIGN_MANUAL), ESP_ERR_INVALID_ARG, SPI_TAG, "Set flag SPI_TRANS_DMA_BUFFER_ALIGN_MANUAL but RX buffer addr&len not align to %d, or not dma_capable", alignment);
+        //if rxbuf in the desc not DMA-capable, or not aligned to alignment, malloc a new one
+        ESP_EARLY_LOGD(SPI_TAG, "Allocate RX buffer for DMA" );
+        rx_byte_len = (rx_byte_len + alignment - 1) & (~(alignment - 1));   // up align alignment
+        rcv_ptr = heap_caps_aligned_alloc(alignment, rx_byte_len, MALLOC_CAP_DMA);
+        if (rcv_ptr == NULL) {
+            goto clean_up;
+        }
+    }
+    priv_desc->buffer_to_send = send_ptr;
+    priv_desc->buffer_to_rcv = rcv_ptr;
     return ESP_OK;
 
 clean_up:
-    uninstall_priv_desc(new_desc);
+    uninstall_priv_desc(priv_desc);
     return ESP_ERR_NO_MEM;
 }
 
@@ -897,8 +948,8 @@ esp_err_t SPI_MASTER_ATTR spi_device_queue_trans(spi_device_handle_t handle, spi
         return ESP_ERR_INVALID_ARG;
     }
 
-    spi_trans_priv_t trans_buf;
-    ret = setup_priv_desc(trans_desc, &trans_buf, (host->bus_attr->dma_enabled));
+    spi_trans_priv_t trans_buf = { .trans = trans_desc, };
+    ret = setup_priv_desc(host, &trans_buf);
     if (ret != ESP_OK) return ret;
 
 #ifdef CONFIG_PM_ENABLE
@@ -935,6 +986,7 @@ esp_err_t SPI_MASTER_ATTR spi_device_get_trans_result(spi_device_handle_t handle
     BaseType_t r;
     spi_trans_priv_t trans_buf;
     SPI_CHECK(handle!=NULL, "invalid dev handle", ESP_ERR_INVALID_ARG);
+    bool use_dma = handle->host->bus_attr->dma_enabled;
 
     //if SPI_DEVICE_NO_RETURN_RESULT is set, ret_queue will always be empty
     SPI_CHECK(!(handle->cfg.flags & SPI_DEVICE_NO_RETURN_RESULT), "API not Supported!", ESP_ERR_NOT_SUPPORTED);
@@ -947,8 +999,10 @@ esp_err_t SPI_MASTER_ATTR spi_device_get_trans_result(spi_device_handle_t handle
         // Every in-flight transaction request occupies internal memory as DMA buffer if needed.
         return ESP_ERR_TIMEOUT;
     }
-    //release temporary buffers
-    uninstall_priv_desc(&trans_buf);
+    //release temporary buffers used by dma
+    if (use_dma) {
+        uninstall_priv_desc(&trans_buf);
+    }
     (*trans_desc) = trans_buf.trans;
 
     return ESP_OK;
@@ -1042,10 +1096,14 @@ esp_err_t SPI_MASTER_ISR_ATTR spi_device_polling_start(spi_device_handle_t handl
     if (ret!=ESP_OK) return ret;
     SPI_CHECK(!spi_bus_device_is_polling(handle), "Cannot send polling transaction while the previous polling transaction is not terminated.", ESP_ERR_INVALID_STATE );
 
+    spi_host_t *host = handle->host;
+    spi_trans_priv_t priv_polling_trans = { .trans = trans_desc, };
+    ret = setup_priv_desc(host, &priv_polling_trans);
+    if (ret!=ESP_OK) return ret;
+
     /* If device_acquiring_lock is set to handle, it means that the user has already
      * acquired the bus thanks to the function `spi_device_acquire_bus()`.
      * In that case, we don't need to take the lock again. */
-    spi_host_t *host = handle->host;
     if (host->device_acquiring_lock != handle) {
         /* The user cannot ask for the CS to keep active has the bus is not locked/acquired. */
         if ((trans_desc->flags & SPI_TRANS_CS_KEEP_ACTIVE) != 0) {
@@ -1056,13 +1114,16 @@ esp_err_t SPI_MASTER_ISR_ATTR spi_device_polling_start(spi_device_handle_t handl
     } else {
         ret = spi_bus_lock_wait_bg_done(handle->dev_lock, ticks_to_wait);
     }
-    if (ret != ESP_OK) return ret;
-
-    ret = setup_priv_desc(trans_desc, &host->cur_trans_buf, (host->bus_attr->dma_enabled));
-    if (ret!=ESP_OK) return ret;
+    if (ret != ESP_OK) {
+        uninstall_priv_desc(&priv_polling_trans);
+        ESP_LOGE(SPI_TAG, "polling can't get buslock");
+        return ret;
+    }
+    //After holding the buslock, common resource can be accessed !!
 
     //Polling, no interrupt is used.
     host->polling = true;
+    host->cur_trans_buf = priv_polling_trans;
 
     ESP_LOGV(SPI_TAG, "polling trans");
     spi_new_trans(handle, &host->cur_trans_buf);
@@ -1085,6 +1146,19 @@ esp_err_t SPI_MASTER_ISR_ATTR spi_device_polling_end(spi_device_handle_t handle,
             return ESP_ERR_TIMEOUT;
         }
     }
+
+#if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE   //invalidate here to let user access rx data in post_cb if possible
+    const spi_bus_attr_t *bus_attr = host->bus_attr;
+    if (host->cur_trans_buf.buffer_to_rcv) {
+        uint16_t alignment = bus_attr->internal_mem_align_size;
+        uint32_t buffer_byte_len = (host->cur_trans_buf.trans->rxlength + 7) / 8;
+        buffer_byte_len = (buffer_byte_len + alignment - 1) & (~(alignment - 1));
+        esp_err_t ret = esp_cache_msync((void *)host->cur_trans_buf.buffer_to_rcv, buffer_byte_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+    }
+#endif
 
     ESP_LOGV(SPI_TAG, "polling trans done");
     //deal with the in-flight transaction

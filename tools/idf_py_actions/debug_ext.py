@@ -12,7 +12,7 @@ import time
 from base64 import b64decode
 from textwrap import indent
 from threading import Thread
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from click import INT
 from click.core import Context
@@ -54,7 +54,7 @@ GDBINIT_CONNECT = '''
 # Connect to the default openocd-esp port and break on app_main()
 target remote :3333
 monitor reset halt
-flushregs
+maintenance flush register-cache
 thbreak app_main
 continue
 '''
@@ -68,6 +68,18 @@ source {connect}
 def get_openocd_arguments(target: str) -> str:
     default_args = OPENOCD_TAGET_CONFIG_DEFAULT.format(target=target)
     return str(OPENOCD_TAGET_CONFIG.get(target, default_args))
+
+
+def chip_rev_to_int(chip_rev: Optional[str]) -> Union[int, None]:
+    # The chip rev will be derived from the elf file if none are returned.
+    # The chip rev must be supplied for coredump files generated with idf versions less than 5.1 in order to load
+    # rom elf file.
+    if not chip_rev or not all(c.isdigit() or c == '.' for c in chip_rev):
+        return None
+    if '.' not in chip_rev:
+        chip_rev += '.0'
+    major, minor = map(int, chip_rev.split('.'))
+    return major * 100 + minor
 
 
 def action_extensions(base_actions: Dict, project_path: str) -> Dict:
@@ -137,6 +149,7 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                                   args: PropertyDict,
                                   gdb_timeout_sec: int = None,
                                   core: str = None,
+                                  chip_rev: str = None,
                                   save_core: str = None) -> CoreDump:
 
         ensure_build_directory(args, ctx.info_name)
@@ -150,9 +163,9 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
 
         espcoredump_kwargs = dict()
 
-        espcoredump_kwargs['port'] = args.port
         espcoredump_kwargs['baud'] = args.baud
         espcoredump_kwargs['gdb_timeout_sec'] = gdb_timeout_sec
+        espcoredump_kwargs['chip_rev'] = chip_rev_to_int(chip_rev)
 
         # for reproducible builds
         extra_gdbinit_file = project_desc.get('debug_prefix_map_gdbinit', None)
@@ -169,11 +182,15 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
         elif coredump_to_flash:
             #  If the core dump is read from flash, we don't need to specify the --core-format argument at all.
             #  The format will be determined automatically
-            pass
+            args.port = args.port or get_default_serial_port()
         else:
             print('Path to core dump file is not provided. '
                   "Core dump can't be read from flash since this option is not enabled in menuconfig")
             sys.exit(1)
+
+        espcoredump_kwargs['port'] = args.port
+        espcoredump_kwargs['parttable_off'] = get_sdkconfig_value(project_desc['config_file'],
+                                                                  'CONFIG_PARTITION_TABLE_OFFSET')
 
         if core_format:
             espcoredump_kwargs['core_format'] = core_format
@@ -183,7 +200,18 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
 
         espcoredump_kwargs['prog'] = prog
 
-        return CoreDump(**espcoredump_kwargs)
+        # compatibility check for esp-coredump < 1.5.2
+        try:
+            coredump = CoreDump(**espcoredump_kwargs)
+        except TypeError as e:
+            # 'parttable_off' was added in esp-coredump 1.5.2
+            # remove argument and retry without it
+            if 'parttable_off' in str(e):
+                espcoredump_kwargs.pop('parttable_off')
+                coredump = CoreDump(**espcoredump_kwargs)
+            else:
+                raise
+        return coredump
 
     def get_core_file_format(core_file: str) -> str:
         bin_v1 = 1
@@ -234,7 +262,8 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
         base_ident = '  '
         rom_elfs_dir = os.getenv('ESP_ROM_ELF_DIR')
         if not rom_elfs_dir:
-            raise FatalError('ESP_ROM_ELF_DIR environment variable is not defined. Please try to run IDF "install" and "export" scripts.')
+            raise FatalError(
+                'ESP_ROM_ELF_DIR environment variable is not defined. Please try to run IDF "install" and "export" scripts.')
         with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), ESP_ROM_INFO_FILE), 'r') as f:
             roms = json.load(f)
             if target not in roms:
@@ -270,7 +299,7 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
             r.append('set confirm on')
             r.append('end')
             r.append('')
-            return os.linesep.join(r)
+            return '\n'.join(r)
         raise FatalError(f'{ESP_ROM_INFO_FILE} file not found. Please check IDF integrity.')
 
     def generate_gdbinit_files(gdb: str, gdbinit: Optional[str], project_desc: Dict[str, Any]) -> None:
@@ -371,8 +400,9 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
             # use default value if commands not defined in the environment nor command line
             target = project_desc['target']
             openocd_arguments = get_openocd_arguments(target)
-            print('Note: OpenOCD cfg not found (via env variable OPENOCD_COMMANDS nor as a --openocd-commands argument)\n'
-                  'OpenOCD arguments default to: "{}"'.format(openocd_arguments))
+            print(
+                'Note: OpenOCD cfg not found (via env variable OPENOCD_COMMANDS nor as a --openocd-commands argument)\n'
+                'OpenOCD arguments default to: "{}"'.format(openocd_arguments))
         # script directory is taken from the environment by OpenOCD, update only if command line arguments to override
         if openocd_scripts is not None:
             openocd_arguments += ' -s {}'.format(openocd_scripts)
@@ -458,8 +488,8 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
         if debug_targets:
             # Register the meta cleanup callback -> called on FatalError
             ctx.meta['cleanup'] = debug_cleanup
-            move_to_front('gdbgui')     # possibly 2nd
-            move_to_front('openocd')    # always 1st
+            move_to_front('gdbgui')  # possibly 2nd
+            move_to_front('openocd')  # always 1st
             # followed by "monitor", "gdb" or "gdbtui" in any order
 
             post_action = ctx.invoke(ctx.command.get_command(ctx, 'post_debug'))
@@ -467,16 +497,11 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                 post_action.action_args['block'] = 0
             else:
                 post_action.action_args['block'] = 1
-            tasks.append(post_action)   # always last
+            tasks.append(post_action)  # always last
         if any([task.name == 'openocd' for task in tasks]):
             for task in tasks:
                 if task.name in ('gdb', 'gdbgui', 'gdbtui'):
                     task.action_args['require_openocd'] = True
-
-    def run_gdb(gdb_args: List) -> int:
-        p = subprocess.Popen(gdb_args)
-        processes['gdb'] = p
-        return p.wait()
 
     def gdbtui(action: str, ctx: Context, args: PropertyDict, gdbinit: str, require_openocd: bool) -> None:
         """
@@ -484,11 +509,12 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
         """
         gdb(action, ctx, args, False, 1, gdbinit, require_openocd)
 
-    def gdb(action: str, ctx: Context, args: PropertyDict, batch: bool, gdb_tui: Optional[int], gdbinit: Optional[str], require_openocd: bool) -> None:
+    def gdb(action: str, ctx: Context, args: PropertyDict, batch: bool, gdb_tui: Optional[int], gdbinit: Optional[str],
+            require_openocd: bool) -> None:
         """
         Synchronous GDB target
         """
-        watch_openocd = Thread(target=_check_openocd_errors, args=(fail_if_openocd_failed, action, ctx, ))
+        watch_openocd = Thread(target=_check_openocd_errors, args=(fail_if_openocd_failed, action, ctx,))
         watch_openocd.start()
         processes['threads_to_join'].append(watch_openocd)
         project_desc = get_project_desc(args, ctx)
@@ -499,11 +525,11 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
             args += ['-tui']
         if batch:
             args += ['--batch']
-        t = Thread(target=run_gdb, args=(args,))
-        t.start()
+        p = subprocess.Popen(args)
+        processes['gdb'] = p
         while True:
             try:
-                t.join()
+                p.wait()
                 break
             except KeyboardInterrupt:
                 # Catching Keyboard interrupt, as this is used for breaking running program in gdb
@@ -521,8 +547,10 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                       args: PropertyDict,
                       gdb_timeout_sec: int,
                       core: str = None,
+                      chip_rev: str = None,
                       save_core: str = None) -> None:
         espcoredump = _get_espcoredump_instance(ctx=ctx, args=args, gdb_timeout_sec=gdb_timeout_sec, core=core,
+                                                chip_rev=chip_rev,
                                                 save_core=save_core)
 
         espcoredump.info_corefile()
@@ -531,8 +559,9 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                        ctx: Context,
                        args: PropertyDict,
                        core: str = None,
+                       chip_rev: str = None,
                        save_core: str = None) -> None:
-        espcoredump = _get_espcoredump_instance(ctx=ctx, args=args, core=core, save_core=save_core)
+        espcoredump = _get_espcoredump_instance(ctx=ctx, args=args, core=core, chip_rev=chip_rev, save_core=save_core)
 
         espcoredump.dbg_corefile()
 
@@ -542,6 +571,12 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
             'help': 'Path to core dump file (if skipped core dump will be read from flash)',
         },
         {
+            'names': ['--chip-rev'],
+            'help': 'Specify the chip revision (e.g., 0.1). If provided, the corresponding ROM ELF file will be used '
+                    'for decoding the core dump, improving stack traces. This is only needed for core dumps from IDF '
+                    '<v5.1. Newer versions already contain chip revision information.',
+        },
+        {
             'names': ['--save-core', '-s'],
             'help': 'Save core to file. Otherwise temporary core file will be deleted.',
         },
@@ -549,7 +584,7 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
     gdb_timeout_sec_opt = {
         'names': ['--gdb-timeout-sec'],
         'type': INT,
-        'default': 1,
+        'default': 3,
         'help': 'Overwrite the default internal delay for gdb responses',
     }
     fail_if_openocd_failed = {
@@ -573,14 +608,14 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                     {
                         'names': ['--openocd-scripts', '--openocd_scripts'],
                         'help':
-                        ('Script directory for openocd cfg files.\n'),
+                            ('Script directory for openocd cfg files.\n'),
                         'default':
-                        None,
+                            None,
                     },
                     {
                         'names': ['--openocd-commands', '--openocd_commands'],
                         'help':
-                        ('Command line arguments for openocd.\n'),
+                            ('Command line arguments for openocd.\n'),
                         'default': None,
                     }
                 ],
@@ -612,9 +647,9 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                     {
                         'names': ['--gdbgui-port', '--gdbgui_port'],
                         'help':
-                        ('The port on which gdbgui will be hosted. Default: 5000\n'),
+                            ('The port on which gdbgui will be hosted. Default: 5000\n'),
                         'default':
-                        None,
+                            None,
                     }, gdbinit, fail_if_openocd_failed
                 ],
                 'order_dependencies': ['all', 'flash'],
@@ -645,7 +680,7 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                     {
                         'names': ['--block', '--block'],
                         'help':
-                        ('Set to 1 for blocking the console on the outputs of async debug actions\n'),
+                            ('Set to 1 for blocking the console on the outputs of async debug actions\n'),
                         'default': 0,
                     },
                 ],
@@ -665,7 +700,7 @@ def action_extensions(base_actions: Dict, project_path: str) -> Dict:
                     {
                         'names': ['--block', '--block'],
                         'help':
-                        ('Set to 1 for blocking the console on the outputs of async debug actions\n'),
+                            ('Set to 1 for blocking the console on the outputs of async debug actions\n'),
                         'default': 0,
                     },
                 ],

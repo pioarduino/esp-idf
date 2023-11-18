@@ -2,10 +2,7 @@ menu "Power Management"
     config PM_ENABLE
         bool "Support for power management"
         # SMP FreeRTOS currently does not support power management IDF-4997
-        # ESP32H2 currently does not support power management IDF-6270
-        # Note. Disabling this option for H2 will also cause all sdkconfig.release test cases run without pm enabled
-        # ORed with  __DOXYGEN__ to pass H2 docs build, need to remove when pm is supported on H2
-        depends on (!FREERTOS_SMP && !IDF_TARGET_ESP32H2) || __DOXYGEN__
+        depends on (!FREERTOS_SMP && !IDF_TARGET_ESP32P4) || __DOXYGEN__ # TODO: IDF-7527
         default n
         help
             If enabled, application is compiled with support for power management.
@@ -54,8 +51,8 @@ menu "Power Management"
         bool "Put lightsleep related codes in internal RAM"
         depends on FREERTOS_USE_TICKLESS_IDLE
         help
-            If enabled, about 1.8KB of lightsleep related source code would be in IRAM and chip would sleep
-            longer for 760us at most each time.
+            If enabled, about 2.1KB of lightsleep related source code would be in IRAM and chip would sleep
+            longer for 310us at 160MHz CPU frequency most each time.
             This feature is intended to be used when lower power consumption is needed
             while there is enough place in IRAM to place source code.
 
@@ -63,8 +60,8 @@ menu "Power Management"
         bool "Put RTOS IDLE related codes in internal RAM"
         depends on FREERTOS_USE_TICKLESS_IDLE
         help
-            If enabled, about 260B of RTOS_IDLE related source code would be in IRAM and chip would sleep
-            longer for 40us at most each time.
+            If enabled, about 180Bytes of RTOS_IDLE related source code would be in IRAM and chip would sleep
+            longer for 20us at 160MHz CPU frequency most each time.
             This feature is intended to be used when lower power consumption is needed
             while there is enough place in IRAM to place source code.
 
@@ -88,7 +85,8 @@ menu "Power Management"
     config PM_CHECK_SLEEP_RETENTION_FRAME
         bool
         depends on PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
-        default n if !IDF_CI_BUILD
+        default y if IDF_CI_BUILD
+        default n
         help
             This option is invisible to users, and it is only used for ci testing,
             enabling it in the application will increase the sleep and wake-up time overhead
@@ -109,7 +107,7 @@ menu "Power Management"
 
     config PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
         bool "Power down CPU in light sleep"
-        depends on IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32C6
+        depends on SOC_PM_SUPPORT_CPU_PD
         select PM_POWER_DOWN_TAGMEM_IN_LIGHT_SLEEP if ESP32S3_DATA_CACHE_16KB
         default y
         help
@@ -154,5 +152,19 @@ menu "Power Management"
     config PM_UPDATE_CCOMPARE_HLI_WORKAROUND
         bool
         default y if PM_ENABLE && BTDM_CTRL_HLI
+
+    config PM_LIGHT_SLEEP_CALLBACKS
+        bool "Enable registration of pm light sleep callbacks"
+        depends on FREERTOS_USE_TICKLESS_IDLE
+        default n
+        help
+            If enabled, it allows user to register entry and exit callbacks which are called before and after
+            entering auto light sleep.
+
+            NOTE: These callbacks are executed from the IDLE task context hence you cannot have any blocking calls
+            in your callbacks.
+
+            NOTE: Enabling these callbacks may change sleep duration calculations based on time spent in callback and
+            hence it is highly recommended to keep them as short as possible
 
 endmenu # "Power Management"

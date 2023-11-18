@@ -96,6 +96,9 @@ ESP-BLE-MESH Terminology
   * - PB-GATT
     - PB-GATT is a provisioning bearer used to provision a device using Proxy PDUs to encapsulate Provisioning PDUs within the Mesh Provisioning Service.
     - PB-GATT uses connection channels to transfer packets generated during the provisioning process. If an unprovisioned device wants to be provisioned through this method, it needs to implement the related Mesh Provisioning Service. Unprovisioned devices which don't implement such service cannot be provisioned into mesh network through PB-GATT bearer.
+  * - PB-Remote
+    - The PB-Remote provisioning bearer uses the existing mesh network to provision an unprovisioned device that is not within immediate radio range of the Provisioner.
+    - PB-Remote uses the PB-ADV bearer or the PB-GATT bearer for the last hop to the unprovisioned device.
   * - Provisioning
     - Provisioning is a process of adding an unprovisioned device to a mesh network, managed by a Provisioner.
     - The process of provisioning turns the "unprovisioned device" into a "node", making it a member of the ESP-BLE-MESH network.
@@ -114,6 +117,9 @@ ESP-BLE-MESH Terminology
   * - No OOB
     - No Out-of-Band
     - Authentication method of No OOB: Set the value of the Static OOB field to 0. Using this way is like not authenticating the unprovisioned devices.
+  * - Certificate-based Provisioning
+    - Certificate-based Out-of-Band
+    - The certificate-based provisioning feature makes use of Public Key Infrastructure to authenticate unprovisioned device's public key and UUID information.
 
 
 .. _ble-mesh-terminology-address:
@@ -150,14 +156,16 @@ ESP-BLE-MESH Terminology
     - Detailed Explanation
   * - Device Key (DevKey)
     - There is also a device key, which is a special application key that is unique to each node, is known only to the node and a Configuration Client, and is used to secure communications between the node and a Configuration Client.
-    - The device key enables you to provision the devices, configure the nodes. The device key is used to encrypt Configuration Messages, i.e. the message transferred between the Provisioner and the node when the device is configured.
+    - The device key enables you to provision the devices, configure the nodes. The device key is used to encrypt Configuration Messages, i.e., the message transferred between the Provisioner and the node when the device is configured.
   * - Application Key (AppKey)
     - Application keys are used to secure communications at the upper transport layer.
     - Application key is used for decryption of application data before delivering application data to application layer and encryption of them during the delivery of application layer. Some nodes in the network have a specific purpose and can restrict access to potentially sensitive data based on the needs of the application. With specific application keys, these nodes are associated with specific applications. Generally speaking, the fields using different application keys include security (access control of buildings, machine rooms and CEO offices), lighting (plant, exterior building and sidewalks) and HVAC systems. Application keys are bound to Network keys. This means application keys are only used in a context of a Network key they are bound to. An application key shall only be bound to a single Network key.
-  * - Master Security Material
-    - The master security material is derived from the network key (NetKey) and can be used by other nodes in the same network. Messages encrypted with master security material can be decoded by any node in the same network.
-    - The corresponding friendship messages encrypted with the friendship security material: 1. Friend Poll, 2. Friend Update, 3. Friend Subscription List, add/delete/confirm, 4. The Stored Messages" sent by friend nodes to Low Power node. The corresponding friendship messages encrypted with the master security material: 1. Friend Clear, 2. Friend Clear Confirm. Based on the setup of the applications, the messages sent from the Low Power node to the friend nodes will be encrypted with the friendship security material or master security material, with the former being used by the messages transmitted between Low Power node and friend nodes and the latter being used by other network messages.
-
+  * - Flooding Security Material
+    - The flooding security material is derived from the network key (NetKey) and can be used by other nodes in the same network. Messages encrypted with flooding security material can be decoded by any node in the same network.
+    - The corresponding friendship messages encrypted with the friendship security material: 1. Friend Poll, 2. Friend Update, 3. Friend Subscription List, add/delete/confirm, 4. The Stored Messages" sent by friend nodes to Low Power node. The corresponding friendship messages encrypted with the flooding security material: 1. Friend Clear, 2. Friend Clear Confirm. Based on the setup of the applications, the messages sent from the Low Power node to the friend nodes will be encrypted with the friendship security material or flooding security material, with the former being used by the messages transmitted between Low Power node and friend nodes and the latter being used by other network messages.
+  * - Directed Security Material
+    - The directed security material is derived from the network key (NetKey) and can be used by other nodes in the directed forwarding path.
+    - The messages that need to be forwarded through the directed forwarding path need to be encrypted with the directed security material. Messages encrypted with directed security material can be decoded by any node in the same directed forwarding path.
 
 .. _ble-mesh-terminology-message:
 
@@ -168,10 +176,10 @@ ESP-BLE-MESH Terminology
   * - Term
     - Official Definition
     - Detailed Explanation
-  * - Reassembly / Segmentation
+  * - Reassembly/Segmentation
     - Segmentation and reassembly (SAR) is a method of communication network, which is divided into small units before transmitting packets and reassembled in a proper order at the communication receiving end.
     - The lower transport layer will automatically segment the message whose size is too big. The receiving end will return a response message, and the transmitting end will send the data packet again that the receiving end does not receive according to the response message. This is automatically completed by the lower transport layer. Unsegmented messages have at most 15 bytes, of which 4 bytes are transMIC, so the remaining is 11 bytes; in the case of segmentation, there are 12 valid bytes in the first several packets, and 8 in the last one. Special case: A shorter packet requires mandatory segmentation from lower transport layer, in which case the valid byte is 8 bytes.
-  * - Unacknowledged / Acknowledged
+  * - Unacknowledged/Acknowledged
     - There are two types of messages: Unacknowledged or Acknowledged
     - Based on the whether or not the receiving end needs to send the response message, the messages sent are divided into two kinds. The sending end should set the maximum number of retransmission.
 
@@ -197,6 +205,60 @@ ESP-BLE-MESH Terminology
   * - Health Client Model
     - The model is used to represent an element that can control and monitor the health of a node.
     - The Health Client Model uses messages to control the state maintained by the Health Server Model. The model can get the self-test information of other nodes through the message "Health Fault Get".
+  * - Remote Provisioning Server model
+    - The model is used to support the functionality of provisioning a remote device over the mesh network and to perform the Node Provisioning Protocol Interface procedures.
+    - The Remote Provisioning Server model is a root model and a main model that does not extend any other models.
+  * - Remote Provisioning Client model
+    - The model is used to support the functionality of provisioning devices into a mesh network by interacting with a mesh node that supports the Remote Provisioning Server model.
+    - The Remote Provisioning Client is a root model and a main model that does not extend any other models. The Remote Provisioning Client may operate on states defined by the Remote Provisioning Server model using Remote Provisioning messages.
+  * - Directed Forwarding Configuration Server model
+    - The model is used to support the configuration of the directed forwarding functionality of a node.
+    - The Directed Forwarding Configuration Server model is a main model that extends the Configuration Server model.
+  * - Directed Forwarding Configuration Client model
+    - The model is used to support the functionality of a node that can configure the directed forwarding functionality of another node.
+    - The Directed Forwarding Configuration Client model is a root model and a main model that does not extend any other models. The Directed Forwarding Configuration Client model may operate on states defined by the Directed Forwarding Configuration Server model using Directed Forwarding Configuration messages.
+  * - Bridge Configuration Server model
+    - The model is used to support the configuration of the subnet bridge functionality of a node.
+    - The Bridge Configuration Server model is a main model that extends the Configuration Server model.
+  * - Bridge Configuration Client model
+    - The model is used to support the functionality of a node that can configure the subnet bridge functionality of another node.
+    - The Bridge Configuration Client model is a root model and a main model that does not extend any other models. The Bridge Configuration Client model may operate on states defined by the Bridge Configuration Server model using Bridge messages.
+  * - Mesh Private Beacon Server model
+    - The model is used to support the configuration of the Mesh Private beacons functionality of a node.
+    - The Mesh Private Beacon Server model is a main model that extends the Configuration Server model.
+  * - Mesh Private Beacon Client model
+    - The model is used to support the functionality of a node that can configure the Mesh Private beacons functionality of another node.
+    - The Mesh Private Beacon Client model is a root model and a main model that does not extend any other models. The Mesh Private Beacon Client model may operate on states defined by the Mesh Private Beacon Server model using Mesh Private Beacon messages.
+  * - On-Demand Private Proxy Server model
+    - The model is used to support the configuration of the advertising with Private Network Identity type functionality of a node.
+    - The On-Demand Private Proxy Server model is a main model that extends the Mesh Private Beacon Server model and corresponds with the Solicitation PDU RPL Configuration Server model.
+  * - On-Demand Private Proxy Client model
+    - The model is used to support the functionality of a node that can configure the advertising with Private Network Identity type functionality of another node.
+    - The On-Demand Private Proxy Client model is a root model and a main model that does not extend any other models. The On-Demand Private Proxy Client model may operate on states defined by the On-Demand Private Proxy Server model using On-Demand Private Proxy messages.
+  * - SAR Configuration Server model
+    - The model is used to support the configuration of the segmentation and reassembly behavior of a node.
+    - The SAR Configuration Server model is a root model and a main model that does not extend any other models.
+  * - SAR Configuration Client model
+    - The SAR Configuration Client model is used to support the functionality of configuring the behavior of the lower transport layer of a node that supports the SAR Configuration Server model.
+    - The SAR Configuration Client model is a root model and a main model that does not extend any other models. The SAR Configuration Client model may operate on states defined by the SAR Configuration Server model using SAR Configuration messages.
+  * - Solicitation PDU RPL Configuration Server model
+    - The Solicitation PDU RPL Configuration Server model is used to support the functionality of removing items from the solicitation replay protection list of a node.
+    - The Solicitation PDU RPL Configuration Server model corresponds with the On-Demand Private Proxy Server model.
+  * - Solicitation PDU RPL Configuration Client model
+    - The model is used to support the functionality of removing addresses from the solicitation replay protection list of a node that supports the Solicitation PDU RPL Configuration Server model.
+    - The Solicitation PDU RPL Configuration Client model is a root model and a main model that does not extend any other models. The Solicitation PDU RPL Configuration Client model may be used to remove items from a solicitation replay protection list of a peer node by using Solicitation PDU RPL Configuration messages.
+  * - Opcodes Aggregator Server model
+    - The model is used to support the functionality of processing a sequence of access layer messages.
+    - The Opcodes Aggregator Server model is a root model that does not extend any other models.
+  * - Opcodes Aggregator Client model
+    - The model is used to support the functionality of dispatching a sequence of access layer messages to nodes supporting the Opcodes Aggregator Server model.
+    - The Opcodes Aggregator Client model is a root model and a main model that does not extend any other models.
+  * - Large Composition Data Server model
+    - The model is used to support the functionality of exposing pages of Composition Data that do not fit in a Config Composition Data Status message and to expose metadata of the model instances.
+    - The Large Composition Data Server is a main model that extends the Configuration Server model.
+  * - Large Composition Data Client model
+    - The model is used to support the functionality of reading pages of Composition Data that do not fit in a Config Composition Data Status message and reading the metadata of the model instances.
+    - The Large Composition Data Client model is a root model that does not extend any other models. The Large Composition Data Client model may operate on states defined by the Large Composition Data Server model using Large Composition Data messages.
 
 
 .. _ble-mesh-terminology-network-management:
@@ -211,11 +273,8 @@ ESP-BLE-MESH Terminology
   * - Key Refresh procedure
     - This procedure is used when the security of one or more network keys and/or one or more of the application keys has been compromised or could be compromised.
     - Key Refresh Procedure is used to update network key and application key of ESP-BLE-MESH network. Key Refresh Procedure is used when the security of one or more network keys and/or one or more application keys is threatened or potentially threatened. Keys are usually updated after some nodes in the network are removed.
-  * - IV (Initialisation Vector) Update Procedure
+  * - IV (Initialization Vector) Update Procedure
     - A node can also use an IV Update procedure to signal to peer nodes that it is updating the IV Index.
     - The IV Update procedure is used to update the value of ESP-BLE-MESH network's IV Index. This value is related to the random number required for message encryption. To ensure that the value of the random number is not repeated, this value is periodically incremented. IV Index is a 32-bit value and a shared network resource. For example, all nodes in a mesh network share the same IV Index value. Starting from 0x00000000, the IV Index increments during the IV Update procedure and maintained by a specific process, ensuring the IV Index shared in the mesh network is the same. This can be done when the node believes that it has the risk of exhausting its sequence number, or when it determines that another node is nearly exhausting its sequence number. Note: The update time must not be less than 96 hours. It can be triggered when a secure network beacon is received, or when the node determines that its sequence number is greater than a certain value.
 
 For more terms, please see: `ESP-BLE-MESH Glossary of Terms <https://www.bluetooth.com/learn-about-bluetooth/recent-enhancements/mesh/mesh-glossary/>`_.
-
-
-

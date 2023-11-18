@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,8 +22,7 @@
 #include "soc/soc_caps.h"
 #include "hal/uart_ll.h"
 
-// TODO: make the number of UARTs chip dependent
-#define UART_NUM SOC_UART_NUM
+#define UART_NUM SOC_UART_HP_NUM
 
 // Token signifying that no character is available
 #define NONE -1
@@ -106,6 +105,14 @@ static vfs_uart_context_t* s_ctx[UART_NUM] = {
 #endif
 };
 
+static const char *s_uart_mount_points[UART_NUM] = {
+    "/0",
+    "/1",
+#if UART_NUM > 2
+    "/2",
+#endif
+};
+
 #ifdef CONFIG_VFS_SUPPORT_SELECT
 
 typedef struct {
@@ -121,26 +128,27 @@ typedef struct {
 static uart_select_args_t **s_registered_selects = NULL;
 static int s_registered_select_num = 0;
 static portMUX_TYPE s_registered_select_lock = portMUX_INITIALIZER_UNLOCKED;
+static int s_uart_select_count[UART_NUM] = {0};
 
 static esp_err_t uart_end_select(void *end_select_args);
 
 #endif // CONFIG_VFS_SUPPORT_SELECT
 
-static int uart_open(const char * path, int flags, int mode)
+static int uart_open(const char *path, int flags, int mode)
 {
     // this is fairly primitive, we should check if file is opened read only,
     // and error out if write is requested
     int fd = -1;
 
-    if (strcmp(path, "/0") == 0) {
-        fd = 0;
-    } else if (strcmp(path, "/1") == 0) {
-        fd = 1;
-    } else if (strcmp(path, "/2") == 0) {
-        fd = 2;
-    } else {
+    for (int i = 0; i < UART_NUM; i++) {
+        if (strcmp(path, s_uart_mount_points[i]) == 0) {
+            fd = i;
+            break;
+        }
+    }
+    if (fd == -1) {
         errno = ENOENT;
-        return fd;
+        return -1;
     }
 
     s_ctx[fd]->non_blocking = ((flags & O_NONBLOCK) == O_NONBLOCK);
@@ -462,7 +470,10 @@ static esp_err_t uart_start_select(int nfds, fd_set *readfds, fd_set *writefds, 
     //uart_set_select_notif_callback sets the callbacks in UART ISR
     for (int i = 0; i < max_fds; ++i) {
         if (FD_ISSET(i, &args->readfds_orig) || FD_ISSET(i, &args->writefds_orig) || FD_ISSET(i, &args->errorfds_orig)) {
-            uart_set_select_notif_callback(i, select_notif_callback_isr);
+            if (s_uart_select_count[i] == 0) {
+                uart_set_select_notif_callback(i, select_notif_callback_isr);
+            }
+            s_uart_select_count[i]++;
         }
     }
 
@@ -497,7 +508,13 @@ static esp_err_t uart_end_select(void *end_select_args)
     portENTER_CRITICAL(uart_get_selectlock());
     esp_err_t ret = unregister_select(args);
     for (int i = 0; i < UART_NUM; ++i) {
-        uart_set_select_notif_callback(i, NULL);
+        if (FD_ISSET(i, &args->readfds_orig) || FD_ISSET(i, &args->writefds_orig) || FD_ISSET(i, &args->errorfds_orig)) {
+            s_uart_select_count[i]--;
+            if (s_uart_select_count[i] == 0) {
+                uart_set_select_notif_callback(i, NULL);
+            }
+            break;
+        }
     }
     portEXIT_CRITICAL(uart_get_selectlock());
 

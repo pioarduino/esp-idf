@@ -71,6 +71,9 @@ API 更新
 - ESP32 中的 API ``hall_sensor_read`` 已被删除，因此 ESP32 不再支持霍尔传感器。
 - API ``adc_set_i2s_data_source`` 和 ``adc_i2s_mode_init`` 已被弃用，相关的枚举 ``adc_i2s_source_t`` 也已被弃用，请使用 ``esp_adc/adc_continuous.h`` 进行迁移。
 - API ``adc_digi_filter_reset`` ， ``adc_digi_filter_set_config`` ， ``adc_digi_filter_get_config`` 和 ``adc_digi_filter_enable`` 已被移除. 这些接口的行为不被保证。 枚举 ``adc_digi_filter_idx_t`` ， ``adc_digi_filter_mode_t`` 和结构体 ``adc_digi_iir_filter_t`` 已被移除。
+- API ``esp_adc_cal_characterize`` 已被弃用， 请迁移到 ``adc_cali_create_scheme_curve_fitting`` 或 ``adc_cali_create_scheme_line_fitting``.
+- API ``esp_adc_cal_raw_to_voltage`` 已被弃用， 请迁移到 ``adc_cali_raw_to_voltage``.
+- API ``esp_adc_cal_get_voltage`` 已被弃用， 请迁移到 ``adc_oneshot_get_calibrated_result``.
 
 GPIO
 ----------
@@ -371,7 +374,7 @@ LCD
 - 更新后，用于注册 RGB 面板的事件回调函数已从 :cpp:type:`esp_lcd_rgb_panel_config_t` 更新为单独的 API :cpp:func:`esp_lcd_rgb_panel_register_event_callbacks`。但是，事件回调签名仍保持不变。
 - 更新后， :cpp:type:`esp_lcd_rgb_panel_config_t` 中的标志位 ``relax_on_idle`` 被重命名为 :cpp:member:`esp_lcd_rgb_panel_config_t::refresh_on_demand`，后者虽表达了同样的含义，但是其命名更有意义。
 - 更新后，如果创建 RGB LCD 时，标志位 ``refresh_on_demand`` 使能，驱动不会在 :cpp:func:`esp_lcd_panel_draw_bitmap` 中进行刷新，用户需要调用 :cpp:func:`esp_lcd_rgb_panel_refresh` 来刷新屏幕。
-- 更新后，:cpp:type:`esp_lcd_color_space_t` 已被弃用，请使用 :cpp:type:`lcd_color_space_t` 来描述色彩空间，使用 :cpp:type:`lcd_color_rgb_endian_t` 来描述 RGB 颜色的排列顺序。
+- 更新后，:cpp:type:`esp_lcd_color_space_t` 已被弃用，请使用 :cpp:type:`lcd_color_space_t` 来描述色彩空间，使用 :cpp:type:`lcd_rgb_element_order_t` 来描述 RGB 颜色的排列顺序。
 
 .. only:: SOC_MCPWM_SUPPORTED
 
@@ -475,7 +478,7 @@ LCD
     更新后，I2S 驱动的最小控制单元是发送/接收通道，而不是整个 I2S 控制器（控制器包括多个通道）。
 
     - 用户可以分别控制同一个 I2S 控制器的发送通道和接收通道，即可以通过配置实现分别开启和关闭发送通道和接收通道。
-    - :c:type:`i2s_chan_handle_t` 句柄类型用于唯一地识别 I2S 通道。所有的 API 都需要该通道句柄，用户需要对这些通道句柄进行维护。
+    - :cpp:type:`i2s_chan_handle_t` 句柄类型用于唯一地识别 I2S 通道。所有的 API 都需要该通道句柄，用户需要对这些通道句柄进行维护。
     - 对于 ESP32-C3 和 ESP32-S3，同一个控制器中的发送通道和接收通道可以配置为不同的时钟或不同的模式。
     - 但是对于 ESP32 和 ESP32-S2， 同一个控制器中的发送通道和接收通道共享某些硬件资源。因此，配置可能会造成一个通道影响同一个控制器中的另一个通道。
     - 通过将 :cpp:enumerator:`i2s_port_t::I2S_NUM_AUTO` 设置为 I2S 端口 ID，驱动会搜索可用的发送/接收通道，之后通道会被自动注册到可用的 I2S 控制器上。但是，驱动仍然支持将通道注册到一个特定的端口上。
@@ -534,7 +537,7 @@ LCD
 
 更新前，所有用于访问寄存器的宏都可以作为表达式来使用，所以以下命令是允许的::
 
-    uint32_t val = REG_SET_BITS(reg, mask);
+    uint32_t val = REG_SET_BITS(reg, bits, mask);
 
 在 ESP-IDF v5.0 中，用于写入或读取-修改-写入寄存器的宏不能再作为表达式使用，而只能作为语句使用，这适用于以下宏： ``REG_WRITE``， ``REG_SET_BIT``， ``REG_CLR_BIT``， ``REG_SET_BITS``， ``REG_SET_FIELD``， ``WRITE_PERI_REG``， ``CLEAR_PERI_REG_MASK``， ``SET_PERI_REG_MASK``， ``SET_PERI_REG_BITS``。
 
@@ -545,5 +548,5 @@ LCD
 
 要获得修改后的寄存器的值（该值可能与写入的值不同），要增加一个显示的读取命令::
 
-    REG_SET_BITS(reg, mask);
+    REG_SET_BITS(reg, bits, mask);
     uint32_t new_val = REG_READ(reg);

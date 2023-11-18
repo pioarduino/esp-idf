@@ -19,6 +19,7 @@
 #include "soc/i2s_struct.h"
 #include "soc/pcr_struct.h"
 #include "hal/i2s_types.h"
+#include "hal/hal_utils.h"
 
 
 #ifdef __cplusplus
@@ -30,39 +31,46 @@ extern "C" {
 #define I2S_LL_TDM_CH_MASK             (0xffff)
 #define I2S_LL_PDM_BCK_FACTOR          (64)
 
-#define I2S_LL_MCLK_DIVIDER_BIT_WIDTH  (9)
-#define I2S_LL_MCLK_DIVIDER_MAX        ((1 << I2S_LL_MCLK_DIVIDER_BIT_WIDTH) - 1)
+#define I2S_LL_CLK_FRAC_DIV_N_MAX  256 // I2S_MCLK = I2S_SRC_CLK / (N + b/a), the N register is 8 bit-width
+#define I2S_LL_CLK_FRAC_DIV_AB_MAX 512 // I2S_MCLK = I2S_SRC_CLK / (N + b/a), the a/b register is 9 bit-width
 
 #define I2S_LL_PLL_F160M_CLK_FREQ      (160 * 1000000) // PLL_F160M_CLK: 160MHz
-#define I2S_LL_DEFAULT_PLL_CLK_FREQ     I2S_LL_PLL_F160M_CLK_FREQ    // The default PLL clock frequency while using I2S_CLK_SRC_DEFAULT
+#define I2S_LL_DEFAULT_CLK_FREQ     I2S_LL_PLL_F160M_CLK_FREQ    // The default PLL clock frequency while using I2S_CLK_SRC_DEFAULT
 
-/* I2S clock configuration structure */
-typedef struct {
-    uint16_t mclk_div; // I2S module clock divider, Fmclk = Fsclk /(mclk_div+b/a)
-    uint16_t a;
-    uint16_t b;        // The decimal part of module clock divider, the decimal is: b/a
-} i2s_ll_mclk_div_t;
+/**
+ *
+ * @param i2s_id The port id of I2S
+ * @param enable Set true to enable the buf clock
+ */
+static inline void i2s_ll_enable_bus_clock(int i2s_id, bool enable)
+{
+    (void)i2s_id;
+    PCR.i2s_conf.i2s_clk_en = enable;
+}
+
+/**
+ * @brief Reset the I2S module
+ *
+ * @param i2s_id The port id of I2S
+ */
+static inline void i2s_ll_reset_register(int i2s_id)
+{
+    (void)i2s_id;
+    PCR.i2s_conf.i2s_rst_en = 1;
+    PCR.i2s_conf.i2s_rst_en = 0;
+}
 
 /**
  * @brief I2S module general init, enable I2S clock.
  *
  * @param hw Peripheral I2S hardware instance address.
+ * @param enable set true to enable the core clock
  */
-static inline void i2s_ll_enable_clock(i2s_dev_t *hw)
+static inline void i2s_ll_enable_core_clock(i2s_dev_t *hw, bool enable)
 {
-    // The clock gate enabling is moved to `periph_module_enable`
     (void)hw;
-}
-
-/**
- * @brief I2S module disable I2S clock.
- *
- * @param hw Peripheral I2S hardware instance address.
- */
-static inline void i2s_ll_disable_clock(i2s_dev_t *hw)
-{
-    // The clock gate disabling is moved to `periph_module_disable`
-    (void)hw;
+    (void)enable;
+    // No need to do anything
 }
 
 /**
@@ -214,6 +222,9 @@ static inline void i2s_ll_tx_clk_set_src(i2s_dev_t *hw, i2s_clock_src_t src)
     case I2S_CLK_SRC_PLL_160M:
         PCR.i2s_tx_clkm_conf.i2s_tx_clkm_sel = 2;
         break;
+    case I2S_CLK_SRC_EXTERNAL:
+        PCR.i2s_tx_clkm_conf.i2s_tx_clkm_sel = 3;
+        break;
     default:
         HAL_ASSERT(false && "unsupported clock source");
         break;
@@ -237,6 +248,9 @@ static inline void i2s_ll_rx_clk_set_src(i2s_dev_t *hw, i2s_clock_src_t src)
     case I2S_CLK_SRC_PLL_160M:
         PCR.i2s_rx_clkm_conf.i2s_rx_clkm_sel = 2;
         break;
+    case I2S_CLK_SRC_EXTERNAL:
+        PCR.i2s_rx_clkm_conf.i2s_rx_clkm_sel = 3;
+        break;
     default:
         HAL_ASSERT(false && "unsupported clock source");
         break;
@@ -258,14 +272,16 @@ static inline void i2s_ll_tx_set_bck_div_num(i2s_dev_t *hw, uint32_t val)
  * @brief Set I2S tx raw clock division
  *
  * @param hw Peripheral I2S hardware instance address.
+ * @param div_int  Integer part of division
  * @param x  div x
  * @param y  div y
  * @param z  div z
  * @param yn1 yn1
  */
-static inline void i2s_ll_tx_set_raw_clk_div(i2s_dev_t *hw, uint32_t x, uint32_t y, uint32_t z, uint32_t yn1)
+static inline void i2s_ll_tx_set_raw_clk_div(i2s_dev_t *hw, uint32_t div_int, uint32_t x, uint32_t y, uint32_t z, uint32_t yn1)
 {
     (void)hw;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_tx_clkm_conf, i2s_tx_clkm_div_num, div_int);
     typeof(PCR.i2s_tx_clkm_div_conf) div = {};
     div.i2s_tx_clkm_div_x = x;
     div.i2s_tx_clkm_div_y = y;
@@ -278,14 +294,16 @@ static inline void i2s_ll_tx_set_raw_clk_div(i2s_dev_t *hw, uint32_t x, uint32_t
  * @brief Set I2S rx raw clock division
  *
  * @param hw Peripheral I2S hardware instance address.
+ * @param div_int  Integer part of division
  * @param x  div x
  * @param y  div y
  * @param z  div z
  * @param yn1 yn1
  */
-static inline void i2s_ll_rx_set_raw_clk_div(i2s_dev_t *hw, uint32_t x, uint32_t y, uint32_t z, uint32_t yn1)
+static inline void i2s_ll_rx_set_raw_clk_div(i2s_dev_t *hw, uint32_t div_int, uint32_t x, uint32_t y, uint32_t z, uint32_t yn1)
 {
     (void)hw;
+    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_rx_clkm_conf, i2s_rx_clkm_div_num, div_int);
     typeof(PCR.i2s_rx_clkm_div_conf) div = {};
     div.i2s_rx_clkm_div_x = x;
     div.i2s_rx_clkm_div_y = y;
@@ -298,65 +316,28 @@ static inline void i2s_ll_rx_set_raw_clk_div(i2s_dev_t *hw, uint32_t x, uint32_t
  * @brief Configure I2S TX module clock divider
  *
  * @param hw Peripheral I2S hardware instance address.
- * @param sclk system clock
- * @param mclk module clock
- * @param mclk_div integer part of the division from sclk to mclk
+ * @param mclk_div The mclk division coefficients
  */
-static inline void i2s_ll_tx_set_mclk(i2s_dev_t *hw, uint32_t sclk, uint32_t mclk, uint32_t mclk_div)
+static inline void i2s_ll_tx_set_mclk(i2s_dev_t *hw, const hal_utils_clk_div_t *mclk_div)
 {
-    (void)hw;
-    int ma = 0;
-    int mb = 0;
-    int denominator = 1;
-    int numerator = 0;
-
-    uint32_t freq_diff = abs((int)sclk - (int)(mclk * mclk_div));
-    if (!freq_diff) {
-        goto finish;
-    }
-    float decimal = freq_diff / (float)mclk;
-    // Carry bit if the decimal is greater than 1.0 - 1.0 / (63.0 * 2) = 125.0 / 126.0
-    if (decimal > 125.0 / 126.0) {
-        mclk_div++;
-        goto finish;
-    }
-    uint32_t min = ~0;
-    for (int a = 2; a <= I2S_LL_MCLK_DIVIDER_MAX; a++) {
-        int b = (int)(a * (freq_diff / (double)mclk) + 0.5);
-        ma = freq_diff * a;
-        mb = mclk * b;
-        if (ma == mb) {
-            denominator = a;
-            numerator = b;
-            goto finish;
-        }
-        if (abs((mb - ma)) < min) {
-            denominator = a;
-            numerator = b;
-            min = abs(mb - ma);
-        }
-    }
-finish:
     /* Workaround for inaccurate clock while switching from a relatively low sample rate to a high sample rate
      * Set to particular coefficients first then update to the target coefficients,
      * otherwise the clock division might be inaccurate.
-     * The particular coefficients here is calculated from 44100 Hz with 2 slots & 16-bit width @ 160MHz sclk */
-    i2s_ll_tx_set_raw_clk_div(hw, 47, 0, 1, 0);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_tx_clkm_conf, i2s_tx_clkm_div_num, 13);
+     * the general idea is to set a value that impossible to calculate from the regular decimal */
+    i2s_ll_tx_set_raw_clk_div(hw, 7, 317, 7, 3, 0);
 
     uint32_t div_x = 0;
     uint32_t div_y = 0;
     uint32_t div_z = 0;
     uint32_t div_yn1 = 0;
     /* If any of denominator and numerator is 0, set all the coefficients to 0 */
-    if (denominator && numerator) {
-        div_yn1 = numerator * 2 > denominator;
-        div_z = div_yn1 ? denominator - numerator : numerator;
-        div_x = denominator / div_z - 1;
-        div_y = denominator % div_z;
+    if (mclk_div->denominator && mclk_div->numerator) {
+        div_yn1 = mclk_div->numerator * 2 > mclk_div->denominator;
+        div_z = div_yn1 ? mclk_div->denominator - mclk_div->numerator : mclk_div->numerator;
+        div_x = mclk_div->denominator / div_z - 1;
+        div_y = mclk_div->denominator % div_z;
     }
-    i2s_ll_tx_set_raw_clk_div(hw, div_x, div_y, div_z, div_yn1);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_tx_clkm_conf, i2s_tx_clkm_div_num, mclk_div);
+    i2s_ll_tx_set_raw_clk_div(hw, mclk_div->integer, div_x, div_y, div_z, div_yn1);
 }
 
 /**
@@ -375,65 +356,28 @@ static inline void i2s_ll_rx_set_bck_div_num(i2s_dev_t *hw, uint32_t val)
  * @note mclk on ESP32 is shared by both TX and RX channel
  *
  * @param hw Peripheral I2S hardware instance address.
- * @param sclk system clock, 0 means use apll
- * @param mclk module clock
- * @param mclk_div integer part of the division from sclk to mclk
+ * @param mclk_div The mclk division coefficients
  */
-static inline void i2s_ll_rx_set_mclk(i2s_dev_t *hw, uint32_t sclk, uint32_t mclk, uint32_t mclk_div)
+static inline void i2s_ll_rx_set_mclk(i2s_dev_t *hw, const hal_utils_clk_div_t *mclk_div)
 {
-    (void)hw;
-    int ma = 0;
-    int mb = 0;
-    int denominator = 1;
-    int numerator = 0;
-
-    uint32_t freq_diff = abs((int)sclk - (int)(mclk * mclk_div));
-    if (!freq_diff) {
-        goto finish;
-    }
-    float decimal = freq_diff / (float)mclk;
-    // Carry bit if the decimal is greater than 1.0 - 1.0 / (63.0 * 2) = 125.0 / 126.0
-    if (decimal > 125.0 / 126.0) {
-        mclk_div++;
-        goto finish;
-    }
-    uint32_t min = ~0;
-    for (int a = 2; a <= I2S_LL_MCLK_DIVIDER_MAX; a++) {
-        int b = (int)(a * (freq_diff / (double)mclk) + 0.5);
-        ma = freq_diff * a;
-        mb = mclk * b;
-        if (ma == mb) {
-            denominator = a;
-            numerator = b;
-            goto finish;
-        }
-        if (abs((mb - ma)) < min) {
-            denominator = a;
-            numerator = b;
-            min = abs(mb - ma);
-        }
-    }
-finish:
     /* Workaround for inaccurate clock while switching from a relatively low sample rate to a high sample rate
      * Set to particular coefficients first then update to the target coefficients,
      * otherwise the clock division might be inaccurate.
-     * The particular coefficients here is calculated from 44100 Hz with 2 slots & 16-bit width @ 160MHz sclk */
-    i2s_ll_rx_set_raw_clk_div(hw, 47, 0, 1, 0);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_rx_clkm_conf, i2s_rx_clkm_div_num, 13);
+     * the general idea is to set a value that impossible to calculate from the regular decimal */
+    i2s_ll_rx_set_raw_clk_div(hw, 7, 317, 7, 3, 0);
 
     uint32_t div_x = 0;
     uint32_t div_y = 0;
     uint32_t div_z = 0;
     uint32_t div_yn1 = 0;
     /* If any of denominator and numerator is 0, set all the coefficients to 0 */
-    if (denominator && numerator) {
-        div_yn1 = numerator * 2 > denominator;
-        div_z = div_yn1 ? denominator - numerator : numerator;
-        div_x = denominator / div_z - 1;
-        div_y = denominator % div_z;
+    if (mclk_div->denominator && mclk_div->numerator) {
+        div_yn1 = mclk_div->numerator * 2 > mclk_div->denominator;
+        div_z = div_yn1 ? mclk_div->denominator - mclk_div->numerator : mclk_div->numerator;
+        div_x = mclk_div->denominator / div_z - 1;
+        div_y = mclk_div->denominator % div_z;
     }
-    i2s_ll_rx_set_raw_clk_div(hw, div_x, div_y, div_z, div_yn1);
-    HAL_FORCE_MODIFY_U32_REG_FIELD(PCR.i2s_rx_clkm_conf, i2s_rx_clkm_div_num, mclk_div);
+    i2s_ll_rx_set_raw_clk_div(hw, mclk_div->integer, div_x, div_y, div_z, div_yn1);
 }
 
 /**
@@ -615,10 +559,10 @@ static inline void i2s_ll_rx_set_chan_num(i2s_dev_t *hw, int total_num)
  */
 static inline void i2s_ll_tx_set_active_chan_mask(i2s_dev_t *hw, uint32_t chan_mask)
 {
-    typeof(hw->tx_tdm_ctrl) tdm_ctrl_reg = hw->tx_tdm_ctrl;
-    tdm_ctrl_reg.val &= ~I2S_LL_TDM_CH_MASK;
-    tdm_ctrl_reg.val |= chan_mask & I2S_LL_TDM_CH_MASK;
-    hw->tx_tdm_ctrl.val = tdm_ctrl_reg.val;
+    uint32_t tdm_ctrl = hw->tx_tdm_ctrl.val;
+    tdm_ctrl &= 0xFFFF0000;
+    tdm_ctrl |= chan_mask;
+    hw->tx_tdm_ctrl.val = tdm_ctrl;
 }
 
 /**
@@ -629,10 +573,10 @@ static inline void i2s_ll_tx_set_active_chan_mask(i2s_dev_t *hw, uint32_t chan_m
  */
 static inline void i2s_ll_rx_set_active_chan_mask(i2s_dev_t *hw, uint32_t chan_mask)
 {
-    typeof(hw->rx_tdm_ctrl) tdm_ctrl_reg = hw->rx_tdm_ctrl;
-    tdm_ctrl_reg.val &= ~I2S_LL_TDM_CH_MASK;
-    tdm_ctrl_reg.val |= chan_mask & I2S_LL_TDM_CH_MASK;
-    hw->rx_tdm_ctrl.val = tdm_ctrl_reg.val;
+    uint32_t tdm_ctrl = hw->rx_tdm_ctrl.val;
+    tdm_ctrl &= 0xFFFF0000;
+    tdm_ctrl |= chan_mask;
+    hw->rx_tdm_ctrl.val = tdm_ctrl;
 }
 
 /**
@@ -646,21 +590,22 @@ static inline void i2s_ll_tx_select_std_slot(i2s_dev_t *hw, i2s_std_slot_mask_t 
     /* In mono mode, there only should be one slot enabled, another inactive slot will transmit same data as enabled slot
      * Otherwise always enable the first two slots */
     hw->tx_tdm_ctrl.tx_tdm_tot_chan_num = 1;  // tx_tdm_tot_chan_num = 2 slots - 1 = 1
-    hw->tx_tdm_ctrl.val &= ~I2S_LL_TDM_CH_MASK;
+    uint32_t chan_mask = 0;
     switch (slot_mask)
     {
     case I2S_STD_SLOT_LEFT:
-        hw->tx_tdm_ctrl.val |= 0x01;
+        chan_mask |= 0x01;
         break;
     case I2S_STD_SLOT_RIGHT:
-        hw->tx_tdm_ctrl.val |= 0x02;
+        chan_mask |= 0x02;
         break;
     case I2S_STD_SLOT_BOTH:
-        hw->tx_tdm_ctrl.val |= 0x03;
+        chan_mask |= 0x03;
         break;
     default:
         break;
     }
+    i2s_ll_tx_set_active_chan_mask(hw, chan_mask);
 }
 
 /**
@@ -674,21 +619,22 @@ static inline void i2s_ll_rx_select_std_slot(i2s_dev_t *hw, i2s_std_slot_mask_t 
     /* In mono mode, there only should be one slot enabled, another inactive slot will transmit same data as enabled slot
      * Otherwise always enable the first two slots */
     hw->rx_tdm_ctrl.rx_tdm_tot_chan_num = 1;  // rx_tdm_tot_chan_num = 2 slots - 1 = 1
-    hw->rx_tdm_ctrl.val &= ~I2S_LL_TDM_CH_MASK;
+    uint32_t chan_mask = 0;
     switch (slot_mask)
     {
     case I2S_STD_SLOT_LEFT:
-        hw->rx_tdm_ctrl.val |= 0x01;
+        chan_mask |= 0x01;
         break;
     case I2S_STD_SLOT_RIGHT:
-        hw->rx_tdm_ctrl.val |= 0x02;
+        chan_mask |= 0x02;
         break;
     case I2S_STD_SLOT_BOTH:
-        hw->rx_tdm_ctrl.val |= 0x03;
+        chan_mask |= 0x03;
         break;
     default:
         break;
     }
+    i2s_ll_rx_set_active_chan_mask(hw, chan_mask);
 }
 
 /**

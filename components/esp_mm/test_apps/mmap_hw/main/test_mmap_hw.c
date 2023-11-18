@@ -55,8 +55,6 @@ typedef struct test_block_info_ {
 } test_block_info_t;
 
 static LIST_HEAD(test_block_list_head_, test_block_info_) test_block_head;
-static DRAM_ATTR uint8_t sector_buf[TEST_BLOCK_SIZE];
-
 
 static void s_fill_random_data(uint8_t *buffer, size_t size, int random_seed)
 {
@@ -66,18 +64,18 @@ static void s_fill_random_data(uint8_t *buffer, size_t size, int random_seed)
     }
 }
 
-static bool s_test_mmap_data_by_random(uint8_t *mblock_ptr, size_t size, int random_seed)
+static bool s_test_mmap_data_by_random(uint8_t *mblock_ptr, size_t size, int random_seed, uint8_t *flash_ref_buf)
 {
     srand(random_seed);
     uint8_t *test_ptr = mblock_ptr;
 
     for (int i = 0; i < size; i++) {
         uint8_t test_data = rand() % 0xff;
-        if(test_data != test_ptr[i]) {
+        if (test_data != test_ptr[i]) {
             printf("i: %d\n", i);
             printf("test_data: %d\n", test_data);
             printf("test_ptr[%d]: %d\n", i, test_ptr[i]);
-            printf("sector_buf[%d]: %d\n", i, sector_buf[i]);
+            printf("flash_ref_buf[%d]: %d\n", i, flash_ref_buf[i]);
             ESP_EARLY_LOGE(TAG, "FAIL!!!!!!");
             return false;
         }
@@ -87,6 +85,9 @@ static bool s_test_mmap_data_by_random(uint8_t *mblock_ptr, size_t size, int ran
 
 TEST_CASE("test all readable vaddr can map to flash", "[mmu]")
 {
+    uint8_t *sector_buf = heap_caps_calloc(1, TEST_BLOCK_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    TEST_ASSERT(sector_buf);
+
     //Get the partition used for SPI1 erase operation
     const esp_partition_t *part = s_get_partition();
     ESP_LOGI(TAG, "found partition '%s' at offset 0x%"PRIx32" with size 0x%"PRIx32, part->label, part->address, part->size);
@@ -100,12 +101,11 @@ TEST_CASE("test all readable vaddr can map to flash", "[mmu]")
     ESP_LOGV(TAG, "rand seed: %d, write flash addr: %p...", test_seed, (void *)part->address);
     TEST_ESP_OK(esp_flash_write(part->flash_chip, sector_buf, part->address, sizeof(sector_buf)));
 
-
     esp_err_t ret = ESP_FAIL;
     int count = 0;
     LIST_INIT(&test_block_head);
     while (1) {
-        test_block_info_t *block_info = heap_caps_calloc(1, sizeof(test_block_info_t), MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+        test_block_info_t *block_info = heap_caps_calloc(1, sizeof(test_block_info_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         TEST_ASSERT(block_info && "no mem");
 
         void *ptr = NULL;
@@ -113,7 +113,7 @@ TEST_CASE("test all readable vaddr can map to flash", "[mmu]")
         ret = esp_mmu_map(part->address, TEST_BLOCK_SIZE, MMU_TARGET_FLASH0, MMU_MEM_CAP_READ, 0, &ptr);
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "ptr is %p", ptr);
-            bool success = s_test_mmap_data_by_random((uint8_t *)ptr, sizeof(sector_buf), test_seed);
+            bool success = s_test_mmap_data_by_random((uint8_t *)ptr, sizeof(sector_buf), test_seed, sector_buf);
             TEST_ASSERT(success);
         } else if (ret == ESP_ERR_NOT_FOUND) {
             free(block_info);
@@ -138,8 +138,9 @@ TEST_CASE("test all readable vaddr can map to flash", "[mmu]")
         block_to_free = LIST_NEXT(block_to_free, entries);
         free(temp);
     }
-}
 
+    free(sector_buf);
+}
 
 TEST_CASE("test all executable vaddr can map to flash", "[mmu]")
 {
@@ -153,7 +154,7 @@ TEST_CASE("test all executable vaddr can map to flash", "[mmu]")
     int count = 0;
     LIST_INIT(&test_block_head);
     while (1) {
-        test_block_info_t *block_info = heap_caps_calloc(1, sizeof(test_block_info_t), MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+        test_block_info_t *block_info = heap_caps_calloc(1, sizeof(test_block_info_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         TEST_ASSERT(block_info && "no mem");
 
         void *ptr = NULL;
@@ -169,8 +170,7 @@ TEST_CASE("test all executable vaddr can map to flash", "[mmu]")
                 TEST_ASSERT(paddr == part->address + i);
                 ESP_LOGV(TAG, "paddr: %p, on %s", (void *)paddr, (mem_target) == MMU_TARGET_FLASH0 ? "Flash" : "PSRAM");
             }
-        }
-         else if (ret == ESP_ERR_NOT_FOUND) {
+        } else if (ret == ESP_ERR_NOT_FOUND) {
             free(block_info);
             break;
         } else {

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2017-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2017-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,12 +9,20 @@
 #include "riscv/rvruntime-frames.h"
 #include "soc/soc_caps.h"
 #include "sdkconfig.h"
+#include "esp_private/vectors_const.h"
+#include "esp_private/panic_reason.h"
 
 
     .equ SAVE_REGS, 32
     .equ CONTEXT_SIZE, (SAVE_REGS * 4)
+    .equ EXC_ILLEGAL_INSTRUCTION, 0x2
     .equ panic_from_exception, xt_unhandled_exception
     .equ panic_from_isr, panicHandler
+
+#if ( SOC_CPU_COPROC_NUM > 0 )
+    /* Targets with coprocessors present a special CSR to get Illegal Instruction exception reason */
+    .equ EXT_ILL_CSR, 0x7F0
+#endif /* SOC_CPU_COPROC_NUM > 0 */
 
 /* Macro which first allocates space on the stack to save general
  * purpose registers, and then save them. GP register is excluded.
@@ -60,7 +68,7 @@
 
 /* Restore the general purpose registers (excluding gp) from the context on
  * the stack. The context is then deallocated. The default size is CONTEXT_SIZE
- * but it can be overriden. */
+ * but it can be overridden. */
 .macro restore_general_regs cxt_size=CONTEXT_SIZE
     lw   ra, RV_STK_RA(sp)
     lw   tp, RV_STK_TP(sp)
@@ -99,50 +107,20 @@
     csrw    mepc, t0
 .endm
 
+
     .global rtos_int_enter
     .global rtos_int_exit
+    .global rtos_save_fpu_coproc
     .global _global_interrupt_handler
 #ifdef CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
     .global gdbstub_handle_debug_int
 #endif
 
     .section .exception_vectors.text
-    /* This is the vector table. MTVEC points here.
-     *
-     * Use 4-byte intructions here. 1 instruction = 1 entry of the table.
-     * The CPU jumps to MTVEC (i.e. the first entry) in case of an exception,
-     * and (MTVEC & 0xfffffffc) + (mcause & 0x7fffffff) * 4, in case of an interrupt.
-     *
-     * Note: for our CPU, we need to place this on a 256-byte boundary, as CPU
-     * only uses the 24 MSBs of the MTVEC, i.e. (MTVEC & 0xffffff00).
-     */
-
-    .balign 0x100
-    .global _vector_table
-    .type _vector_table, @function
-_vector_table:
-    .option push
-    .option norvc
-    j _panic_handler			/* exception handler, entry 0 */
-    .rept (ETS_INT_WDT_INUM - 1)
-    j _interrupt_handler		/* 24 identical entries, all pointing to the interrupt handler */
-    .endr
-    j _panic_handler			/* Call panic handler for ETS_INT_WDT_INUM interrupt (soc-level panic)*/
-    j _panic_handler			/* Call panic handler for ETS_CACHEERR_INUM interrupt (soc-level panic)*/
-    #ifdef CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
-    j _panic_handler			/* Call panic handler for ETS_MEMPROT_ERR_INUM interrupt (soc-level panic)*/
-    .rept (ETS_MAX_INUM - ETS_MEMPROT_ERR_INUM)
-    #else
-    .rept (ETS_MAX_INUM - ETS_CACHEERR_INUM)
-    #endif //CONFIG_ESP_SYSTEM_MEMPROT_FEATURE
-    j _interrupt_handler		/* 6 identical entries, all pointing to the interrupt handler */
-    .endr
-
-    .option pop
-    .size _vector_table, .-_vector_table
 
     /* Exception handler.*/
     .type _panic_handler, @function
+    .global _panic_handler
 _panic_handler:
     /* Allocate space on the stack and store general purpose registers */
     save_general_regs RV_STK_FRMSZ
@@ -161,10 +139,56 @@ _panic_handler:
     sw    t0, RV_STK_MSTATUS(sp)
     csrr  t0, mtvec
     sw    t0, RV_STK_MTVEC(sp)
-    csrr  t0, mtval
-    sw    t0, RV_STK_MTVAL(sp)
     csrr  t0, mhartid
     sw    t0, RV_STK_MHARTID(sp)
+    csrr  t0, mtval
+    sw    t0, RV_STK_MTVAL(sp)
+
+    /* Keep mcause in s0, only the exception code and interrupt bit are relevant */
+    csrr  s0, mcause
+    li    t1, VECTORS_MCAUSE_INTBIT_MASK | VECTORS_MCAUSE_REASON_MASK
+    and   s0, s0, t1
+
+#if ( SOC_CPU_COPROC_NUM > 0 )
+    /* Check if the exception was cause by a coprocessor instruction. If this is the case, we have
+     * to lazily save the registers inside the current owner's save area */
+    /* Check if the exception is Illegal instruction */
+    li    a1, EXC_ILLEGAL_INSTRUCTION
+    bne   s0, a1, _panic_handler_not_coproc
+    /* In case this is due to a coprocessor, set ra right now to simplify the logic below */
+    la    ra, _return_from_exception
+    /* EXT_ILL CSR should contain the reason for the Illegal Instruction. */
+    csrr  a0, EXT_ILL_CSR
+    bnez  a0, _panic_handler_coproc
+#if SOC_CPU_HAS_FPU_EXT_ILL_BUG && SOC_CPU_HAS_FPU
+    /* If the SOC present the hardware EXT_ILL CSR bug, it doesn't support FPU load/store detection
+     * so we have to check the instruction's opcode (in `mtval` = `t0`) */
+    andi  a0, t0, 0b1011111
+    li    a1, 0b0000111
+    /* If opcode is of the form 0b0x00111, the instruction is FLW or FSW */
+    beq   a0, a1, rtos_save_fpu_coproc
+    /* Check the compressed instructions: C.FLW, C.FSW, C.FLWSP and C.FSWP.
+     * All of them have their highest 3 bits to x11 and the lowest bit to 0 */
+    li    a0, 0x6001
+    and   a0, t0, a0    /* a0 = mtval & 0x6001 */
+    li    a1, 0x6000
+    beq   a0, a1, rtos_save_fpu_coproc
+    /* The instruction was not an FPU one, continue the exception */
+#endif /* SOC_CPU_HAS_FPU_EXT_ILL_BUG && SOC_CPU_HAS_FPU */
+    j _panic_handler_not_coproc
+_panic_handler_coproc:
+    /* EXT_ILL CSR reasons are stored as follows:
+     * - Bit 0: FPU core instruction (Load/Store instructions NOT concerned)
+     * - Bit 1: Low-power core
+     * - Bit 2: PIE core
+     */
+#if SOC_CPU_HAS_FPU
+    li    a1, 1
+    beq   a0, a1, rtos_save_fpu_coproc
+#endif /* SOC_CPU_HAS_FPU */
+    /* Ignore LP and PIE for now, continue the exception */
+_panic_handler_not_coproc:
+#endif /* ( SOC_CPU_COPROC_NUM > 0 ) */
 
     /* Call panic_from_exception(sp) or panic_from_isr(sp)
      * depending on whether we have a pseudo excause or not.
@@ -172,9 +196,9 @@ _panic_handler:
      * so we have a pseudo excause. Else, it is due to a exception, we don't
      * have an pseudo excause */
     mv    a0, sp
-    csrr  a1, mcause
+    mv    a1, s0
 
-    /* Branches instructions don't accept immediates values, so use t1 to
+    /* Branches instructions don't accept immediate values, so use t1 to
      * store our comparator */
     li    t0, 0x80000000
     bgeu  a1, t0, _call_panic_handler
@@ -183,10 +207,9 @@ _panic_handler:
     li    t0, 3
     beq   a1, t0, _call_gdbstub_handler
 #endif
-    /* exception_from_panic never returns */
-    jal panic_from_exception
+    call  panic_from_exception
     /* We arrive here if the exception handler has returned. */
-    j _return_from_exception
+    j     _return_from_exception
 
 #ifdef CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
 _call_gdbstub_handler:
@@ -195,13 +218,28 @@ _call_gdbstub_handler:
 #endif
 
 _call_panic_handler:
-    /* Remove highest bit from mcause (a1) register and save it in the
-     * structure */
+    /* Remove highest bit from mcause (a1) register and save it in the structure */
     not   t0, t0
     and   a1, a1, t0
-    sw    a1, RV_STK_MCAUSE(sp)
-    jal panic_from_isr
+#if CONFIG_SOC_INT_CLIC_SUPPORTED
+    /* When CLIC is supported, external interrupts are shifted by 16, deduct this difference from mcause */
+    add   a1, a1, -16
+#endif // CONFIG_SOC_INT_CLIC_SUPPORTED
 
+#if CONFIG_ESP_INT_WDT_CHECK_CPU1
+    /* Check if this was a INT WDT */
+    li t0, PANIC_RSN_INTWDT_CPU0
+    bne a1, t0, _store_mcause
+    /* Check if the cause is the app cpu failing to tick, if so then update mcause to reflect this*/
+    lw t0, int_wdt_cpu1_ticked
+    bnez t0, _store_mcause
+    li t0, PANIC_RSN_INTWDT_CPU1_FLAG
+    add a1, a1, t0
+#endif
+
+_store_mcause:
+    sw    a1, RV_STK_MCAUSE(sp)
+    call  panic_from_isr
     /* We arrive here if the exception handler has returned. This means that
      * the exception was handled, and the execution flow should resume.
      * Restore the registers and return from the exception.
@@ -216,11 +254,11 @@ _return_from_exception:
     mret
     .size  _panic_handler, .-_panic_handler
 
+
     /* This is the interrupt handler.
-     * It saves the registers on the stack,
-     * prepares for interrupt nesting,
-     * re-enables the interrupts,
-     * then jumps to the C dispatcher in interrupt.c.
+     * It saves the registers on the stack, prepares for interrupt nesting, re-enables the interrupts,
+     * then jumps to the C dispatcher in interrupt.c. Upon return, the register context will be restored
+     * from the stack.
      */
     .global _interrupt_handler
     .type _interrupt_handler, @function
@@ -235,15 +273,15 @@ _interrupt_handler:
      * the backtrace of threads preempted by interrupts (OS tick etc.).
      * GP is saved just to have its proper value in GDB. */
     /* As gp register is not saved by the macro, save it here */
-    sw    gp, RV_STK_GP(sp)
+    sw      gp, RV_STK_GP(sp)
     /* Same goes for the SP value before trapping */
-    addi  t0, sp, CONTEXT_SIZE /* restore sp with the value when interrupt happened */
-    /* Save SP */
-    sw    t0, RV_STK_SP(sp)
+    addi    a0, sp, CONTEXT_SIZE /* restore sp with the value when interrupt happened */
 
-    /* Before doing anythig preserve the stack pointer */
-    /* It will be saved in current TCB, if needed */
-    mv      a0, sp
+    /* Save SP former value */
+    sw      a0, RV_STK_SP(sp)
+
+    /* Notify the RTOS that an interrupt ocurred, it will save the current stack pointer
+     * in the running TCB, no need to pass it as a parameter */
     call    rtos_int_enter
     /* If this is a non-nested interrupt, SP now points to the interrupt stack */
 
@@ -251,23 +289,24 @@ _interrupt_handler:
     csrr    s1, mcause
     csrr    s2, mstatus
 
+#if !SOC_INT_HW_NESTED_SUPPORTED
     /* Save the interrupt threshold level */
-    li      t0, INTERRUPT_CORE0_CPU_INT_THRESH_REG
+    li      t0, INTERRUPT_CURRENT_CORE_INT_THRESH_REG
     lw      s3, 0(t0)
 
     /* Increase interrupt threshold level */
-    li      t2, 0x7fffffff
+    li      t2, VECTORS_MCAUSE_REASON_MASK
     and     t1, s1, t2       /* t1 = mcause & mask */
     slli    t1, t1, 2        /* t1 = mcause * 4 */
     li      t2, INTC_INT_PRIO_REG(0)
     add     t1, t2, t1       /* t1 = INTC_INT_PRIO_REG + 4 * mcause */
     lw      t2, 0(t1)        /* t2 = INTC_INT_PRIO_REG[mcause] */
     addi    t2, t2, 1        /* t2 = t2 +1 */
-    sw      t2, 0(t0)        /* INTERRUPT_CORE0_CPU_INT_THRESH_REG = t2 */
+    sw      t2, 0(t0)        /* INTERRUPT_CURRENT_CORE_INT_THRESH_REG = t2 */
     fence
+#endif // !SOC_INT_HW_NESTED_SUPPORTED
 
-    li      t0, 0x8
-    csrrs   t0, mstatus, t0
+    csrsi   mstatus, 0x8
     /* MIE set. Nested interrupts can now occur */
 
     #ifdef CONFIG_PM_TRACE
@@ -290,35 +329,35 @@ _interrupt_handler:
     mv      a0, sp      /* argument 1, stack pointer */
     mv      a1, s1      /* argument 2, interrupt number (mcause) */
     /* mask off the interrupt flag of mcause */
-    li	    t0, 0x7fffffff
+    li	    t0, VECTORS_MCAUSE_REASON_MASK
     and     a1, a1, t0
     jal     _global_interrupt_handler
 
     /* After dispatch c handler, disable interrupt to make freertos make context switch */
 
-    li      t0, 0x8
-    csrrc   t0, mstatus, t0
+    csrci   mstatus, 0x8
     /* MIE cleared. Nested interrupts are disabled */
 
+#if !SOC_INT_HW_NESTED_SUPPORTED
     /* restore the interrupt threshold level */
-    li      t0, INTERRUPT_CORE0_CPU_INT_THRESH_REG
+    li      t0, INTERRUPT_CURRENT_CORE_INT_THRESH_REG
     sw      s3, 0(t0)
     fence
+#endif // !SOC_INT_HW_NESTED_SUPPORTED
 
-    /* Yield to the next task is needed: */
-    mv      a0, sp
+    /* The RTOS will restore the current TCB stack pointer. This routine will preserve s1 and s2.
+     * Returns the new `mstatus` value. */
+    mv      a0, s2      /* a0 = mstatus */
     call    rtos_int_exit
-    /* If this is a non-nested interrupt, context switch called, SP now points to back to task stack. */
 
-    /* The next (or current) stack pointer is returned in a0 */
-    mv      sp, a0
-
-    /* restore the rest of the registers */
+    /* Restore the rest of the registers.
+     * In case the target uses the CLIC, it is mandatory to restore `mcause` register since it contains
+     * the former CPU priority. When executing `mret`, the hardware will restore the former threshold,
+     * from `mcause` to `mintstatus` CSR */
     csrw    mcause, s1
-    csrw    mstatus, s2
+    csrw    mstatus, a0
     restore_mepc
     restore_general_regs
-
     /* exit, this will also re-enable the interrupts */
     mret
     .size  _interrupt_handler, .-_interrupt_handler
