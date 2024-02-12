@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -52,6 +52,10 @@
 #include "esp32c6/rtc.h"
 #include "esp32c6/rom/cache.h"
 #include "esp_memprot.h"
+#elif CONFIG_IDF_TARGET_ESP32C5
+#include "esp32c5/rtc.h"
+#include "esp32c5/rom/cache.h"
+#include "esp_memprot.h"
 #elif CONFIG_IDF_TARGET_ESP32H2
 #include "esp32h2/rtc.h"
 #include "esp32h2/rom/cache.h"
@@ -64,9 +68,18 @@
 #elif CONFIG_IDF_TARGET_ESP32P4
 #include "esp32p4/rtc.h"
 #include "soc/hp_sys_clkrst_reg.h"
-#include "soc/interrupt_core0_reg.h"
-#include "soc/interrupt_core1_reg.h"
 #endif
+
+#if SOC_KEY_MANAGER_SUPPORTED
+#include "hal/key_mgr_hal.h"
+#endif
+
+#include "esp_private/rtc_clk.h"
+#include "esp_private/esp_ldo_psram.h"
+
+#if SOC_INT_CLIC_SUPPORTED
+#include "hal/interrupt_clic_ll.h"
+#endif // SOC_INT_CLIC_SUPPORTED
 
 #include "esp_private/esp_mmu_map_private.h"
 #if CONFIG_SPIRAM
@@ -152,21 +165,17 @@ static void core_intr_matrix_clear(void)
     uint32_t core_id = esp_cpu_get_core_id();
 
     for (int i = 0; i < ETS_MAX_INTR_SOURCE; i++) {
-#if CONFIG_IDF_TARGET_ESP32P4
-        if (core_id == 0) {
-            REG_WRITE(INTERRUPT_CORE0_LP_RTC_INT_MAP_REG + 4 * i, ETS_INVALID_INUM);
-        } else {
-            REG_WRITE(INTERRUPT_CORE1_LP_RTC_INT_MAP_REG + 4 * i, ETS_INVALID_INUM);
-        }
+#if SOC_INT_CLIC_SUPPORTED
+        interrupt_clic_ll_route(core_id, i, ETS_INVALID_INUM);
 #else
         esp_rom_route_intr_matrix(core_id, i, ETS_INVALID_INUM);
-#endif  // CONFIG_IDF_TARGET_ESP32P4
+#endif  // SOC_INT_CLIC_SUPPORTED
     }
 
 #if SOC_INT_CLIC_SUPPORTED
     for (int i = 0; i < 32; i++) {
         /* Set all the CPU interrupt lines to vectored by default, as it is on other RISC-V targets */
-        esprv_intc_int_set_vectored(i, true);
+        esprv_int_set_vectored(i, true);
     }
 #endif // SOC_INT_CLIC_SUPPORTED
 
@@ -184,7 +193,7 @@ void IRAM_ATTR call_start_cpu1(void)
     // Configure the global pointer register
     // (This should be the first thing IDF app does, as any other piece of code could be
     // relaxed by the linker to access something relative to __global_pointer$)
-    __asm__ __volatile__ (
+    __asm__ __volatile__(
         ".option push\n"
         ".option norelax\n"
         "la gp, __global_pointer$\n"
@@ -213,7 +222,7 @@ void IRAM_ATTR call_start_cpu1(void)
     esp_rom_install_channel_putc(2, NULL);
 #else // CONFIG_ESP_CONSOLE_NONE
     esp_rom_install_uart_printf();
-    esp_rom_uart_set_as_console(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_rom_output_set_as_console(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM);
 #endif
 
 #if CONFIG_IDF_TARGET_ESP32
@@ -296,9 +305,17 @@ static void start_other_core(void)
     if (!REG_GET_BIT(HP_SYS_CLKRST_SOC_CLK_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CPU_CLK_EN)) {
         REG_SET_BIT(HP_SYS_CLKRST_SOC_CLK_CTRL0_REG, HP_SYS_CLKRST_REG_CORE1_CPU_CLK_EN);
     }
-    if(REG_GET_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL)){
+    if (REG_GET_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL)) {
         REG_CLR_BIT(HP_SYS_CLKRST_HP_RST_EN0_REG, HP_SYS_CLKRST_REG_RST_EN_CORE1_GLOBAL);
     }
+#endif
+
+#if SOC_KEY_MANAGER_SUPPORTED
+    // The following operation makes the Key Manager to use eFuse key for ECDSA and XTS-AES operation by default
+    // This is to keep the default behavior same as the other chips
+    // If the Key Manager configuration is already locked then following operation does not have any effect
+    key_mgr_hal_set_key_usage(ESP_KEY_MGR_ECDSA_KEY, ESP_KEY_MGR_USE_EFUSE_KEY);
+    key_mgr_hal_set_key_usage(ESP_KEY_MGR_XTS_AES_128_KEY, ESP_KEY_MGR_USE_EFUSE_KEY);
 #endif
     ets_set_appcpu_boot_addr((uint32_t)call_start_cpu1);
 
@@ -370,7 +387,7 @@ void IRAM_ATTR call_start_cpu0(void)
     // Configure the global pointer register
     // (This should be the first thing IDF app does, as any other piece of code could be
     // relaxed by the linker to access something relative to __global_pointer$)
-    __asm__ __volatile__ (
+    __asm__ __volatile__(
         ".option push\n"
         ".option norelax\n"
         "la gp, __global_pointer$\n"
@@ -512,6 +529,7 @@ void IRAM_ATTR call_start_cpu0(void)
         abort();
     }
 #endif
+
     esp_mspi_pin_init();
     // For Octal flash, it's hard to implement a read_id function in OPI mode for all vendors.
     // So we have to read it here in SPI mode, before entering the OPI mode.
@@ -524,7 +542,14 @@ void IRAM_ATTR call_start_cpu0(void)
      * In this stage, we re-configure the Flash (and MSPI) to required configuration
      */
     spi_flash_init_chip_state();
+
+    // In earlier version of ESP-IDF, the PLL provided by bootloader is not stable enough.
+    // Do calibration again here so that we can use better clock for the timing tuning.
+#if CONFIG_ESP_SYSTEM_BBPLL_RECALIB
+    rtc_clk_recalib_bbpll();
+#endif
 #if SOC_MEMSPI_SRC_FREQ_120M
+    // This function needs to be called when PLL is enabled
     mspi_timing_flash_tuning();
 #endif
 
@@ -664,20 +689,20 @@ void IRAM_ATTR call_start_cpu0(void)
 #if ESP_ROM_UART_CLK_IS_XTAL
     clock_hz = esp_clk_xtal_freq(); // From esp32-s3 on, UART clock source is selected to XTAL in ROM
 #endif
-    esp_rom_uart_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
+    esp_rom_output_tx_wait_idle(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM);
 
     // In a single thread mode, the freertos is not started yet. So don't have to use a critical section.
-    int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused)); // To avoid build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
-    esp_rom_uart_set_clock_baudrate(CONFIG_ESP_CONSOLE_UART_NUM, clock_hz, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
+    int __DECLARE_RCC_ATOMIC_ENV __attribute__((unused));  // To avoid build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
+    esp_rom_uart_set_clock_baudrate(CONFIG_ESP_CONSOLE_ROM_SERIAL_PORT_NUM, clock_hz, CONFIG_ESP_CONSOLE_UART_BAUDRATE);
 #endif
 #endif
 
-#if !CONFIG_IDF_TARGET_ESP32P4 //TODO: IDF-7529
+#if !CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_IDF_TARGET_ESP32C5 //TODO: IDF-7529, IDF-8638
     // Need to unhold the IOs that were hold right before entering deep sleep, which are used as wakeup pins
     if (rst_reas[0] == RESET_REASON_CORE_DEEP_SLEEP) {
         esp_deep_sleep_wakeup_io_reset();
     }
-#endif  //#if !CONFIG_IDF_TARGET_ESP32P4
+#endif  //#if !CONFIG_IDF_TARGET_ESP32P4 & !CONFIG_IDF_TARGET_ESP32C5
 
 #if !CONFIG_APP_BUILD_TYPE_PURE_RAM_APP
     esp_cache_err_int_init();

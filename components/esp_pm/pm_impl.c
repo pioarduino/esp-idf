@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,7 +29,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #if CONFIG_FREERTOS_SYSTICK_USES_CCOUNT
-#include "freertos/xtensa_timer.h"
+#include "xtensa_timer.h"
 #include "xtensa/core-macros.h"
 #endif
 
@@ -64,10 +64,13 @@
  */
 #define CCOMPARE_UPDATE_TIMEOUT 1000000
 
-/* When changing CCOMPARE, don't allow changes if the difference is less
- * than this. This is to prevent setting CCOMPARE below CCOUNT.
+/* The number of CPU cycles required from obtaining the base ccount to configuring
+   the calculated ccompare value. (In order to avoid ccompare being updated to a value
+   smaller than the current ccount, this update should be discarded if the next tick
+   is too close to this moment, and this value is used to calculate the threshold for
+   determining whether or not a skip is required.)
  */
-#define CCOMPARE_MIN_CYCLES_IN_FUTURE 1000
+#define CCOMPARE_PREPARE_CYCLES_IN_FREQ_UPDATE  60
 #endif // CONFIG_FREERTOS_SYSTICK_USES_CCOUNT
 
 /* When light sleep is used, wake this number of microseconds earlier than
@@ -89,6 +92,8 @@
 #elif CONFIG_IDF_TARGET_ESP32C2
 #define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32C6
+#define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C5
 #define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32H2
 #define REF_CLK_DIV_MIN 2
@@ -640,17 +645,17 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
         if (switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
-        if (new_config.source == SOC_CPU_CLK_SRC_PLL) {
-            rtc_clk_cpu_freq_set_config_fast(&new_config);
 #if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
-            mspi_timing_change_speed_mode_cache_safe(false);
+    if (new_config.source == SOC_CPU_CLK_SRC_PLL) {
+        rtc_clk_cpu_freq_set_config_fast(&new_config);
+        mspi_timing_change_speed_mode_cache_safe(false);
+    } else {
+        mspi_timing_change_speed_mode_cache_safe(true);
+        rtc_clk_cpu_freq_set_config_fast(&new_config);
+    }
+#else
+    rtc_clk_cpu_freq_set_config_fast(&new_config);
 #endif
-        } else {
-#if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
-            mspi_timing_change_speed_mode_cache_safe(true);
-#endif
-            rtc_clk_cpu_freq_set_config_fast(&new_config);
-        }
         if (!switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
@@ -671,15 +676,17 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
  * would happen without the frequency change.
  * Assumes that the new_frequency = old_frequency * s_ccount_mul / s_ccount_div.
  */
-static void IRAM_ATTR update_ccompare(void)
+static __attribute__((optimize("-O2"))) void IRAM_ATTR update_ccompare(void)
 {
+    uint32_t ccompare_min_cycles_in_future = ((s_ccount_div + s_ccount_mul - 1) / s_ccount_mul) * CCOMPARE_PREPARE_CYCLES_IN_FREQ_UPDATE;
 #if CONFIG_PM_UPDATE_CCOMPARE_HLI_WORKAROUND
     /* disable level 4 and below */
     uint32_t irq_status = XTOS_SET_INTLEVEL(XCHAL_DEBUGLEVEL - 2);
 #endif
     uint32_t ccount = esp_cpu_get_cycle_count();
     uint32_t ccompare = XTHAL_GET_CCOMPARE(XT_TIMER_INDEX);
-    if ((ccompare - CCOMPARE_MIN_CYCLES_IN_FUTURE) - ccount < UINT32_MAX / 2) {
+
+    if ((ccompare - ccompare_min_cycles_in_future) - ccount < UINT32_MAX / 2) {
         uint32_t diff = ccompare - ccount;
         uint32_t diff_scaled = (diff * s_ccount_mul + s_ccount_div - 1) / s_ccount_div;
         if (diff_scaled < _xt_tick_divisor) {

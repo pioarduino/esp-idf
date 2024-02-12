@@ -134,7 +134,7 @@ typedef int (*esp_sha256_prf_t)(const unsigned char *key, int key_len, const cha
  *
  * @param key Key for HMAC operations
  * @param key_len Length of the key in bytes
- * @param dataPointers to the data area
+ * @param data Pointers to the data area
  * @param data_len Length of the data area
  * @param mac Buffer for the hash (16 bytes)
  * Returns: 0 on success, -1 on failure
@@ -327,7 +327,7 @@ typedef int (*esp_omac1_aes_128_t)(const uint8_t *key, const uint8_t *data, size
  *        Counter Mode Cipher Block Chaining Message Authentication
  *        Code Protocol) which is used in IEEE 802.11i RSN standard.
  * @param tk 128-bit Temporal Key for obtained during 4-way handshake
- * @param hdr Pointer to IEEE802.11 frame headeri needed for AAD
+ * @param ieee80211_hdr Pointer to IEEE802.11 frame headeri needed for AAD
  * @param data Pointer to encrypted data buffer
  * @param data_len Encrypted data length in bytes
  * @param decrypted_len Length of decrypted data
@@ -373,7 +373,7 @@ typedef int (*esp_aes_gmac_t)(const uint8_t *key, size_t keylen, const uint8_t *
  * @param num_elem Number of elements in the data vector
  * @param addr Pointers to the data areas
  * @param len Lengths of the data blocks
- * @param mac Buffer for the hash
+ * @param buf Buffer for the hash
  * Returns: 0 on success, -1 on failure
  */
 typedef int (*esp_sha256_vector_t)(size_t num_elem, const uint8_t *addr[], const size_t *len, uint8_t *buf);
@@ -393,7 +393,7 @@ typedef uint32_t (*esp_crc32_le_t)(uint32_t crc, uint8_t const *buf, uint32_t le
   *        The structure can be set as software crypto or the crypto optimized by device's
   *        hardware.
   */
-typedef struct {
+typedef struct wpa_crypto_funcs_t {
     uint32_t size;                                   /**< The crypto callback function structure size */
     uint32_t version;                                /**< The crypto callback function structure version */
     esp_aes_wrap_t aes_wrap;                         /**< The AES wrap callback function used by esp_wifi */

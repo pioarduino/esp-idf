@@ -1,6 +1,8 @@
 menu "Driver Configurations"
 
-    menu "Legacy ADC Configuration"
+    orsource "./twai/Kconfig.twai"
+
+    menu "Legacy ADC Driver Configuration"
 
         config ADC_DISABLE_DAC
             depends on SOC_DAC_SUPPORTED
@@ -58,221 +60,18 @@ menu "Driver Configurations"
                     If you want to continue using the legacy driver, and don't want to see related
                     deprecation warnings, you can enable this option.
 
-        endmenu
+        endmenu # Legacy ADC Calibration Configuration
+    endmenu  # Legacy ADC Driver Configuration
 
-    endmenu  # ADC Configuration
-
-    orsource "./twai/Kconfig.twai"
-
-    menu "Temperature sensor Configuration"
-        depends on SOC_TEMP_SENSOR_SUPPORTED
-
-        config TEMP_SENSOR_SUPPRESS_DEPRECATE_WARN
+    menu "Legacy MCPWM Driver Configurations"
+        depends on SOC_MCPWM_SUPPORTED
+        config MCPWM_SUPPRESS_DEPRECATE_WARN
             bool "Suppress legacy driver deprecated warning"
             default n
             help
-                Wether to suppress the deprecation warnings when using legacy temperature sensor driver
-                (driver/temp_sensor.h). If you want to continue using the legacy driver,
-                and don't want to see related deprecation warnings, you can enable this option.
-
-        config TEMP_SENSOR_ENABLE_DEBUG_LOG
-            bool "Enable debug log"
-            default n
-            help
-                Wether to enable the debug log message for temperature sensor driver.
-                Note that, this option only controls the temperature sensor driver log, won't affect other drivers.
-
-        config TEMP_SENSOR_ISR_IRAM_SAFE
-            depends on SOC_TEMPERATURE_SENSOR_INTR_SUPPORT
-            bool "Temperature sensor ISR IRAM-Safe"
-            default n
-            help
-                Ensure the Temperature Sensor interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-
-    endmenu # TEMP_SENSOR Configuration
-
-    orsource "./uart/Kconfig.uart"
-
-    menu "Sigma Delta Modulator Configuration"
-        depends on SOC_SDM_SUPPORTED
-        config SDM_CTRL_FUNC_IN_IRAM
-            bool "Place SDM control functions into IRAM"
-            default n
-            help
-                Place SDM control functions (like set_duty) into IRAM,
-                so that these functions can be IRAM-safe and able to be called in the other IRAM interrupt context.
-                Enabling this option can improve driver performance as well.
-
-        config SDM_SUPPRESS_DEPRECATE_WARN
-            bool "Suppress legacy driver deprecated warning"
-            default n
-            help
-                Wether to suppress the deprecation warnings when using legacy sigma delta driver.
+                Wether to suppress the deprecation warnings when using legacy MCPWM driver (driver/mcpwm.h).
                 If you want to continue using the legacy driver, and don't want to see related deprecation warnings,
                 you can enable this option.
-
-        config SDM_ENABLE_DEBUG_LOG
-            bool "Enable debug log"
-            default n
-            help
-                Wether to enable the debug log message for SDM driver.
-                Note that, this option only controls the SDM driver log, won't affect other drivers.
-    endmenu # Sigma Delta Modulator Configuration
-
-    menu "Analog Comparator Configuration"
-        depends on SOC_ANA_CMPR_SUPPORTED
-        config ANA_CMPR_ISR_IRAM_SAFE
-            bool "Analog comparator ISR IRAM-Safe"
-            default n
-            help
-                Ensure the Analog Comparator interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-
-        config ANA_CMPR_CTRL_FUNC_IN_IRAM
-            bool "Place Analog Comparator control functions into IRAM"
-            default n
-            help
-                Place Analog Comparator control functions (like ana_cmpr_set_internal_reference) into IRAM,
-                so that these functions can be IRAM-safe and able to be called in an IRAM interrupt context.
-                Enabling this option can improve driver performance as well.
-
-        config ANA_CMPR_ENABLE_DEBUG_LOG
-            bool "Enable debug log"
-            default n
-            help
-                Wether to enable the debug log message for Analog Comparator driver.
-                Note that, this option only controls the Analog Comparator driver log, won't affect other drivers.
-    endmenu # Analog Comparator Configuration
-
-    orsource "./rmt/Kconfig.rmt"
-
-    menu "I2S Configuration"
-        depends on SOC_I2S_SUPPORTED
-        config I2S_ISR_IRAM_SAFE
-            bool "I2S ISR IRAM-Safe"
-            default n
-            help
-                Ensure the I2S interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-
-        config I2S_SUPPRESS_DEPRECATE_WARN
-            bool "Suppress leagcy driver deprecated warning"
-            default n
-            help
-                Enable this option will suppress the deprecation warnings of using APIs in legacy I2S driver.
-
-        config I2S_ENABLE_DEBUG_LOG
-            bool "Enable I2S debug log"
-            default n
-            help
-                Wether to enable the debug log message for I2S driver.
-                Note that, this option only controls the I2S driver log, will not affect other drivers.
-    endmenu # I2S Configuration
-
-    menu "DAC Configuration"
-        depends on SOC_DAC_SUPPORTED
-        config DAC_CTRL_FUNC_IN_IRAM
-            bool "Place DAC control functions into IRAM"
-            default n
-            help
-                Place DAC control functions (e.g. 'dac_oneshot_output_voltage') into IRAM,
-                so that this function can be IRAM-safe and able to be called in the other IRAM interrupt context.
-                Enabling this option can improve driver performance as well.
-
-        config DAC_ISR_IRAM_SAFE
-            bool "DAC ISR IRAM-Safe"
-            default n
-            help
-                Ensure the DAC interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-
-        config DAC_SUPPRESS_DEPRECATE_WARN
-            bool "Suppress legacy driver deprecated warning"
-            default n
-            help
-                Wether to suppress the deprecation warnings when using legacy DAC driver (driver/dac.h).
-                If you want to continue using the legacy driver, and don't want to see related deprecation warnings,
-                you can enable this option.
-
-        config DAC_ENABLE_DEBUG_LOG
-            bool "Enable debug log"
-            default n
-            help
-                Wether to enable the debug log message for DAC driver.
-                Note that, this option only controls the DAC driver log, won't affect other drivers.
-
-        config DAC_DMA_AUTO_16BIT_ALIGN
-            bool "Align the continuous data to 16 bit automatically"
-            depends on SOC_DAC_DMA_16BIT_ALIGN
-            default y
-            help
-                Whether to left shift the continuous data to align every bytes to 16 bits in the driver.
-                On ESP32, although the DAC resolution is only 8 bits,
-                the hardware requires 16 bits data in continuous mode.
-                By enabling this option, the driver will left shift 8 bits for the input data automatically.
-                Only disable this option when you decide to do this step by yourself.
-                Note that the driver will allocate a new piece of memory to save the converted data.
-
-    endmenu # DAC Configuration
-
-    menu "USB Serial/JTAG Configuration"
-        depends on SOC_USB_SERIAL_JTAG_SUPPORTED
-        config USJ_NO_AUTO_LS_ON_CONNECTION
-            bool "Don't enter the automatic light sleep when USB Serial/JTAG port is connected"
-            depends on PM_ENABLE && ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED && !SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP
-            default n
-            help
-                If enabled, the chip will constantly monitor the connection status of the USB Serial/JTAG port. As long
-                as the USB Serial/JTAG is connected, a ESP_PM_NO_LIGHT_SLEEP power management lock will be acquired to
-                prevent the system from entering light sleep.
-                This option can be useful if serial monitoring is needed via USB Serial/JTAG while power management is
-                enabled, as the USB Serial/JTAG cannot work under light sleep and after waking up from light sleep.
-                Note. This option can only control the automatic Light-Sleep behavior. If esp_light_sleep_start() is
-                called manually from the program, enabling this option will not prevent light sleep entry even if the
-                USB Serial/JTAG is in use.
-    endmenu # USB Serial/JTAG Configuration
-
-    menu "Parallel IO Configuration"
-        depends on SOC_PARLIO_SUPPORTED
-
-        config PARLIO_ENABLE_DEBUG_LOG
-            bool "Enable debug log"
-            default n
-            help
-                Wether to enable the debug log message for parallel IO driver.
-                Note that, this option only controls the parallel IO driver log, won't affect other drivers.
-
-        config PARLIO_ISR_IRAM_SAFE
-            bool "Parallel IO ISR IRAM-Safe"
-            default n
-            select GDMA_CTRL_FUNC_IN_IRAM # the driver needs to start the GDMA in the interrupt
-            help
-                Ensure the Parallel IO interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-
-    endmenu # Parallel IO Configuration
-
-    orsource "./ledc/Kconfig.ledc"
-
-    menu "I2C Configuration"
-        config I2C_ISR_IRAM_SAFE
-            bool "I2C ISR IRAM-Safe"
-            default n
-            help
-                Ensure the I2C interrupt is IRAM-Safe by allowing the interrupt handler to be
-                executable when the cache is disabled (e.g. SPI Flash write).
-                note: This cannot be used in the I2C legacy driver.
-
-        config I2C_ENABLE_DEBUG_LOG
-            bool "Enable I2C debug log"
-            default n
-            help
-                Wether to enable the debug log message for I2C driver.
-                Note that this option only controls the I2C driver log, will not affect other drivers.
-
-                note: This cannot be used in the I2C legacy driver.
-
-    endmenu # I2C Configurations
+    endmenu # Legacy MCPWM Driver Configurations
 
 endmenu  # Driver configurations

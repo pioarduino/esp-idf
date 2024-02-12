@@ -26,6 +26,11 @@ if(CONFIG_SOC_WDT_SUPPORTED AND NOT CONFIG_HAL_WDT_USE_ROM_IMPL)
     list(APPEND srcs "wdt_hal_iram.c")
 endif()
 
+if(CONFIG_SOC_KEY_MANAGER_SUPPORTED)
+    list(APPEND srcs "key_mgr_hal.c")
+    list(APPEND srcs "huk_hal.c")
+endif()
+
 if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
     if(CONFIG_SOC_MMU_PERIPH_NUM)
         list(APPEND srcs "mmu_hal.c")
@@ -41,6 +46,7 @@ if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
 endif()
 
 if(NOT BOOTLOADER_BUILD)
+    list(APPEND srcs "color_hal.c")
 
     if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
         if(CONFIG_SOC_SPI_FLASH_SUPPORTED)
@@ -127,6 +133,10 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "dw_gdma_hal.c")
     endif()
 
+    if(CONFIG_SOC_DMA2D_SUPPORTED)
+        list(APPEND srcs "dma2d_hal.c")
+    endif()
+
     if(CONFIG_SOC_I2S_SUPPORTED)
         list(APPEND srcs "i2s_hal.c")
     endif()
@@ -161,6 +171,14 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_LCDCAM_SUPPORTED)
         list(APPEND srcs "lcd_hal.c")
+    endif()
+
+    if(CONFIG_SOC_MIPI_DSI_SUPPORTED)
+        list(APPEND srcs "mipi_dsi_hal.c")
+    endif()
+
+    if(CONFIG_SOC_MIPI_CSI_SUPPORTED)
+        list(APPEND srcs "mipi_csi_hal.c")
     endif()
 
     if(CONFIG_SOC_ECC_SUPPORTED)
@@ -233,9 +251,11 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "ds_hal.c")
     endif()
 
-    if(CONFIG_SOC_KEY_MANAGER_SUPPORTED)
-        list(APPEND srcs "key_mgr_hal.c")
-        list(APPEND srcs "huk_hal.c")
+    if(CONFIG_SOC_USB_OTG_SUPPORTED)
+        list(APPEND srcs "usb_dwc_hal.c")
+        if(NOT ${target} STREQUAL "esp32p4")
+            list(APPEND srcs "usb_fsls_phy_hal.c")
+        endif()
     endif()
 
     if(${target} STREQUAL "esp32")
@@ -248,23 +268,17 @@ if(NOT BOOTLOADER_BUILD)
     if(${target} STREQUAL "esp32s2")
         list(APPEND srcs
                     "touch_sensor_hal.c"
-                    "usb_hal.c"
-                    "usb_phy_hal.c"
                     "xt_wdt_hal.c"
                     "esp32s2/cp_dma_hal.c"
-                    "esp32s2/touch_sensor_hal.c"
-                    "usb_dwc_hal.c")
+                    "esp32s2/touch_sensor_hal.c")
     endif()
 
     if(${target} STREQUAL "esp32s3")
         list(APPEND srcs
             "touch_sensor_hal.c"
-            "usb_hal.c"
-            "usb_phy_hal.c"
             "xt_wdt_hal.c"
             "esp32s3/touch_sensor_hal.c"
-            "esp32s3/rtc_cntl_hal.c"
-            "usb_dwc_hal.c")
+            "esp32s3/rtc_cntl_hal.c")
     endif()
 
     if(${target} STREQUAL "esp32c3")

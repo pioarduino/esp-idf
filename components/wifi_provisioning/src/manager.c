@@ -812,6 +812,7 @@ static esp_err_t update_wifi_scan_results(void)
     prov_ctx->ap_list[curr_channel] = (wifi_ap_record_t *) calloc(get_count, sizeof(wifi_ap_record_t));
     if (!prov_ctx->ap_list[curr_channel]) {
         ESP_LOGE(TAG, "Failed to allocate memory for AP list");
+        esp_wifi_clear_ap_list();
         goto exit;
     }
     if (esp_wifi_scan_get_ap_records(&get_count, prov_ctx->ap_list[curr_channel]) != ESP_OK) {
@@ -1212,6 +1213,11 @@ esp_err_t wifi_prov_mgr_is_provisioned(bool *provisioned)
         debug_print_wifi_credentials(wifi_cfg.sta, "Found");
     }
     return ESP_OK;
+}
+
+bool wifi_prov_mgr_is_sm_idle(void)
+{
+    return (prov_ctx->prov_state == WIFI_PROV_STATE_IDLE);
 }
 
 static void wifi_connect_timer_cb(void *arg)

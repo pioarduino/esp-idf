@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -196,13 +196,14 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     uint32_t dma_chan = 0;
 
     spi_success = spicommon_periph_claim(SPI3_HOST, "adc");
-    ret = spicommon_dma_chan_alloc(SPI3_HOST, SPI_DMA_CH_AUTO, &dma_chan, &dma_chan);
+    ret = spicommon_dma_chan_alloc(SPI3_HOST, SPI_DMA_CH_AUTO, &adc_ctx->spi_dma_ctx);
     if (ret == ESP_OK) {
         adc_ctx->spi_host = SPI3_HOST;
     }
     if (!spi_success || (adc_ctx->spi_host != SPI3_HOST)) {
         goto cleanup;
     }
+    dma_chan = adc_ctx->spi_dma_ctx->rx_dma_chan.chan_id;
 
     ret = esp_intr_alloc(spicommon_irqdma_source_for_host(adc_ctx->spi_host), ESP_INTR_FLAG_IRAM, adc_dma_intr_handler,
                          (void *)adc_ctx, &adc_ctx->dma_intr_hdl);
@@ -246,10 +247,7 @@ esp_err_t adc_continuous_new_handle(const adc_continuous_handle_cfg_t *hdl_confi
     adc_ctx->fsm = ADC_FSM_INIT;
     *ret_handle = adc_ctx;
 
-    //enable ADC digital part
-    periph_module_enable(PERIPH_SARADC_MODULE);
-    //reset ADC digital part
-    periph_module_reset(PERIPH_SARADC_MODULE);
+    adc_apb_periph_claim();
 
 #if SOC_ADC_CALIBRATION_V1_SUPPORTED
     adc_hal_calibration_init(ADC_UNIT_1);
@@ -358,6 +356,9 @@ esp_err_t adc_continuous_start(adc_continuous_handle_t handle)
 {
     ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_STATE, ADC_TAG, "The driver isn't initialised");
     ESP_RETURN_ON_FALSE(handle->fsm == ADC_FSM_INIT, ESP_ERR_INVALID_STATE, ADC_TAG, "ADC continuous mode isn't in the init state, it's started already");
+
+    //reset ADC digital part to reset ADC sampling EOF counter
+    periph_module_reset(PERIPH_SARADC_MODULE);
 
     if (handle->pm_lock) {
         ESP_RETURN_ON_ERROR(esp_pm_lock_acquire(handle->pm_lock), ADC_TAG, "acquire pm_lock failed");
@@ -491,7 +492,7 @@ esp_err_t adc_continuous_deinit(adc_continuous_handle_t handle)
     gdma_del_channel(handle->rx_dma_channel);
 #elif CONFIG_IDF_TARGET_ESP32S2
     esp_intr_free(handle->dma_intr_hdl);
-    spicommon_dma_chan_free(handle->spi_host);
+    spicommon_dma_chan_free(handle->spi_dma_ctx);
     spicommon_periph_free(handle->spi_host);
 #elif CONFIG_IDF_TARGET_ESP32
     esp_intr_free(handle->dma_intr_hdl);
@@ -500,7 +501,7 @@ esp_err_t adc_continuous_deinit(adc_continuous_handle_t handle)
     free(handle);
     handle = NULL;
 
-    periph_module_disable(PERIPH_SARADC_MODULE);
+    adc_apb_periph_free();
 
     return ESP_OK;
 }

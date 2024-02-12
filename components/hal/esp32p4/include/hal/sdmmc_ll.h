@@ -31,7 +31,6 @@ extern "C" {
 /**
  * SDMMC capabilities
  */
-#define SDMMC_LL_MAX_FREQ_KHZ_FPGA                    (4*1000)
 #define SDMMC_LL_SLOT_SUPPORT_GPIO_MATRIX(SLOT_ID)    ((SLOT_ID == 0) ? 0 : 1)
 
 #define SDMMC_LL_IOMUX_FUNC    0
@@ -87,9 +86,9 @@ static inline void sdmmc_ll_select_clk_source(sdmmc_dev_t *hw, soc_periph_sdmmc_
     case SDMMC_CLK_SRC_PLL160M:
         clk_val = 0;
         break;
-    case SDMMC_CLK_SRC_PLL200M:
-        clk_val = 1;
-        break;
+    // case SDMMC_CLK_SRC_PLL200M: // TODO: IDF-8886
+    //     clk_val = 1;
+    //     break;
     default:
         HAL_ASSERT(false);
         break;

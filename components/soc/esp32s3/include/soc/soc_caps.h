@@ -16,11 +16,8 @@
  * If this file is changed the script will automatically run the script
  * and generate the kconfig variables as part of the pre-commit hooks.
  *
- * It can also be ran manually with `./tools/gen_soc_caps_kconfig/gen_soc_caps_kconfig.py 'components/soc/esp32s3/include/soc/'`
- *
- * For more information see `tools/gen_soc_caps_kconfig/README.md`
- *
-*/
+ * It can also be run manually. For more information, see `${IDF_PATH}/tools/gen_soc_caps_kconfig/README.md`
+ */
 
 #pragma once
 
@@ -77,6 +74,7 @@
 #define SOC_MPU_SUPPORTED               1
 #define SOC_WDT_SUPPORTED               1
 #define SOC_SPI_FLASH_SUPPORTED         1
+#define SOC_RNG_SUPPORTED               1
 
 /*-------------------------- XTAL CAPS ---------------------------------------*/
 #define SOC_XTAL_SUPPORT_40M            1
@@ -136,6 +134,7 @@
 #define SOC_CPU_CORES_NUM               2
 #define SOC_CPU_INTR_NUM                32
 #define SOC_CPU_HAS_FPU                 1
+#define SOC_HP_CPU_HAS_MULTIPLE_CORES   1   // Convenience boolean macro used to determine if a target has multiple cores.
 
 #define SOC_CPU_BREAKPOINTS_NUM             2
 #define SOC_CPU_WATCHPOINTS_NUM             2
@@ -155,7 +154,8 @@
 /*-------------------------- GDMA CAPS ---------------------------------------*/
 #define SOC_AHB_GDMA_VERSION           1U
 #define SOC_GDMA_NUM_GROUPS_MAX        1U
-#define SOC_GDMA_PAIRS_PER_GROUP_MAX   5
+#define SOC_GDMA_PAIRS_PER_GROUP       5 // esp32s3 has only one kind of GDMA, which is AHB GDMA, and it has 5 pairs in total.
+#define SOC_GDMA_PAIRS_PER_GROUP_MAX   5 // when there're multiple GDMA instances, this macro represents the maximum number of GDMA pairs in the same group.
 #define SOC_AHB_GDMA_SUPPORT_PSRAM     1
 
 /*-------------------------- GPIO CAPS ---------------------------------------*/

@@ -26,7 +26,9 @@ set(srcs
     "stdatomic.c"
     "time.c"
     "sysconf.c"
-    "realpath.c")
+    "realpath.c"
+    "scandir.c"
+)
 set(include_dirs platform_include)
 
 if(CONFIG_SPIRAM_CACHE_WORKAROUND)
@@ -54,6 +56,9 @@ list(APPEND EXTRA_LINK_FLAGS "-u newlib_include_syscalls_impl")
 list(APPEND EXTRA_LINK_FLAGS "-u newlib_include_pthread_impl")
 list(APPEND EXTRA_LINK_FLAGS "-u newlib_include_assert_impl")
 target_link_libraries(${COMPONENT_LIB} INTERFACE "${EXTRA_LINK_FLAGS}")
+
+# Forces the linker to include newlib_init.c
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-u newlib_include_init_funcs")
 
 if(CONFIG_NEWLIB_NANO_FORMAT)
     if(CMAKE_C_COMPILER_ID MATCHES "Clang")

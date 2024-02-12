@@ -18,7 +18,7 @@
 #include "../esp_psram_impl.h"
 #include "esp32/rom/spi_flash.h"
 #include "esp32/rom/cache.h"
-#include "esp32/rom/efuse.h"
+#include "rom/efuse.h"
 #include "esp_rom_efuse.h"
 #include "soc/dport_reg.h"
 #include "soc/efuse_periph.h"
@@ -201,7 +201,7 @@ typedef enum {
     PSRAM_VADDR_MODE_EVENODD,    ///< App and pro CPU share external RAM caches: pro CPU does even 32yte ranges, app does odd ones.
 } psram_vaddr_mode_t;
 
-#if CONFIG_FREERTOS_UNICORE
+#if CONFIG_ESP_SYSTEM_SINGLE_CORE_MODE
 #define PSRAM_MODE PSRAM_VADDR_MODE_NORMAL
 #else
 #define PSRAM_MODE PSRAM_VADDR_MODE_LOWHIGH

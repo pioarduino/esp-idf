@@ -25,7 +25,7 @@ I2C Clock Configuration
 -----------------------
 
 .. list::
-    
+
     - :cpp:enumerator:`i2c_clock_source_t::I2C_CLK_SRC_DEFAULT`: Default I2C source clock.
     :SOC_I2C_SUPPORT_XTAL: - :cpp:enumerator:`i2c_clock_source_t::I2C_CLK_SRC_XTAL`: External crystal for I2C clock source.
     :SOC_I2C_SUPPORT_RTC: - :cpp:enumerator:`i2c_clock_source_t::I2C_CLK_RC_FAST`: Internal 20MHz rc oscillator for I2C clock source.
@@ -544,5 +544,5 @@ API Reference
 
     .. include-build-file:: inc/i2c_slave.inc
 
-.. include-build-file:: inc/components/driver/i2c/include/driver/i2c_types.inc
+.. include-build-file:: inc/components/esp_driver_i2c/include/driver/i2c_types.inc
 .. include-build-file:: inc/components/hal/include/hal/i2c_types.inc

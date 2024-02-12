@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,13 +13,26 @@
 
 #include "soc/soc_caps.h"
 
+#if SOC_PMU_SUPPORTED
+#include "hal/pmu_hal.h"
+#include "pmu_param.h"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * @brief PMU ICG modem code of HP system
+ * @note  This type is required in rtc_clk_init.c when PMU not fully supported
+ */
+typedef enum {
+    PMU_HP_ICG_MODEM_CODE_SLEEP = 0,
+    PMU_HP_ICG_MODEM_CODE_MODEM = 1,
+    PMU_HP_ICG_MODEM_CODE_ACTIVE = 2,
+} pmu_hp_icg_modem_mode_t;
+
 #if SOC_PMU_SUPPORTED
-#include "hal/pmu_hal.h"
-#include "pmu_param.h"
 
 #define RTC_SLEEP_PD_DIG                PMU_SLEEP_PD_TOP        //!< Deep sleep (power down digital domain, includes all power domains
                                                                 //   except CPU, Modem, LP peripheral, AON，VDDSDIO, MEM and clock power domains)
@@ -174,16 +187,6 @@ typedef enum pmu_sleep_regdma_entry {
 } pmu_sleep_regdma_entry_t;
 
 /**
- * @brief PMU ICG modem code of HP system
- */
-typedef enum {
-    PMU_HP_ICG_MODEM_CODE_SLEEP = 0,
-    PMU_HP_ICG_MODEM_CODE_MODEM = 1,
-    PMU_HP_ICG_MODEM_CODE_ACTIVE = 2,
-} pmu_hp_icg_modem_mode_t;
-
-
-/**
   * @brief  Enable_regdma_backup.
   */
 void pmu_sleep_enable_regdma_backup(void);
@@ -291,6 +294,11 @@ void pmu_init(void);
  */
 void pmu_sleep_enable_hp_sleep_sysclk(bool enable);
 
+/**
+ * Get the time overhead used by regdma to work on the retention link during the hardware wake-up process
+ * @return  regdma time cost during hardware wake-up stage in microseconds
+ */
+uint32_t pmu_sleep_get_wakup_retention_cost(void);
 
 #endif //#if SOC_PMU_SUPPORTED
 

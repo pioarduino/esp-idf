@@ -188,8 +188,9 @@ The API :cpp:func:`esp_pthread_set_cfg` defined in the ``esp_pthreads.h`` header
 
 .. list::
     - Default stack size of new threads, if not specified when calling ``pthread_create()`` (overrides :ref:`CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT`).
+    - Stack memory capabilities determine which kind of memory is used for allocating pthread stacks. The field takes ESP-IDF heap capability flags, as defined in :component_file:`heap/include/esp_heap_caps.h`. The memory must be 8-bit accessible (MALLOC_CAP_8BIT), besides other custom flags the user can choose from. The user is responsible for ensuring the correctness of the stack memory capabilities. For more information about memory locations, refer to the documentation of :ref:`memory_capabilities`.
     - RTOS priority of new threads (overrides :ref:`CONFIG_PTHREAD_TASK_PRIO_DEFAULT`).
-    :not CONFIG_FREERTOS_UNICORE: - Core affinity / core pinning of new threads (overrides :ref:`CONFIG_PTHREAD_TASK_CORE_DEFAULT`).
+    :SOC_HP_CPU_HAS_MULTIPLE_CORES: - Core affinity / core pinning of new threads (overrides :ref:`CONFIG_PTHREAD_TASK_CORE_DEFAULT`).
     - FreeRTOS task name for new threads (overrides :ref:`CONFIG_PTHREAD_TASK_NAME_DEFAULT`)
 
 This configuration is scoped to the calling thread (or FreeRTOS task), meaning that :cpp:func:`esp_pthread_set_cfg` can be called independently in different threads or tasks. If the ``inherit_cfg`` flag is set in the current configuration then any new thread created will inherit the creator's configuration (if that thread calls ``pthread_create()`` recursively), otherwise the new thread will have the default configuration.

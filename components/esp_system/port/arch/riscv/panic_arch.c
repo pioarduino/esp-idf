@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,7 @@
 
 #include "spi_flash_mmap.h"
 
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32C5
 #include "soc/cache_reg.h"
 #else
 #include "soc/extmem_reg.h"
@@ -38,47 +38,7 @@
 #include "esp_private/hw_stack_guard.h"
 #endif
 
-
 #define DIM(array) (sizeof(array)/sizeof(*array))
-
-/**
- * Structure used to define a flag/bit to test in case of cache error.
- * The message describes the cause of the error when the bit is set in
- * a given status register.
- */
-typedef struct {
-    const uint32_t bit;
-    const char *msg;
-} register_bit_t;
-
-/**
- * Function to check each bits defined in the array reg_bits in the given
- * status register. The first bit from the array to be set in the status
- * register will have its associated message printed. This function returns
- * true. If not bit was set in the register, it returns false.
- * The order of the bits in the array is important as only the first bit to
- * be set in the register will have its associated message printed.
- */
-static inline bool test_and_print_register_bits(const uint32_t status,
-        const register_bit_t *reg_bits,
-        const uint32_t size)
-{
-    /* Browse the flag/bit array and test each one with the given status
-     * register. */
-    for (int i = 0; i < size; i++) {
-        const uint32_t bit = reg_bits[i].bit;
-        if ((status & bit) == bit) {
-            /* Reason of the panic found, print the reason. */
-            panic_print_str(reg_bits[i].msg);
-            panic_print_str("\r\n");
-
-            return true;
-        }
-    }
-
-    /* Panic cause not found, no message was printed. */
-    return false;
-}
 
 /**
  * Function called when a cache error occurs. It prints details such as the
@@ -86,79 +46,14 @@ static inline bool test_and_print_register_bits(const uint32_t status,
  */
 static inline void print_cache_err_details(const void *frame)
 {
-#if !CONFIG_IDF_TARGET_ESP32C6 && !CONFIG_IDF_TARGET_ESP32H2 && !CONFIG_IDF_TARGET_ESP32P4 // ESP32P4-TODO, ESP32C6-TODO, ESP32H2-TODO: IDF-5657
-    /* Define the array that contains the status (bits) to test on the register
-     * EXTMEM_CORE0_ACS_CACHE_INT_ST_REG. each bit is accompanied by a small
-     * message.
-     * The messages have been pulled from the header file where the status bit
-     * are defined. */
-    const register_bit_t core0_acs_bits[] = {
-        {
-            .bit = EXTMEM_CORE0_DBUS_WR_ICACHE_ST,
-            .msg = "dbus tried to write cache"
-        },
-        {
-            .bit = EXTMEM_CORE0_DBUS_REJECT_ST,
-            .msg = "dbus authentication failed"
-        },
-        {
-            .bit = EXTMEM_CORE0_DBUS_ACS_MSK_ICACHE_ST,
-            .msg = "access to cache while dbus or cache is disabled"
-        },
-        {
-            .bit = EXTMEM_CORE0_IBUS_REJECT_ST,
-            .msg = "ibus authentication failed"
-        },
-        {
-            .bit = EXTMEM_CORE0_IBUS_WR_ICACHE_ST,
-            .msg = "ibus tried to write cache"
-        },
-        {
-            .bit = EXTMEM_CORE0_IBUS_ACS_MSK_ICACHE_ST,
-            .msg = "access to cache while ibus or cache is disabled"
-        },
-    };
-
-    /* Same goes for the register EXTMEM_CACHE_ILG_INT_ST_REG and its bits. */
-    const register_bit_t cache_ilg_bits[] = {
-        {
-            .bit = EXTMEM_MMU_ENTRY_FAULT_ST,
-            .msg = "MMU entry fault"
-        },
-        {
-            .bit = EXTMEM_ICACHE_PRELOAD_OP_FAULT_ST,
-            .msg = "preload configurations fault"
-        },
-        {
-            .bit = EXTMEM_ICACHE_SYNC_OP_FAULT_ST,
-            .msg = "sync configurations fault"
-        },
-    };
-
-    /* Read the status register EXTMEM_CORE0_ACS_CACHE_INT_ST_REG. This status
-     * register is not equal to 0 when a cache access error occured. */
-    const uint32_t core0_status = REG_READ(EXTMEM_CORE0_ACS_CACHE_INT_ST_REG);
-
-    /* If the panic is due to a cache access error, one of the bit of the
-     * register is set. Thus, this function will return true. */
-    bool handled = test_and_print_register_bits(core0_status, core0_acs_bits, DIM(core0_acs_bits));
-
-    /* If the panic was due to a cache illegal error, the previous call returned false and this
-     * EXTMEM_CACHE_ILG_INT_ST_REG register should not me equal to 0.
-     * Check each bit of it and print the message associated if found. */
-    if (!handled) {
-        const uint32_t cache_ilg_status = REG_READ(EXTMEM_CACHE_ILG_INT_ST_REG);
-        handled = test_and_print_register_bits(cache_ilg_status, cache_ilg_bits, DIM(cache_ilg_bits));
-
-        /* If the error was not found, print the both registers value */
-        if (!handled) {
-            panic_print_str("EXTMEM_CORE0_ACS_CACHE_INT_ST_REG = 0x");
-            panic_print_hex(core0_status);
-            panic_print_str("\r\nEXTMEM_CACHE_ILG_INT_ST_REG = 0x");
-            panic_print_hex(cache_ilg_status);
-            panic_print_str("\r\n");
-        }
+#if !CONFIG_IDF_TARGET_ESP32P4
+    const char* cache_err_msg = esp_cache_err_panic_string();
+    if (cache_err_msg) {
+        panic_print_str(cache_err_msg);
+    } else {
+        panic_print_str("Cache error active, but failed to find a corresponding error message");
     }
+    panic_print_str("\r\n");
 #endif
 }
 
@@ -181,7 +76,7 @@ static inline void print_assist_debug_details(const void *frame)
     panic_print_hex((int) esp_hw_stack_guard_get_pc());
     panic_print_str("\r\n");
     panic_print_str("Stack pointer: 0x");
-    panic_print_hex((int) ((RvExcFrame *)frame)->sp);
+    panic_print_hex((int)((RvExcFrame *)frame)->sp);
     panic_print_str("\r\n");
     panic_print_str("Stack bounds: 0x");
     panic_print_hex((int) sp_min);
@@ -227,7 +122,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
         PRINT_MEMPROT_ERROR(res);
     }
 
-    panic_print_str( "\r\n  world: ");
+    panic_print_str("\r\n  world: ");
     esp_mprot_pms_world_t world;
     res = esp_mprot_get_violate_world(s_memp_intr.mem_type, &world, s_memp_intr.core);
     if (res == ESP_OK) {
@@ -236,7 +131,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
         PRINT_MEMPROT_ERROR(res);
     }
 
-    panic_print_str( "\r\n  operation type: ");
+    panic_print_str("\r\n  operation type: ");
     uint32_t operation;
     res = esp_mprot_get_violate_operation(s_memp_intr.mem_type, &operation, s_memp_intr.core);
     if (res == ESP_OK) {
@@ -246,7 +141,7 @@ static inline void print_memprot_err_details(const void *frame __attribute__((un
     }
 
     if (esp_mprot_has_byte_enables(s_memp_intr.mem_type)) {
-        panic_print_str("\r\n  byte-enables: " );
+        panic_print_str("\r\n  byte-enables: ");
         uint32_t byte_enables;
         res = esp_mprot_get_violate_byte_enables(s_memp_intr.mem_type, &byte_enables, s_memp_intr.core);
         if (res == ESP_OK) {
@@ -274,7 +169,6 @@ static void panic_print_register_array(const char* names[], const uint32_t* regs
     }
 }
 
-
 void panic_print_registers(const void *f, int core)
 {
     /**
@@ -292,6 +186,27 @@ void panic_print_registers(const void *f, int core)
     panic_print_dec(core);
     panic_print_str(" register dump:");
     panic_print_register_array(desc, f, DIM(desc));
+}
+
+/**
+ * This function will be called before the SoC-level panic is handled,
+ * allowing us to check and override the exception cause for certain
+ * pseudo-causes that do not have their own trigger
+ */
+bool panic_soc_check_pseudo_cause(void *f, panic_info_t *info)
+{
+    RvExcFrame *frame = (RvExcFrame *) f;
+    bool pseudo_cause = false;
+
+    /* Cache errors when reading instructions will result in an illegal instructions,
+       before any cache error interrupts trigger. We override the exception cause if
+       any cache errors are active to more accurately report the actual reason */
+    if (esp_cache_err_has_active_err() && (frame->mcause == MCAUSE_ILLEGAL_INSTRUCTION)) {
+        pseudo_cause = true;
+        frame->mcause = ETS_CACHEERR_INUM;
+    }
+
+    return pseudo_cause;
 }
 
 /**

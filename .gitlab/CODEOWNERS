@@ -47,12 +47,9 @@
 * @esp-idf-codeowners/other
 
 /.*                                   @esp-idf-codeowners/tools
-/.github/dangerjs/                    @esp-idf-codeowners/ci @esp-idf-codeowners/tools
-/.github/dependabot.yml               @esp-idf-codeowners/ci
 /.github/workflows/                   @esp-idf-codeowners/ci
 /.gitlab-ci.yml                       @esp-idf-codeowners/ci
 /.gitlab/ci/                          @esp-idf-codeowners/ci
-/.gitlab/dangerjs/                    @esp-idf-codeowners/ci @esp-idf-codeowners/tools
 /.pre-commit-config.yaml              @esp-idf-codeowners/ci
 /.readthedocs.yml                     @esp-idf-codeowners/docs
 /.vale.ini                            @esp-idf-codeowners/docs
@@ -155,6 +152,7 @@
 /components/xtensa/                   @esp-idf-codeowners/system
 
 /docs/                                   @esp-idf-codeowners/docs
+/docs/**/api-guides/tools/               @esp-idf-codeowners/tools
 /docs/en/api-guides/jtag-debugging/      @esp-idf-codeowners/debugging
 /docs/**/api-reference/bluetooth/        @esp-idf-codeowners/bluetooth
 /docs/**/api-reference/network/          @esp-idf-codeowners/network @esp-idf-codeowners/wifi
@@ -176,6 +174,7 @@
 /examples/cxx/                @esp-idf-codeowners/system
 /examples/ethernet/           @esp-idf-codeowners/network
 /examples/get-started/        @esp-idf-codeowners/system
+/examples/ieee802154/         @esp-idf-codeowners/ieee802154
 /examples/mesh/               @esp-idf-codeowners/wifi
 /examples/network/            @esp-idf-codeowners/network @esp-idf-codeowners/wifi
 /examples/openthread/         @esp-idf-codeowners/ieee802154

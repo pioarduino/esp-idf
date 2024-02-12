@@ -42,10 +42,10 @@ examples/bluetooth/bluedroid/classic_bt:
     - esp_console
     - vfs
     - esp_driver_gpio
+    - esp_driver_i2s
+    - esp_driver_uart
   depends_filepatterns:
     - components/driver/dac/**/*
-    - components/driver/i2s/**/*
-    - components/driver/uart/**/*
 
 examples/bluetooth/bluedroid/coex/a2dp_gatts_coex:
   <<: *bt_default_depends
@@ -53,9 +53,10 @@ examples/bluetooth/bluedroid/coex/a2dp_gatts_coex:
     - if: IDF_TARGET != "esp32"
       temporary: true
       reason: the other targets are not tested yet
+  depends_components:
+    - esp_driver_i2s
   depends_filepatterns:
     - components/driver/dac/**/*
-    - components/driver/i2s/**/*
 
 examples/bluetooth/blufi:
   disable:
@@ -84,21 +85,6 @@ examples/bluetooth/esp_ble_mesh:
     - vfs
     - mbedtls
     - touch_element
-    - esp_driver_gpio
-  depends_filepatterns:
-    - examples/bluetooth/esp_ble_mesh/common_components/**/*
-
-examples/bluetooth/esp_ble_mesh/aligenie_demo:
-  enable:
-    - if: IDF_TARGET in ["esp32"]
-      temporary: true
-      reason: the other targets are not tested yet
-  depends_components:
-    - bt
-    - esp_phy
-    - vfs
-    - mbedtls
-    - driver
     - esp_driver_gpio
   depends_filepatterns:
     - examples/bluetooth/esp_ble_mesh/common_components/**/*
@@ -133,15 +119,15 @@ examples/bluetooth/hci/controller_hci_uart_esp32:
   <<: *bt_default_depends
   enable:
     - if: IDF_TARGET == "esp32"
-  depends_filepatterns:
-    - components/driver/uart/**/*
+  depends_components:
+    - esp_driver_uart
 
 examples/bluetooth/hci/controller_hci_uart_esp32c3_and_esp32s3:
   <<: *bt_default_depends
   enable:
     - if: IDF_TARGET in ["esp32c3", "esp32s3"]
-  depends_filepatterns:
-    - components/driver/uart/**/*
+  depends_components:
+    - esp_driver_uart
 
 
 # config BT_NIMBLE_ENABLED does not depends on any soc cap
@@ -204,6 +190,22 @@ examples/bluetooth/nimble/ble_phy:
   depends_filepatterns:
     - examples/bluetooth/nimble/common/**/*
 
+examples/bluetooth/nimble/blecent:
+  <<: *bt_default_depends
+  disable:
+    - if: SOC_BLE_SUPPORTED != 1
+  depends_components:
+    - bt
+    - esp_phy
+    - esp_event
+    - esp_coex
+    - esp_pm
+  depends_filepatterns:
+    - examples/bluetooth/nimble/common/**/*
+    - examples/bluetooth/nimble/blecent/**/*
+    - examples/bluetooth/nimble/power_save/**/*
+    - examples/bluetooth/nimble/pytest_nimble_test.py
+
 examples/bluetooth/nimble/blemesh:
   <<: *bt_default_depends
   enable:
@@ -248,6 +250,9 @@ examples/bluetooth/nimble/power_save:
     - esp_pm
   depends_filepatterns:
     - examples/bluetooth/nimble/common/**/*
+    - examples/bluetooth/nimble/blecent/**/*
+    - examples/bluetooth/nimble/power_save/**/*
+    - examples/bluetooth/nimble/pytest_nimble_test.py
 
 examples/bluetooth/nimble/throughput_app:
   <<: *bt_default_depends
@@ -255,7 +260,7 @@ examples/bluetooth/nimble/throughput_app:
     - if: SOC_BLE_SUPPORTED != 1
   depends_components:
     - esp_driver_gpio
+    - esp_driver_uart
   depends_filepatterns:
     - examples/bluetooth/nimble/common/**/*
     - examples/bluetooth/nimble/throughput_app/blecent_throughput/components/**/*
-    - components/driver/uart/**/*

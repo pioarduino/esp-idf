@@ -1,6 +1,10 @@
 安全
 ====
 
+{IDF_TARGET_CIPHER_SCHEME:default="RSA", esp32h2="RSA 或 ECDSA", esp32p4="RSA 或 ECDSA"}
+
+{IDF_TARGET_SIG_PERI:default="DS", esp32h2="DS 或 ECDSA", esp32p4="DS 或 ECDSA"}
+
 :link_to_translation:`en:[English]`
 
 本指南概述了乐鑫解决方案中可用的整体安全功能。从 **安全** 角度考虑，强烈建议在使用乐鑫平台和 ESP-IDF 软件栈设计产品时参考本指南。
@@ -73,9 +77,19 @@ flash 加密最佳实践
 
     在 {IDF_TARGET_NAME} 中，数字签名外设借助硬件加速，通过 HMAC 算法生成 RSA 数字签名。RSA 私钥仅限设备硬件访问，软件无法获取，保证了设备上存储密钥的安全性。
 
-    数字签名外设可以建立与远程终端之间的 **安全设备身份**，如基于 RSA 加密算法的 TLS 双向认证。
+    .. only:: SOC_ECDSA_SUPPORTED
 
-    更多详情请参阅 :doc:`../api-reference/peripherals/ds`。
+        {IDF_TARGET_NAME} 还支持 ECDSA 外设，用于生成硬件加速的 ECDSA 数字签名。ECDSA 私钥支持直接编程到 eFuse 块中，并在软件中标记为读保护。
+
+    {IDF_TARGET_SIG_PERI} 外设可以建立与远程终端之间的 **安全设备身份**，如基于 {IDF_TARGET_CIPHER_SCHEME} 加密算法的 TLS 双向认证。
+
+    .. only:: not SOC_ECDSA_SUPPORTED
+
+        详情请参阅 :doc:`../api-reference/peripherals/ds`。
+
+    .. only:: SOC_ECDSA_SUPPORTED
+
+        详情请参阅 :doc:`../api-reference/peripherals/ecdsa` 及 :doc:`../api-reference/peripherals/ds`。
 
 .. only:: SOC_MEMPROT_SUPPORTED or SOC_CPU_IDRAM_SPLIT_USING_PMP
 
@@ -197,18 +211,20 @@ UART 下载模式
 产品安全
 ----------------
 
-安全配网
-~~~~~~~~~~~~~~~~~~~
+.. only:: SOC_WIFI_SUPPORTED
 
-安全配网是指将 ESP 设备安全接入 Wi-Fi 网络的过程。该机制还支持在初始配网阶段从配网实体（如智能手机等）获取额外的自定义配置数据。
+    安全配网
+    ~~~~~~~~~~~~~~~~~~~
 
-ESP-IDF 提供了多种安全方案，可以在 ESP 设备和配网实体之间建立安全会话，具体方案请参阅 :ref:`provisioning_security_schemes`。
+    安全配网是指将 ESP 设备安全接入 Wi-Fi 网络的过程。该机制还支持在初始配网阶段从配网实体（如智能手机等）获取额外的自定义配置数据。
 
-关于该功能的更多详情和代码示例，请参阅 :doc:`../api-reference/provisioning/wifi_provisioning`。
+    ESP-IDF 提供了多种安全方案，可以在 ESP 设备和配网实体之间建立安全会话，具体方案请参阅 :ref:`provisioning_security_schemes`。
 
-.. note::
+    关于该功能的更多详情和代码示例，请参阅 :doc:`../api-reference/provisioning/wifi_provisioning`。
 
-    乐鑫提供了 Android 和 iOS 手机应用程序及其源代码，以便进一步根据产品需求定制安全配网方案。
+    .. note::
+
+        乐鑫提供了 Android 和 iOS 手机应用程序及其源代码，以便进一步根据产品需求定制安全配网方案。
 
 安全 OTA 更新
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

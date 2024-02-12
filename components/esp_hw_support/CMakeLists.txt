@@ -37,10 +37,16 @@ if(NOT BOOTLOADER_BUILD)
                      "port/${target}/io_mux.c"
                      "port/${target}/esp_clk_tree.c"
                      "port/esp_clk_tree_common.c"
-                     "dma/esp_dma_utils.c")
+                     "dma/esp_dma_utils.c"
+                     "spi_share_hw_ctrl.c"
+                     "spi_bus_lock.c")
 
     if(CONFIG_SOC_ADC_SUPPORTED)
         list(APPEND srcs "adc_share_hw_ctrl.c")
+    endif()
+
+    if(CONFIG_SOC_ISP_SHARE_CSI_BRG)
+        list(APPEND srcs "mipi_csi_share_hw_ctrl.c")
     endif()
 
     if(CONFIG_SOC_PM_SUPPORT_CPU_PD)
@@ -64,6 +70,16 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_GDMA_SUPPORTED)
         list(APPEND srcs "dma/gdma.c")
+        if(CONFIG_SOC_PM_SUPPORT_TOP_PD)
+            list(APPEND srcs "dma/gdma_sleep_retention.c")
+        endif()
+    endif()
+
+    if(CONFIG_SOC_MULTI_USAGE_LDO_SUPPORTED)
+        list(APPEND srcs "ldo/esp_ldo.c")
+        if(CONFIG_SPIRAM OR CONFIG_SOC_CLK_MPLL_SUPPORTED)
+            list(APPEND srcs "ldo/esp_ldo_psram.c")
+        endif()
     endif()
 
     if(CONFIG_SOC_ASYNC_MEMCPY_SUPPORTED)
@@ -78,6 +94,14 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_GDMA_SUPPORT_ETM)
         list(APPEND srcs "dma/gdma_etm.c")
+    endif()
+
+    if(CONFIG_SOC_DW_GDMA_SUPPORTED)
+        list(APPEND srcs "dma/dw_gdma.c")
+    endif()
+
+    if(CONFIG_SOC_DMA2D_SUPPORTED)
+        list(APPEND srcs "dma/dma2d.c")
     endif()
 
     if(CONFIG_SOC_SYSTIMER_SUPPORTED)
@@ -100,6 +124,10 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "esp_ds.c")
     endif()
 
+    if(CONFIG_SOC_KEY_MANAGER_SUPPORTED)
+        list(APPEND srcs "esp_key_mgr.c")
+    endif()
+
     if(CONFIG_SOC_PAU_SUPPORTED)
         list(APPEND srcs "port/pau_regdma.c"
                          "port/regdma_link.c")
@@ -118,9 +146,12 @@ if(NOT BOOTLOADER_BUILD)
     endif()
 
     if(NOT CONFIG_APP_BUILD_TYPE_PURE_RAM_APP)
-        list(APPEND srcs "mspi_timing_tuning.c" "mspi_timing_config.c")
+        list(APPEND srcs "mspi_timing_tuning.c")
         if(CONFIG_SOC_MEMSPI_TIMING_TUNING_BY_MSPI_DELAY)
             list(APPEND srcs "mspi_timing_by_mspi_delay.c")
+        endif()
+        if(CONFIG_SOC_MEMSPI_TIMING_TUNING_BY_DQS)
+            list(APPEND srcs "mspi_timing_by_dqs.c")
         endif()
     endif()
 
@@ -138,7 +169,15 @@ if(NOT BOOTLOADER_BUILD)
                 "sleep_modes.c"       # TODO: IDF-7528, IDF-7529
                 "sleep_wake_stub.c"   # TODO: IDF-7529
                 "sleep_gpio.c"        # TODO: IDF-7528, IDF-7529
-                "port/esp_clk_tree_common.c"    # TODO: IDF-7526
+            )
+    endif()
+    if(CONFIG_IDF_TARGET_ESP32C5)
+        list(REMOVE_ITEM srcs
+                "sleep_cpu.c"         # TODO: [ESP32C5] IDF-8638, IDF-8640
+                "sleep_modes.c"       # TODO: [ESP32C5] IDF-8638, IDF-8640
+                "sleep_wake_stub.c"   # TODO: [ESP32C5] IDF-8638, IDF-8640
+                "sleep_gpio.c"        # TODO: [ESP32C5] IDF-8638, IDF-8640
+                "port/esp_clk_tree_common.c"    # TODO: [ESP32C5] IDF-8638, IDF-8640
             )
     endif()
 else()
@@ -147,7 +186,7 @@ else()
 endif()
 
 idf_component_register(SRCS ${srcs}
-                       INCLUDE_DIRS include include/soc include/soc/${target}
+                       INCLUDE_DIRS include include/soc include/soc/${target} dma/include
                        PRIV_INCLUDE_DIRS port/include include/esp_private
                        REQUIRES ${requires}
                        PRIV_REQUIRES "${priv_requires}"

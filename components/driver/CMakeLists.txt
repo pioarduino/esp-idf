@@ -8,26 +8,13 @@ endif()
 set(srcs)
 
 # Always included headers
-set(includes "include"
-             "deprecated"
-             "analog_comparator/include"
-             "dac/include"
+set(includes "deprecated"
              "i2c/include"
-             "i2s/include"
-             "ledc/include"
-             "parlio/include"
-             "rmt/include"
-             "sdio_slave/include"
-             "sdspi/include"
-             "sigma_delta/include"
-             "temperature_sensor/include"
              "touch_sensor/include"
-             "twai/include"
-             "uart/include"
-             "usb_serial_jtag/include")
+             "twai/include")
 
 # Always included linker fragments
-set(ldfragments "linker.lf")
+set(ldfragments "")
 
 # ADC related source files (dprecated)
 if(CONFIG_SOC_ADC_SUPPORTED)
@@ -38,28 +25,10 @@ if(CONFIG_SOC_ADC_DMA_SUPPORTED)
     list(APPEND srcs "deprecated/adc_dma_legacy.c")
 endif()
 
-# Analog comparator related source files
-if(CONFIG_SOC_ANA_CMPR_SUPPORTED)
-    list(APPEND srcs "analog_comparator/ana_cmpr.c")
-    if(CONFIG_SOC_ANA_CMPR_SUPPORT_ETM)
-        list(APPEND srcs "analog_comparator/ana_cmpr_etm.c")
-    endif()
-endif()
-
 # DAC related source files
 if(CONFIG_SOC_DAC_SUPPORTED)
-    list(APPEND srcs "dac/dac_oneshot.c"
-                     "dac/dac_cosine.c"
-                     "dac/dac_continuous.c"
-                     "dac/dac_common.c"
-                     "dac/${target}/dac_dma.c"
-                     "deprecated/dac_common_legacy.c"
+    list(APPEND srcs "deprecated/dac_common_legacy.c"
                      "deprecated/${target}/dac_legacy.c")
-endif()
-
-# Parallel IO related source files
-if(CONFIG_SOC_PARLIO_SUPPORTED)
-    list(APPEND srcs "parlio/parlio_common.c" "parlio/parlio_tx.c")
 endif()
 
 # GPTimer legacy driver
@@ -69,36 +38,12 @@ endif()
 
 # I2C related source files
 if(CONFIG_SOC_I2C_SUPPORTED)
-    list(APPEND srcs "i2c/i2c.c"
-                     "i2c/i2c_master.c"
-                     "i2c/i2c_common.c"
-        )
-    if(CONFIG_SOC_I2C_SUPPORT_SLAVE)
-        list(APPEND srcs "i2c/i2c_slave.c")
-    endif()
-
-    list(APPEND ldfragments "i2c/linker.lf")
+    list(APPEND srcs "i2c/i2c.c")
 endif()
 
 # I2S related source files
 if(CONFIG_SOC_I2S_SUPPORTED)
-    list(APPEND srcs "i2s/i2s_common.c"
-                     "i2s/i2s_platform.c"
-                     "i2s/i2s_std.c"
-                     "deprecated/i2s_legacy.c")
-    if(CONFIG_SOC_I2S_SUPPORTS_PDM)
-        list(APPEND srcs "i2s/i2s_pdm.c")
-    endif()
-    if(CONFIG_SOC_I2S_SUPPORTS_TDM)
-        list(APPEND srcs "i2s/i2s_tdm.c")
-    endif()
-endif()
-
-# LEDC related source files
-if(CONFIG_SOC_LEDC_SUPPORTED)
-    list(APPEND srcs "ledc/ledc.c")
-
-    list(APPEND ldfragments "ledc/linker.lf")
+    list(APPEND srcs "deprecated/i2s_legacy.c")
 endif()
 
 # MCPWM legacy driver
@@ -111,39 +56,19 @@ if(CONFIG_SOC_PCNT_SUPPORTED)
     list(APPEND srcs "deprecated/pcnt_legacy.c")
 endif()
 
-# RMT related source files
+# RMT legacy driver
 if(CONFIG_SOC_RMT_SUPPORTED)
-    list(APPEND srcs "rmt/rmt_common.c"
-                     "rmt/rmt_encoder.c"
-                     "rmt/rmt_rx.c"
-                     "rmt/rmt_tx.c"
-                     "deprecated/rmt_legacy.c")
-    list(APPEND ldfragments "rmt/linker.lf")
+    list(APPEND srcs "deprecated/rmt_legacy.c")
 endif()
 
-# SDIO Slave related source files
-if(CONFIG_SOC_SDIO_SLAVE_SUPPORTED)
-    list(APPEND srcs "sdio_slave/sdio_slave.c")
-endif()
-
-# Sigma-Delta Modulation related source files
+# Sigma-Delta Modulation legacy driver
 if(CONFIG_SOC_SDM_SUPPORTED)
-    list(APPEND srcs "sigma_delta/sdm.c"
-                     "deprecated/sigma_delta_legacy.c")
+    list(APPEND srcs "deprecated/sigma_delta_legacy.c")
 endif()
-
-# SDSPI related source files
-if(CONFIG_SOC_GPSPI_SUPPORTED)
-    list(APPEND srcs "sdspi/sdspi_crc.c"
-                     "sdspi/sdspi_host.c"
-                     "sdspi/sdspi_transaction.c")
-endif()
-
 
 # Temperature Sensor related source files
 if(CONFIG_SOC_TEMP_SENSOR_SUPPORTED)
-    list(APPEND srcs "temperature_sensor/temperature_sensor.c"
-                     "deprecated/rtc_temperature_legacy.c")
+    list(APPEND srcs "deprecated/rtc_temperature_legacy.c")
 endif()
 
 # Touch Sensor related source files
@@ -158,19 +83,6 @@ if(CONFIG_SOC_TWAI_SUPPORTED)
     list(APPEND srcs "twai/twai.c")
 
     list(APPEND ldfragments "twai/linker.lf")
-endif()
-
-# UART related source files
-if(CONFIG_SOC_UART_SUPPORTED)
-    list(APPEND srcs "uart/uart.c")
-
-    list(APPEND ldfragments "uart/linker.lf")
-endif()
-
-# USB Serial JTAG related source files
-if(CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED)
-    list(APPEND srcs "usb_serial_jtag/usb_serial_jtag.c"
-                     "usb_serial_jtag/usb_serial_jtag_connection_monitor.c")
 endif()
 
 # Other source files
@@ -192,14 +104,9 @@ else()
                            # for backward compatibility, the driver component needs to
                            # have a public dependency on other "esp_driver_foo" components
                                     esp_driver_gpio esp_driver_pcnt esp_driver_gptimer esp_driver_spi esp_driver_mcpwm
-                                    esp_driver_sdmmc
+                                    esp_driver_ana_cmpr esp_driver_i2s esp_driver_sdmmc esp_driver_sdspi esp_driver_sdio
+                                    esp_driver_dac esp_driver_rmt esp_driver_tsens esp_driver_sdm esp_driver_i2c
+                                    esp_driver_uart esp_driver_ledc esp_driver_parlio esp_driver_usb_serial_jtag
                            LDFRAGMENTS ${ldfragments}
                           )
-endif()
-
-# If system needs to monitor USJ connection status, then usb_serial_jtag_connection_monitor object file has to be linked
-# to the binary, to allow tick hook to be registered
-if(CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION OR
-   (CONFIG_SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP AND CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED))
-    target_link_libraries(${COMPONENT_LIB} INTERFACE "-u usb_serial_jtag_connection_monitor_include")
 endif()

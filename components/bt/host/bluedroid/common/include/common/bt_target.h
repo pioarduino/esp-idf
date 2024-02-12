@@ -213,6 +213,12 @@
 #define BLE_FEAT_PERIODIC_ADV_ENH   FALSE
 #endif
 
+#if (UC_BT_BLE_FEAT_CREATE_SYNC_ENH == TRUE)
+#define BLE_FEAT_CREATE_SYNC_ENH   TRUE
+#else
+#define BLE_FEAT_CREATE_SYNC_ENH   FALSE
+#endif
+
 #if (UC_BT_BLE_HIGH_DUTY_ADV_INTERVAL == TRUE)
 #define BLE_HIGH_DUTY_ADV_INTERVAL TRUE
 #else
@@ -888,13 +894,9 @@
 #define BTM_DEFAULT_SCO_MODE        2
 #endif
 
-/* The number of security records for peer devices. 100 AS Default*/
+/* The number of security records for peer devices. 15 AS Default*/
 #ifndef BTM_SEC_MAX_DEVICE_RECORDS
-#if SMP_INCLUDED == TRUE
-#define BTM_SEC_MAX_DEVICE_RECORDS  15 // 100
-#else
-#define BTM_SEC_MAX_DEVICE_RECORDS  8
-#endif /* SMP_INCLUDED == TRUE */
+#define BTM_SEC_MAX_DEVICE_RECORDS  UC_BT_SMP_MAX_BONDS
 #endif
 
 /* The number of security records for services. 32 AS Default*/
@@ -1012,7 +1014,7 @@
 /* TRUE to include Sniff Subrating */
 #if (BTA_DM_PM_INCLUDED == TRUE)
 #ifndef BTM_SSR_INCLUDED
-#define BTM_SSR_INCLUDED                TRUE
+#define BTM_SSR_INCLUDED                FALSE
 #endif
 #endif /* BTA_DM_PM_INCLUDED */
 
