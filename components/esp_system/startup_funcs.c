@@ -17,7 +17,6 @@
 #include "spi_flash_mmap.h"
 #include "esp_flash_internal.h"
 #include "esp_newlib.h"
-#include "esp_timer.h"
 #include "esp_efuse.h"
 #include "esp_efuse_table.h"
 #include "esp_flash_encrypt.h"
@@ -37,7 +36,6 @@
 #endif
 
 #if __has_include("esp_app_desc.h")
-#define WITH_APP_IMAGE_INFO
 #include "esp_app_desc.h"
 #endif
 
@@ -52,6 +50,10 @@
 
 #include "esp_rom_caps.h"
 #include "esp_rom_sys.h"
+
+#if SOC_BOD_SUPPORTED
+#include "hal/brownout_ll.h"
+#endif
 
 #if CONFIG_SPIRAM
 #include "esp_psram.h"
@@ -77,49 +79,9 @@ ESP_SYSTEM_INIT_FN(init_show_cpu_freq, CORE, BIT(0), 10)
     return ESP_OK;
 }
 
-#ifdef WITH_APP_IMAGE_INFO
-ESP_SYSTEM_INIT_FN(init_show_app_info, CORE, BIT(0), 20)
-{
-    // Display information about the current running image.
-    if (LOG_LOCAL_LEVEL >= ESP_LOG_INFO) {
-        const esp_app_desc_t *app_desc = esp_app_get_description();
-        ESP_EARLY_LOGI(TAG, "Application information:");
-#ifndef CONFIG_APP_EXCLUDE_PROJECT_NAME_VAR
-        ESP_EARLY_LOGI(TAG, "Project name:     %s", app_desc->project_name);
-#endif
-#ifndef CONFIG_APP_EXCLUDE_PROJECT_VER_VAR
-        ESP_EARLY_LOGI(TAG, "App version:      %s", app_desc->version);
-#endif
-#ifdef CONFIG_BOOTLOADER_APP_SECURE_VERSION
-        ESP_EARLY_LOGI(TAG, "Secure version:   %d", app_desc->secure_version);
-#endif
-#ifdef CONFIG_APP_COMPILE_TIME_DATE
-        ESP_EARLY_LOGI(TAG, "Compile time:     %s %s", app_desc->date, app_desc->time);
-#endif
-        char buf[17];
-        esp_app_get_elf_sha256(buf, sizeof(buf));
-        ESP_EARLY_LOGI(TAG, "ELF file SHA256:  %s...", buf);
-        ESP_EARLY_LOGI(TAG, "ESP-IDF:          %s", app_desc->idf_ver);
-
-        ESP_EARLY_LOGI(TAG, "Min chip rev:     v%d.%d", CONFIG_ESP_REV_MIN_FULL / 100, CONFIG_ESP_REV_MIN_FULL % 100);
-        ESP_EARLY_LOGI(TAG, "Max chip rev:     v%d.%d %s", CONFIG_ESP_REV_MAX_FULL / 100, CONFIG_ESP_REV_MAX_FULL % 100,
-                       efuse_hal_get_disable_wafer_version_major() ? "(constraint ignored)" : "");
-        unsigned revision = efuse_hal_chip_revision();
-        ESP_EARLY_LOGI(TAG, "Chip rev:         v%d.%d", revision / 100, revision % 100);
-    }
-    return ESP_OK;
-}
-#endif // WITH_APP_IMAGE_INFO
-
 ESP_SYSTEM_INIT_FN(init_heap, CORE, BIT(0), 100)
 {
     heap_caps_init();
-    return ESP_OK;
-}
-
-ESP_SYSTEM_INIT_FN(init_timer, CORE, BIT(0), 101)
-{
-    esp_timer_early_init();
     return ESP_OK;
 }
 
@@ -140,15 +102,19 @@ ESP_SYSTEM_INIT_FN(init_psram_heap, CORE, BIT(0), 103)
     return ESP_OK;
 }
 
-#if CONFIG_ESP_BROWNOUT_DET
 ESP_SYSTEM_INIT_FN(init_brownout, CORE, BIT(0), 104)
 {
     // [refactor-todo] leads to call chain rtc_is_register (driver) -> esp_intr_alloc (esp32/esp32s2) ->
     // malloc (newlib) -> heap_caps_malloc (heap), so heap must be at least initialized
+#if CONFIG_ESP_BROWNOUT_DET
     esp_brownout_init();
+#else
+#if SOC_CAPS_NO_RESET_BY_ANA_BOD
+    brownout_ll_ana_reset_enable(false);
+#endif // SOC_CAPS_NO_RESET_BY_ANA_BOD
+#endif // CONFIG_ESP_BROWNOUT_DET
     return ESP_OK;
 }
-#endif
 
 ESP_SYSTEM_INIT_FN(init_newlib_time, CORE, BIT(0), 105)
 {

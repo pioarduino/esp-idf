@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -383,7 +383,7 @@ TEST_CASE("GPIO_interrupt_on_other_CPUs_test", "[gpio]")
     TaskHandle_t gpio_task_handle;
     test_gpio_config_mode_input_output(TEST_GPIO_INPUT_OUTPUT_IO1);
 
-    for (int cpu_num = 1; cpu_num < portNUM_PROCESSORS; ++cpu_num) {
+    for (int cpu_num = 1; cpu_num < CONFIG_FREERTOS_NUMBER_OF_CORES; ++cpu_num) {
         // We assume unit-test task is running on core 0, so we install gpio interrupt on other cores
         edge_intr_times = 0;
         TEST_ESP_OK(gpio_set_level(TEST_GPIO_INPUT_OUTPUT_IO1, 0));
@@ -506,7 +506,7 @@ static void gpio_interconnect_input_output_pin(uint32_t input_pin, uint32_t outp
 {
     // signal256 -> output pin -> signal_idx -> input_pin
     // Set output pin IE to be able to connect to the signal
-    PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[output_pin]);
+    gpio_ll_input_enable(&GPIO, output_pin);
     esp_rom_gpio_connect_in_signal(output_pin, signal_idx, 0);
     // Input pin OE to be able to connect to the signal is done by the esp_rom_gpio_connect_out_signal function
     esp_rom_gpio_connect_out_signal(input_pin, signal_idx, 0, 0);
@@ -860,7 +860,9 @@ TEST_CASE("GPIO_USB_DP_pin_pullup_disable_test", "[gpio]")
 }
 #endif //SOC_USB_SERIAL_JTAG_SUPPORTED
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32P4) // TODO: IDF-7528 Remove when light sleep is supported on ESP32P4
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32P4, ESP32C5)
+// TODO: IDF-7528 Remove when light sleep is supported on ESP32P4
+// TODO: IDF-8638 Remove when light sleep is supported on ESP32C5
 // Ignored in CI because it needs manually connect TEST_GPIO_INPUT_LEVEL_LOW_PIN to 3.3v to wake up from light sleep
 TEST_CASE("GPIO_light_sleep_wake_up_test", "[gpio][ignore]")
 {

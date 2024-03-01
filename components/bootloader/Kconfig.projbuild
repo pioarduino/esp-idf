@@ -461,6 +461,21 @@ menu "Bootloader config"
             (The application and bootoloader must be compiled with the same option).
             The RTC FAST memory has access only through PRO_CPU.
 
+    config BOOTLOADER_CUSTOM_RESERVE_RTC_IN_CRC
+        bool "Include custom memory in the CRC calculation"
+        depends on BOOTLOADER_CUSTOM_RESERVE_RTC
+        default n
+        help
+            This option allows the customer to use the legacy bootloader behavior when the
+            RTC FAST memory CRC calculation takes place. When this option is enabled, the
+            allocated user custom data will be taken into account in the CRC calculcation.
+            This means that any change to the custom data would need a CRC update to prevent
+            the bootloader from marking this data as corrupted.
+            If this option is disabled, the custom data will not be taken into account when
+            calculating the RTC FAST memory CRC. The user custom data can be changed freely,
+            without the need to update the CRC.
+            THIS OPTION MUST BE THE SAME FOR BOTH THE BOOTLOADER AND THE APPLICATION BUILDS.
+
     config BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE
         hex "Size in bytes for custom purposes"
         default 0
@@ -989,6 +1004,14 @@ menu "Security features"
                 To revoke unused slot will be called esp_efuse_set_digest_revoke(num_digest) for each digest.
                 Revoking unused digest slots makes ensures that no trusted keys can be added later by an attacker.
                 If set, it means that you have a plan to use unused digests slots later.
+
+                Note that if you plan to enable secure boot during the first boot up, the bootloader will intentionally
+                revoke the unused digest slots while enabling secure boot, even if the above config is enabled because
+                keeping the unused key slots un-revoked would a security hazard.
+                In case for any development workflow if you need to avoid this revocation, you should enable
+                secure boot externally (host based mechanism) rather than enabling it during the boot up,
+                so that the bootloader would not need to enable secure boot and thus you could avoid its revocation
+                strategy.
 
         config SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC
             bool "Leave UART bootloader encryption enabled"

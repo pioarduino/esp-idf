@@ -151,6 +151,16 @@ esp_err_t esp_eth_phy_802_3_set_speed(phy_802_3_t *phy_802_3, eth_speed_t speed)
 esp_err_t esp_eth_phy_802_3_set_duplex(phy_802_3_t *phy_802_3, eth_duplex_t duplex);
 
 /**
+ * @brief Set Ethernet PHY link status
+ *
+ * @param phy_802_3 IEEE 802.3 PHY object infostructure
+ * @param link new link status
+ * @return
+ *      - ESP_OK: Ethernet PHY link set successfuly
+ */
+esp_err_t esp_eth_phy_802_3_set_link(phy_802_3_t *phy_802_3, eth_link_t link);
+
+/**
  * @brief Initialize Ethernet PHY
  *
  * @param phy_802_3 IEEE 802.3 PHY object infostructure
@@ -296,7 +306,7 @@ esp_err_t esp_eth_phy_802_3_set_mmd_addr(phy_802_3_t *phy_802_3, uint8_t devaddr
  *      - ESP_FAIL: Memory read failed because of some error occured
  *      - ESP_ERR_INVALID_ARG: Device address provided is out of range (hardware limits device address to 5 bits) or MMD access function is invalid
  */
-esp_err_t esp_eth_phy_802_3_read_mmd_data(phy_802_3_t *phy_802_3, uint8_t devaddr, esp_eth_phy_802_3_mmd_func_t function, uint16_t *data);
+esp_err_t esp_eth_phy_802_3_read_mmd_data(phy_802_3_t *phy_802_3, uint8_t devaddr, esp_eth_phy_802_3_mmd_func_t function, uint32_t *data);
 
 /**
  * @brief Write data to MDIO device's memory at address register
@@ -310,7 +320,7 @@ esp_err_t esp_eth_phy_802_3_read_mmd_data(phy_802_3_t *phy_802_3, uint8_t devadd
  *      - ESP_FAIL: Memory write failed because of some error occured
  *      - ESP_ERR_INVALID_ARG: Device address provided is out of range (hardware limits device address to 5 bits) or MMD access function is invalid
  */
-esp_err_t esp_eth_phy_802_3_write_mmd_data(phy_802_3_t *phy_802_3, uint8_t devaddr, esp_eth_phy_802_3_mmd_func_t function, uint16_t data);
+esp_err_t esp_eth_phy_802_3_write_mmd_data(phy_802_3_t *phy_802_3, uint8_t devaddr, esp_eth_phy_802_3_mmd_func_t function, uint32_t data);
 
 /**
  * @brief Set MMD address to mmd_addr with function MMD_FUNC_NOINCR and read contents to *data
@@ -324,7 +334,7 @@ esp_err_t esp_eth_phy_802_3_write_mmd_data(phy_802_3_t *phy_802_3, uint8_t devad
  *      - ESP_FAIL: Memory read failed because of some error occured
  *      - ESP_ERR_INVALID_ARG: Device address provided is out of range (hardware limits device address to 5 bits)
  */
-esp_err_t esp_eth_phy_802_3_read_mmd_register(phy_802_3_t *phy_802_3, uint8_t devaddr, uint16_t mmd_addr, uint16_t *data);
+esp_err_t esp_eth_phy_802_3_read_mmd_register(phy_802_3_t *phy_802_3, uint8_t devaddr, uint16_t mmd_addr, uint32_t *data);
 
 /**
  * @brief Set MMD address to mmd_addr with function MMD_FUNC_NOINCR and write data
@@ -338,7 +348,7 @@ esp_err_t esp_eth_phy_802_3_read_mmd_register(phy_802_3_t *phy_802_3, uint8_t de
  *      - ESP_FAIL: Memory write failed because of some error occured
  *      - ESP_ERR_INVALID_ARG: Device address provided is out of range (hardware limits device address to 5 bits)
  */
-esp_err_t esp_eth_phy_802_3_write_mmd_register(phy_802_3_t *phy_802_3, uint8_t devaddr, uint16_t mmd_addr, uint16_t data);
+esp_err_t esp_eth_phy_802_3_write_mmd_register(phy_802_3_t *phy_802_3, uint8_t devaddr, uint16_t mmd_addr, uint32_t data);
 
 /**
  * @brief Returns address to parent IEEE 802.3 PHY object infostructure
