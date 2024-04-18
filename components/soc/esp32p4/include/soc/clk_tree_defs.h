@@ -21,7 +21,7 @@ extern "C" {
  *
  * 2) External 40MHz Crystal Clock: XTAL
  *
- * 3) Internal 136kHz RC Oscillator: RC_SLOW (may also referrred as SOSC in TRM or reg. description)
+ * 3) Internal 136kHz RC Oscillator: RC_SLOW (may also referred as SOSC in TRM or reg. description)
  *
  *    This RC oscillator generates a ~136kHz clock signal output as the RC_SLOW_CLK. The exact frequency of this clock
  *    can be computed in runtime through calibration.
@@ -249,8 +249,6 @@ typedef enum {
     RMT_BASECLK_DEFAULT = SOC_MOD_CLK_PLL_F80M,  /*!< RMT source clock default choice is PLL_F80M */
 } soc_periph_rmt_clk_src_legacy_t;
 
-//////////////////////////////////////////////////Temp Sensor///////////////////////////////////////////////////////////
-
 ///////////////////////////////////////////////////UART/////////////////////////////////////////////////////////////////
 
 /**
@@ -344,6 +342,20 @@ typedef enum {
     I2S_CLK_SRC_EXTERNAL = -1,                          /*!< Select external clock as source clock */
 } soc_periph_i2s_clk_src_t;
 
+/**
+ * @brief Array initializer for all supported clock sources of LP I2S
+ */
+#define SOC_LP_I2S_CLKS {SOC_MOD_CLK_LP_PERI, SOC_MOD_CLK_XTAL_D2}
+
+/**
+ * @brief LP I2S clock source enum
+ */
+typedef enum {
+    LP_I2S_CLK_SRC_DEFAULT = SOC_MOD_CLK_LP_PERI,          /*!< Select LP_PERI as the default source clock */
+    LP_I2S_CLK_SRC_LP_PERI = SOC_MOD_CLK_LP_PERI,          /*!< Select LP_PERI as the source clock */
+    LP_I2S_CLK_SRC_XTAL_D2 = SOC_MOD_CLK_XTAL_D2,          /*!< LP_I2S source clock is XTAL_D2 */
+} soc_periph_lp_i2s_clk_src_t;
+
 //////////////////////////////////////////////////LCD///////////////////////////////////////////////////////////////////
 
 /**
@@ -422,6 +434,24 @@ typedef enum {
     I2C_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,                  /*!< Select RC_FAST as the source clock */
     I2C_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,                     /*!< Select XTAL as the default source clock */
 } soc_periph_i2c_clk_src_t;
+
+///////////////////////////////////////////////LP_I2C///////////////////////////////////////////////////////////////////
+
+/**
+ * @brief Array initializer for all supported clock sources of LP_I2C
+ */
+#define SOC_LP_I2C_CLKS {SOC_MOD_CLK_RTC_FAST, SOC_MOD_CLK_XTAL_D2}
+
+/**
+ * @brief Type of LP_I2C clock source.
+ */
+typedef enum {
+    LP_I2C_SCLK_LP_FAST = SOC_MOD_CLK_RTC_FAST,                 /*!< LP_I2C source clock is RTC_FAST */
+    LP_I2C_SCLK_XTAL_D2 = SOC_MOD_CLK_XTAL_D2,                  /*!< LP_I2C source clock is XTAL_D2 */
+    // LP_I2C_SCLK_LP_PLL = SOC_MOD_CLK_LP_PLL,                    /*!< LP_I2C source clock is LP_PLL */
+    LP_I2C_SCLK_DEFAULT = SOC_MOD_CLK_RTC_FAST,                 /*!< LP_I2C source clock default choice is RTC_FAST */
+} soc_periph_lp_i2c_clk_src_t;
+
 /////////////////////////////////////////////////SPI////////////////////////////////////////////////////////////////////
 
 /**
@@ -509,6 +539,21 @@ typedef enum {
 
 //////////////////////////////////////////////////GPIO Glitch Filter////////////////////////////////////////////////////
 
+/**
+ * @brief Array initializer for all supported clock sources of Glitch Filter
+ */
+#define SOC_GLITCH_FILTER_CLKS {SOC_MOD_CLK_PLL_F80M, SOC_MOD_CLK_XTAL}
+
+/**
+ * @brief Glitch filter clock source
+ */
+
+typedef enum {
+    GLITCH_FILTER_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL clock as the source clock */
+    GLITCH_FILTER_CLK_SRC_PLL_F80M = SOC_MOD_CLK_PLL_F80M, /*!< Select PLL_F80M clock as the source clock */
+    GLITCH_FILTER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F80M,  /*!< Select PLL_F80M clock as the default clock choice */
+} soc_periph_glitch_filter_clk_src_t;
+
 ///////////////////////////////////////////////////Analog Comparator////////////////////////////////////////////////////
 
 /**
@@ -593,11 +638,7 @@ typedef enum {
     PARLIO_CLK_SRC_PLL_F160M = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the source clock */
     PARLIO_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,     /*!< Select RC_FAST as the source clock */
     PARLIO_CLK_SRC_EXTERNAL = -1,                     /*!< Select EXTERNAL clock as the source clock */
-#if SOC_CLK_TREE_SUPPORTED
     PARLIO_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M,   /*!< Select PLL_F160M as the default clock choice */
-#else
-    PARLIO_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,        /*!< Select XTAL as the default clock choice */
-#endif
 } soc_periph_parlio_clk_src_t;
 
 //////////////////////////////////////////////////SDMMC///////////////////////////////////////////////////////////////

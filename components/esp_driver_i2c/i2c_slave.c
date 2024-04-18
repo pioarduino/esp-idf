@@ -1,10 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <string.h>
+#include <sys/param.h>
 #include "esp_types.h"
 #include "esp_intr_alloc.h"
 #include "freertos/FreeRTOS.h"
@@ -59,10 +60,11 @@ static IRAM_ATTR void s_i2c_handle_rx_fifo_wm(i2c_slave_dev_handle_t i2c_slave, 
     i2c_hal_context_t *hal = &i2c_slave->base->hal;
     uint32_t rx_fifo_cnt;
     i2c_ll_get_rxfifo_cnt(hal->dev, &rx_fifo_cnt);
-    i2c_ll_read_rxfifo(hal->dev, i2c_slave->data_buf, rx_fifo_cnt);
-    memcpy(t->buffer + i2c_slave->already_receive_len, i2c_slave->data_buf, rx_fifo_cnt);
-    i2c_slave->already_receive_len += rx_fifo_cnt;
-    t->rcv_fifo_cnt -= rx_fifo_cnt;
+    uint32_t fifo_cnt_rd = MIN(t->rcv_fifo_cnt, rx_fifo_cnt);
+    i2c_ll_read_rxfifo(hal->dev, i2c_slave->data_buf, fifo_cnt_rd);
+    memcpy(t->buffer + i2c_slave->already_receive_len, i2c_slave->data_buf, fifo_cnt_rd);
+    i2c_slave->already_receive_len += fifo_cnt_rd;
+    t->rcv_fifo_cnt -= fifo_cnt_rd;
 }
 
 static IRAM_ATTR void s_i2c_handle_complete(i2c_slave_dev_handle_t i2c_slave, i2c_slave_receive_t *t, BaseType_t *do_yield)
@@ -186,7 +188,10 @@ esp_err_t i2c_new_slave_device(const i2c_slave_config_t *slave_config, i2c_slave
     i2c_slave_dev_t *i2c_slave = NULL;
     ESP_RETURN_ON_FALSE(slave_config && ret_handle, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
     ESP_RETURN_ON_FALSE(GPIO_IS_VALID_GPIO(slave_config->sda_io_num) && GPIO_IS_VALID_GPIO(slave_config->scl_io_num), ESP_ERR_INVALID_ARG, TAG, "invalid SDA/SCL pin number");
-    ESP_RETURN_ON_FALSE(slave_config->i2c_port < SOC_I2C_NUM || slave_config->i2c_port == -1, ESP_ERR_INVALID_ARG, TAG, "invalid i2c port number");
+#if SOC_LP_I2C_SUPPORTED
+    ESP_RETURN_ON_FALSE(slave_config->i2c_port != (SOC_I2C_NUM - 1), ESP_ERR_NOT_SUPPORTED, TAG, "LP i2c is not supported in I2C slave");
+#endif
+    ESP_RETURN_ON_FALSE(slave_config->i2c_port < SOC_HP_I2C_NUM || slave_config->i2c_port == -1, ESP_ERR_INVALID_ARG, TAG, "invalid i2c port number");
     ESP_RETURN_ON_FALSE((slave_config->send_buf_depth > 0), ESP_ERR_INVALID_ARG, TAG, "invalid SCL speed");
 #if SOC_I2C_SLAVE_SUPPORT_BROADCAST
     ESP_RETURN_ON_FALSE(((slave_config->addr_bit_len != I2C_ADDR_BIT_LEN_10) || (!slave_config->flags.broadcast_en)), ESP_ERR_INVALID_STATE, TAG, "10bits address cannot used together with broadcast");
@@ -227,7 +232,7 @@ esp_err_t i2c_new_slave_device(const i2c_slave_config_t *slave_config, i2c_slave
     if (slave_config->intr_priority) {
         isr_flags |= 1 << (slave_config->intr_priority);
     }
-    ret = esp_intr_alloc_intrstatus(i2c_periph_signal[i2c_port_num].irq, I2C_INTR_ALLOC_FLAG, (uint32_t)i2c_ll_get_interrupt_status_reg(hal->dev), I2C_LL_SLAVE_EVENT_INTR, s_slave_isr_handle_default, i2c_slave, &i2c_slave->base->intr_handle);
+    ret = esp_intr_alloc_intrstatus(i2c_periph_signal[i2c_port_num].irq, isr_flags, (uint32_t)i2c_ll_get_interrupt_status_reg(hal->dev), I2C_LL_SLAVE_EVENT_INTR, s_slave_isr_handle_default, i2c_slave, &i2c_slave->base->intr_handle);
     ESP_GOTO_ON_ERROR(ret, err, TAG, "install i2c slave interrupt failed");
 
     portENTER_CRITICAL(&i2c_slave->base->spinlock);
@@ -282,6 +287,7 @@ err:
 static esp_err_t i2c_slave_bus_destroy(i2c_slave_dev_handle_t i2c_slave)
 {
     if (i2c_slave) {
+        i2c_ll_disable_intr_mask(i2c_slave->base->hal.dev, I2C_LL_SLAVE_EVENT_INTR);
         if (i2c_slave->slv_rx_mux) {
             vSemaphoreDeleteWithCaps(i2c_slave->slv_rx_mux);
             i2c_slave->slv_rx_mux = NULL;
@@ -317,7 +323,7 @@ esp_err_t i2c_slave_transmit(i2c_slave_dev_handle_t i2c_slave, const uint8_t *da
 {
     ESP_RETURN_ON_FALSE(i2c_slave, ESP_ERR_INVALID_ARG, TAG, "i2c slave not initialized");
     ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "invalid data buffer");
-    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_FIFO), ESP_ERR_NOT_SUPPORTED, TAG, "non-fifo mode is not suppored in this API, please set access_ram_en to false");
+    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_FIFO), ESP_ERR_NOT_SUPPORTED, TAG, "non-fifo mode is not supported in this API, please set access_ram_en to false");
     esp_err_t ret = ESP_OK;
     i2c_hal_context_t *hal = &i2c_slave->base->hal;
     TickType_t wait_ticks = (xfer_timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(xfer_timeout_ms);
@@ -337,7 +343,7 @@ esp_err_t i2c_slave_receive(i2c_slave_dev_handle_t i2c_slave, uint8_t *data, siz
 {
     ESP_RETURN_ON_FALSE(i2c_slave, ESP_ERR_INVALID_ARG, TAG, "i2c slave not initialized");
     ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "invalid data buffer");
-    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_FIFO), ESP_ERR_NOT_SUPPORTED, TAG, "non-fifo mode is not suppored in this API, please set access_ram_en to false");
+    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_FIFO), ESP_ERR_NOT_SUPPORTED, TAG, "non-fifo mode is not supported in this API, please set access_ram_en to false");
 #if CONFIG_I2C_ISR_IRAM_SAFE
     ESP_RETURN_ON_FALSE(esp_ptr_internal(data), ESP_ERR_INVALID_ARG, TAG, "buffer must locate in internal RAM if IRAM_SAFE is enabled");
 #endif
@@ -362,7 +368,7 @@ esp_err_t i2c_slave_read_ram(i2c_slave_dev_handle_t i2c_slave, uint8_t ram_offse
     ESP_RETURN_ON_FALSE(i2c_slave, ESP_ERR_INVALID_ARG, TAG, "i2c slave not initialized");
     ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "invalid data buffer");
     ESP_RETURN_ON_FALSE((ram_offset + receive_size <=  SOC_I2C_FIFO_LEN), ESP_ERR_INVALID_SIZE, TAG, "don't read data cross fifo boundary, see `SOC_I2C_FIFO_LEN`");
-    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_NONFIFO), ESP_ERR_NOT_SUPPORTED, TAG, "fifo mode is not suppored in this API, please set access_ram_en to true");
+    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_NONFIFO), ESP_ERR_NOT_SUPPORTED, TAG, "fifo mode is not supported in this API, please set access_ram_en to true");
     i2c_hal_context_t *hal = &i2c_slave->base->hal;
 
     uint32_t fifo_size = 0;
@@ -383,7 +389,7 @@ esp_err_t i2c_slave_write_ram(i2c_slave_dev_handle_t i2c_slave, uint8_t ram_offs
 {
     ESP_RETURN_ON_FALSE(i2c_slave, ESP_ERR_INVALID_ARG, TAG, "i2c slave not initialized");
     ESP_RETURN_ON_FALSE(data, ESP_ERR_INVALID_ARG, TAG, "invalid data buffer");
-    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_NONFIFO), ESP_ERR_NOT_SUPPORTED, TAG, "fifo mode is not suppored in this API, please set access_ram_en to true");
+    ESP_RETURN_ON_FALSE((i2c_slave->fifo_mode == I2C_SLAVE_NONFIFO), ESP_ERR_NOT_SUPPORTED, TAG, "fifo mode is not supported in this API, please set access_ram_en to true");
 
     i2c_hal_context_t *hal = &i2c_slave->base->hal;
     ESP_RETURN_ON_FALSE(xSemaphoreTake(i2c_slave->slv_tx_mux, portMAX_DELAY) == pdTRUE, ESP_ERR_TIMEOUT, TAG, "write to ram lock timeout");

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_check.h"
+#include "esp_private/periph_ctrl.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
@@ -16,6 +17,16 @@
 #include "hal/rtc_io_hal.h"
 #include "soc/rtc_io_periph.h"
 #include "soc/soc_caps.h"
+
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT && !SOC_RTCIO_RCC_IS_INDEPENDENT
+// For `rtcio_hal_function_select` using, clock reg option is inlined in it,
+// so remove the declaration check of __DECLARE_RCC_RC_ATOMIC_ENV
+#define RTCIO_RCC_ATOMIC()                              \
+    for (int i = 1; i ? (periph_rcc_enter(), 1) : 0;    \
+         periph_rcc_exit(), i--)
+#else
+#define RTCIO_RCC_ATOMIC()
+#endif
 
 static const char __attribute__((__unused__)) *RTCIO_TAG = "RTCIO";
 
@@ -45,7 +56,9 @@ esp_err_t rtc_gpio_init(gpio_num_t gpio_num)
 {
     ESP_RETURN_ON_FALSE(rtc_gpio_is_valid_gpio(gpio_num), ESP_ERR_INVALID_ARG, RTCIO_TAG, "RTCIO number error");
     RTCIO_ENTER_CRITICAL();
-    rtcio_hal_function_select(rtc_io_number_get(gpio_num), RTCIO_LL_FUNC_RTC);
+    RTCIO_RCC_ATOMIC() {
+        rtcio_hal_function_select(rtc_io_number_get(gpio_num), RTCIO_LL_FUNC_RTC);
+    }
     RTCIO_EXIT_CRITICAL();
 
     return ESP_OK;
@@ -55,8 +68,10 @@ esp_err_t rtc_gpio_deinit(gpio_num_t gpio_num)
 {
     ESP_RETURN_ON_FALSE(rtc_gpio_is_valid_gpio(gpio_num), ESP_ERR_INVALID_ARG, RTCIO_TAG, "RTCIO number error");
     RTCIO_ENTER_CRITICAL();
-    // Select Gpio as Digital Gpio
-    rtcio_hal_function_select(rtc_io_number_get(gpio_num), RTCIO_LL_FUNC_DIGITAL);
+    RTCIO_RCC_ATOMIC() {
+        // Select Gpio as Digital Gpio
+        rtcio_hal_function_select(rtc_io_number_get(gpio_num), RTCIO_LL_FUNC_DIGITAL);
+    }
     RTCIO_EXIT_CRITICAL();
 
     return ESP_OK;
@@ -179,10 +194,10 @@ esp_err_t lp_gpio_connect_in_signal(gpio_num_t gpio_num, uint32_t signal_idx, bo
     return ESP_OK;
 }
 
-esp_err_t lp_gpio_connect_out_signal(gpio_num_t gpio_num, uint32_t signal_idx, bool out_inv, bool oen_inv)
+esp_err_t lp_gpio_connect_out_signal(gpio_num_t gpio_num, uint32_t signal_idx, bool out_inv, bool out_en_inv)
 {
     ESP_RETURN_ON_FALSE(rtc_gpio_is_valid_gpio(gpio_num), ESP_ERR_INVALID_ARG, RTCIO_TAG, "LP_IO number error");
-    rtcio_hal_matrix_out(rtc_io_number_get(gpio_num), signal_idx, out_inv, oen_inv);
+    rtcio_hal_matrix_out(rtc_io_number_get(gpio_num), signal_idx, out_inv, out_en_inv);
     return ESP_OK;
 }
 #endif // SOC_LP_GPIO_MATRIX_SUPPORTED

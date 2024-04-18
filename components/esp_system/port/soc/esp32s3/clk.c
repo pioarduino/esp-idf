@@ -21,6 +21,7 @@
 #include "soc/rtc_periph.h"
 #include "soc/i2s_reg.h"
 #include "hal/wdt_hal.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_clk.h"
 #include "bootloader_clock.h"
@@ -177,7 +178,7 @@ static void select_rtc_slow_clk(slow_clk_sel_t slow_clk)
             cal_val = (uint32_t)(cal_dividend / rtc_clk_slow_freq_get_hz());
         }
     } while (cal_val == 0);
-    ESP_EARLY_LOGD(TAG, "RTC_SLOW_CLK calibration value: %d", cal_val);
+    ESP_EARLY_LOGD(TAG, "RTC_SLOW_CLK calibration value: %" PRIu32, cal_val);
     esp_clk_slowclk_cal_set(cal_val);
 }
 
@@ -260,6 +261,15 @@ __attribute__((weak)) void esp_perip_clk_init(void)
                            SYSTEM_WIFI_CLK_I2C_CLK_EN |
                            SYSTEM_WIFI_CLK_UNUSED_BIT12 |
                            SYSTEM_WIFI_CLK_SDIO_HOST_EN;
+
+#if !CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
+        /* This function only called on startup thus is thread safe. To avoid build errors/warnings
+         * declare __DECLARE_RCC_ATOMIC_ENV here. */
+        int __DECLARE_RCC_ATOMIC_ENV __attribute__((unused));
+        // Disable USB-Serial-JTAG clock and it's pad if not used
+        usb_serial_jtag_ll_phy_enable_pad(false);
+        usb_serial_jtag_ll_enable_bus_clock(false);
+#endif
     }
 
     //Reset the communication peripherals like I2C, SPI, UART, I2S and bring them to known state.

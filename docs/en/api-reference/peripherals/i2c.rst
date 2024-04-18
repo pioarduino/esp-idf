@@ -6,7 +6,13 @@ Introduction
 
 I2C is a serial, synchronous, multi-device, half-duplex communication protocol that allows co-existence of multiple masters and slaves on the same bus. I2C uses two bidirectional open-drain lines: serial data line (SDA) and serial clock line (SCL), pulled up by resistors.
 
-{IDF_TARGET_NAME} has {IDF_TARGET_SOC_I2C_NUM} I2C controller (also called port), responsible for handling communication on the I2C bus. A single I2C controller can be a master or a slave.
+{IDF_TARGET_NAME} has {IDF_TARGET_SOC_HP_I2C_NUM} I2C controller (also called port), responsible for handling communication on the I2C bus. A single I2C controller can be a master or a slave.
+
+.. only:: SOC_LP_I2C_SUPPORTED
+
+    Additionally, the {IDF_TARGET_NAME} chip has 1 low-power (LP) I2C controller. It is the cut-down version of regular I2C. Usually, the LP I2C controller only support basic I2C functionality with a much smaller RAM size, and does not support slave mode. For a full list of difference between HP I2C and LP I2C, please refer to the *{IDF_TARGET_NAME} Technical Reference Manual* > *I2C Controller (I2C)* > *Features* [`PDF <{IDF_TARGET_TRM_EN_URL}#i2c>`__].
+
+    You can use LP I2C peripheral when HP I2C is not sufficient for users' usage. But please note again the LP I2C does not support all HP I2C functions. Please read docs before you use it.
 
 Typically, an I2C slave device has a 7-bit address or 10-bit address. {IDF_TARGET_NAME} supports both I2C Standard-mode (Sm) and Fast-mode (Fm) which can go up to 100KHz and 400KHz respectively.
 
@@ -104,6 +110,8 @@ I2C master device requires the configuration that specified by :cpp:type:`i2c_de
 - :cpp:member:`i2c_device_config_t::dev_addr_length` configure the address bit length of the slave device. User can choose from enumerator :cpp:enumerator:`I2C_ADDR_BIT_LEN_7` or :cpp:enumerator:`I2C_ADDR_BIT_LEN_10` (if supported).
 - :cpp:member:`i2c_device_config_t::device_address` I2C device raw address. Please parse the device address to this member directly. For example, the device address is 0x28, then parse 0x28 to :cpp:member:`i2c_device_config_t::device_address`, don't carry a write/read bit.
 - :cpp:member:`i2c_device_config_t::scl_speed_hz` set the scl line frequency of this device.
+- :cpp:member:`i2c_device_config_t::scl_wait_us`. SCL await time (in us). Usually this value should not be very small because slave stretch will happen in pretty long time. (It's possible even stretch for 12ms). Set 0 means use default reg value.
+
 
 Once the :cpp:type:`i2c_device_config_t` structure is populated with mandatory parameters, users can call :cpp:func:`i2c_master_bus_add_device` to allocate an I2C device instance and mounted to the master bus then. This function will return an I2C device handle if it runs correctly. Specifically, when the I2C bus is not initialized properly, calling this function will result in a :c:macro:`ESP_ERR_INVALID_ARG` error.
 
@@ -132,6 +140,38 @@ Once the :cpp:type:`i2c_device_config_t` structure is populated with mandatory p
     i2c_master_dev_handle_t dev_handle;
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
+.. only:: SOC_LP_I2C_SUPPORTED
+
+    Install I2C master bus with LP I2C Peripheral
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Install I2C master bus with LP I2C peripheral is almost as same as how HP I2C peripheral is installed. However, there are still some difference user should take focus on including IOs, clock sources, i2c port number, etc. Following code will show you how to install I2C master bus with LP_I2C.
+
+    .. code:: c
+
+        #include "driver/i2c_master.h"
+
+        i2c_master_bus_config_t i2c_mst_config = {
+            .clk_source = LP_I2C_SCLK_DEFAULT,    // clock source for LP i2c, might different from HP I2C
+            .i2c_port = LP_I2C_NUM_0,             // Assign to LP I2C port
+            .scl_io_num = 7,                      // SCL IO number. Please refer to technical reference manual
+            .sda_io_num = 6,                      // SDA IO number. Please refer to technical reference manual
+            .glitch_ignore_cnt = 7,
+            .flags.enable_internal_pullup = true,
+        };
+
+        i2c_master_bus_handle_t bus_handle;
+        ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_mst_config, &bus_handle));
+
+        i2c_device_config_t dev_cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = 0x58,
+            .scl_speed_hz = 100000,
+        };
+
+        i2c_master_dev_handle_t dev_handle;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+
 Uninstall I2C master bus and device
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -153,7 +193,7 @@ I2C slave requires the configuration that specified by :cpp:type:`i2c_slave_conf
     - :cpp:member:`i2c_master_bus_config_t::intr_priority` Set the priority of the interrupt. If set to ``0`` , then the driver will use a interrupt with low or medium priority (priority level may be one of 1,2 or 3), otherwise use the priority indicated by :cpp:member:`i2c_master_bus_config_t::intr_priority` Please use the number form (1,2,3) , not the bitmask form ((1<<1),(1<<2),(1<<3)). Please pay attention that once the interrupt priority is set, it cannot be changed until :cpp:func:`i2c_del_master_bus` is called.
     - :cpp:member:`i2c_slave_config_t::addr_bit_len` sets true if you need the slave to have a 10-bit address.
     :SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE: - :cpp:member:`i2c_slave_config_t::stretch_en` Set true if you want the slave controller stretch works, please refer to [`TRM <{IDF_TARGET_TRM_EN_URL}#i2c>`__] to learn how I2C stretch works.
-    :SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE: - :cpp:member:`i2c_slave_config_t::broadcast_en` Set true to enable the slave broadcase. When the slave receives the general call address 0x00 from the master and the R/W bit followed is 0, it responds to the master regardless of its own address.
+    :SOC_I2C_SLAVE_CAN_GET_STRETCH_CAUSE: - :cpp:member:`i2c_slave_config_t::broadcast_en` Set true to enable the slave broadcast. When the slave receives the general call address 0x00 from the master and the R/W bit followed is 0, it responds to the master regardless of its own address.
     :SOC_I2C_SLAVE_SUPPORT_I2CRAM_ACCESS: - :cpp:member:`i2c_slave_config_t::access_ram_en` Set true to enable the non-fifo mode. Thus the I2C data fifo can be used as RAM, and double addressing will be synchronised opened.
     :SOC_I2C_SLAVE_SUPPORT_SLAVE_UNMATCH: - :cpp:member:`i2c_slave_config_t::slave_unmatch_en` Set true to enable the slave unmatch interrupt. If master send command address cannot match the slave address, and unmatch interrupt will be triggered.
 
@@ -290,12 +330,16 @@ Simple example for writing and reading from slave:
     ESP_ERROR_CHECK(i2c_master_bus_add_device(I2C_PORT_NUM_0, &dev_cfg, &dev_handle));
     uint8_t buf[20] = {0x20};
     uint8_t buffer[2];
-    ESP_ERROR_CHECK(i2c_master_transmit_receive(i2c_bus_handle, buf, sizeof(buf), buffer, 2, -1));
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle, buf, sizeof(buf), buffer, 2, -1));
 
 I2C Master Probe
 ~~~~~~~~~~~~~~~~
 
 I2C driver can use :cpp:func:`i2c_master_probe` to detect whether the specific device has been connected on I2C bus. If this function return ``ESP_OK``, that means the device has been detected.
+
+.. important::
+
+    Pull-ups must be connected to the SCL and SDA pins when this function is called. If you get `ESP_ERR_TIMEOUT` while `xfer_timeout_ms` was parsed correctly, you should check the pull-up resistors. If you do not have proper resistors nearby, setting `flags.enable_internal_pullup` as true is also acceptable.
 
 .. figure:: ../../../_static/diagrams/i2c/i2c_master_probe.png
     :align: center

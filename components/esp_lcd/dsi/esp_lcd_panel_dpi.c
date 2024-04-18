@@ -43,6 +43,7 @@ struct esp_lcd_dpi_panel_t {
     esp_async_fbcpy_handle_t fbcpy_handle; // Use DMA2D to do frame buffer copy
     SemaphoreHandle_t draw_sem;            // A semaphore used to synchronize the draw operations when DMA2D is used
     esp_lcd_dpi_panel_color_trans_done_cb_t on_color_trans_done; // Callback invoked when color data transfer has finished
+    esp_lcd_dpi_panel_refresh_done_cb_t on_refresh_done; // Callback invoked when one refresh operation finished (kinda like a vsync end)
     void *user_ctx; // User context for the callback
 };
 
@@ -69,16 +70,29 @@ static bool async_fbcpy_done_cb(esp_async_fbcpy_handle_t mcp, esp_async_fbcpy_ev
 }
 
 IRAM_ATTR
-static bool dma_list_invalid_block_cb(dw_gdma_channel_handle_t chan, const dw_gdma_break_event_data_t *event_data, void *user_data)
+static bool dma_trans_done_cb(dw_gdma_channel_handle_t chan, const dw_gdma_trans_done_event_data_t *event_data, void *user_data)
 {
-    dw_gdma_lli_handle_t lli = event_data->invalid_lli;
+    bool yield_needed = false;
+    esp_lcd_dpi_panel_t *dpi_panel = (esp_lcd_dpi_panel_t *)user_data;
+    uint8_t fb_index = dpi_panel->cur_fb_index;
+    dw_gdma_link_list_handle_t link_list = dpi_panel->link_lists[fb_index];
+
+    // restart the DMA transfer, keep refreshing the LCD
     dw_gdma_block_markers_t markers = {
-        .is_valid = true, // mark the block as valid so that the DMA can continue the transfer
+        .is_valid = true,
+        .is_last = true,
     };
-    dw_gdma_lli_set_block_markers(lli, markers);
-    // after the item is marked as valid again, tell the DMA to continue the transfer
-    dw_gdma_channel_continue(chan);
-    return false;
+    dw_gdma_lli_set_block_markers(dw_gdma_link_list_get_item(link_list, 0), markers);
+    dw_gdma_channel_use_link_list(chan, link_list);
+    dw_gdma_channel_enable_ctrl(chan, true);
+
+    // the DMA descriptor is large enough to carry a whole frame buffer, so this event can also be treated as a fake "vsync end"
+    if (dpi_panel->on_refresh_done) {
+        if (dpi_panel->on_refresh_done(&dpi_panel->base, NULL, dpi_panel->user_ctx)) {
+            yield_needed = true;
+        }
+    }
+    return yield_needed;
 }
 
 // Please note, errors happened in this function is just propagated to the caller
@@ -109,8 +123,8 @@ static esp_err_t dpi_panel_create_dma_link(esp_lcd_dpi_panel_t *dpi_panel)
 
     // create DMA link lists
     dw_gdma_link_list_config_t link_list_config = {
-        .num_items = 1, // NOTE: we assume one DMA link item can carry the whole image
-        .link_type = DW_GDMA_LINKED_LIST_TYPE_CIRCULAR,
+        .num_items = DPI_PANEL_LLI_PER_FRAME,
+        .link_type = DW_GDMA_LINKED_LIST_TYPE_SINGLY,
     };
     for (int i = 0; i < dpi_panel->num_fbs; i++) {
         ESP_RETURN_ON_ERROR(dw_gdma_new_link_list(&link_list_config, &link_list), TAG, "create DMA link list failed");
@@ -119,9 +133,9 @@ static esp_err_t dpi_panel_create_dma_link(esp_lcd_dpi_panel_t *dpi_panel)
 
     // register DMA ISR callbacks
     dw_gdma_event_callbacks_t dsi_dma_cbs = {
-        .on_invalid_block = dma_list_invalid_block_cb,
+        .on_full_trans_done = dma_trans_done_cb,
     };
-    ESP_RETURN_ON_ERROR(dw_gdma_channel_register_event_callbacks(dma_chan, &dsi_dma_cbs, NULL), TAG, "register DMA callbacks failed");
+    ESP_RETURN_ON_ERROR(dw_gdma_channel_register_event_callbacks(dma_chan, &dsi_dma_cbs, dpi_panel), TAG, "register DMA callbacks failed");
 
     return ESP_OK;
 }
@@ -178,7 +192,11 @@ esp_err_t esp_lcd_new_panel_dpi(esp_lcd_dsi_bus_handle_t bus, const esp_lcd_dpi_
         dpi_panel->fbs[i] = frame_buffer;
         ESP_LOGD(TAG, "fb[%d] @%p", i, frame_buffer);
         // preset the frame buffer with black color
-        ESP_GOTO_ON_ERROR(esp_cache_msync(frame_buffer, frame_buffer_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M), err, TAG, "cache write back failed");
+        // the frame buffer address alignment is ensured by `heap_caps_aligned_calloc`
+        // while the value of the frame_buffer_size may not be aligned to the cache line size
+        // but that's not a problem because the `heap_caps_aligned_calloc` internally allocated a buffer whose size is aligned up to the cache line size
+        ESP_GOTO_ON_ERROR(esp_cache_msync(frame_buffer, frame_buffer_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED),
+                          err, TAG, "cache write back failed");
     }
     dpi_panel->frame_buffer_size = frame_buffer_size;
     dpi_panel->bytes_per_pixel = bytes_per_pixel;
@@ -352,6 +370,7 @@ static esp_err_t dpi_panel_init(esp_lcd_panel_t *panel)
         dw_gdma_lli_config_transfer(dw_gdma_link_list_get_item(link_list, 0), &dma_transfer_config);
         dw_gdma_block_markers_t markers = {
             .is_valid = true,
+            .is_last = true,
         };
         dw_gdma_lli_set_block_markers(dw_gdma_link_list_get_item(link_list, 0), markers);
     }
@@ -382,6 +401,7 @@ static esp_err_t dpi_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int 
     uint8_t *frame_buffer = dpi_panel->fbs[cur_fb_index];
     uint8_t *draw_buffer = (uint8_t *)color_data;
     size_t frame_buffer_size = dpi_panel->frame_buffer_size;
+    size_t bytes_per_pixel = dpi_panel->bytes_per_pixel;
 
     bool do_copy = false;
     uint8_t draw_buf_fb_index = 0;
@@ -399,15 +419,12 @@ static esp_err_t dpi_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int 
 
     if (!do_copy) { // no copy, just do cache memory write back
         ESP_LOGD(TAG, "draw buffer is in frame buffer memory range, do cache write back only");
-        size_t draw_buf_write_back_size = (y_end - y_start) * dpi_panel->h_pixels * dpi_panel->bytes_per_pixel;
-        uint8_t *cache_sync_start = dpi_panel->fbs[draw_buf_fb_index] + (y_start * dpi_panel->h_pixels) * dpi_panel->bytes_per_pixel;
-        esp_cache_msync(cache_sync_start, draw_buf_write_back_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+        // only write back the LCD lines that updated by the draw buffer
+        uint8_t *cache_sync_start = dpi_panel->fbs[draw_buf_fb_index] + (y_start * dpi_panel->h_pixels) * bytes_per_pixel;
+        size_t cache_sync_size = (y_end - y_start) * dpi_panel->h_pixels * bytes_per_pixel;
+        // the buffer to be flushed is still within the frame buffer, so even an unaligned address is OK
+        esp_cache_msync(cache_sync_start, cache_sync_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 
-        // update the link connections for all DMA link lists, make draw_buf_fb_index take effect automatically in the next DMA loop
-        for (int i = 0; i < dpi_panel->num_fbs; i++) {
-            dw_gdma_lli_set_next(dw_gdma_link_list_get_item(dpi_panel->link_lists[i], 0),
-                                 dw_gdma_link_list_get_item(dpi_panel->link_lists[draw_buf_fb_index], 0));
-        }
         dpi_panel->cur_fb_index = draw_buf_fb_index;
         // invoke the trans done callback
         if (dpi_panel->on_color_trans_done) {
@@ -415,29 +432,34 @@ static esp_err_t dpi_panel_draw_bitmap(esp_lcd_panel_t *panel, int x_start, int 
         }
     } else if (!dpi_panel->fbcpy_handle) { // copy by CPU
         ESP_LOGD(TAG, "copy draw buffer by CPU");
-        size_t bytes_per_pixel = dpi_panel->bytes_per_pixel;
         const uint8_t *from = draw_buffer;
         uint8_t *to = frame_buffer + (y_start * dpi_panel->h_pixels + x_start) * bytes_per_pixel;
         uint32_t copy_bytes_per_line = (x_end - x_start) * bytes_per_pixel;
         uint32_t bytes_per_line = bytes_per_pixel * dpi_panel->h_pixels;
+        // please note, we assume the user provided draw_buffer is compact,
+        // but the destination is a sub-window of the frame buffer, so we need to skip the stride
         for (int y = y_start; y < y_end; y++) {
             memcpy(to, from, copy_bytes_per_line);
             to += bytes_per_line;
             from += copy_bytes_per_line;
         }
-        ESP_RETURN_ON_ERROR(esp_cache_msync(frame_buffer, frame_buffer_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M), TAG, "cache write back failed");
+        uint8_t *cache_sync_start = frame_buffer + (y_start * dpi_panel->h_pixels) * bytes_per_pixel;
+        size_t cache_sync_size = (y_end - y_start) * dpi_panel->h_pixels * bytes_per_pixel;
+        // the buffer to be flushed is still within the frame buffer, so even an unaligned address is OK
+        esp_cache_msync(cache_sync_start, cache_sync_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
         // invoke the trans done callback
         if (dpi_panel->on_color_trans_done) {
             dpi_panel->on_color_trans_done(&dpi_panel->base, NULL, dpi_panel->user_ctx);
         }
     } else { // copy by DMA2D
         ESP_LOGD(TAG, "copy draw buffer by DMA2D");
-        // ensure the previous draw operation has finish
-        ESP_RETURN_ON_FALSE(xSemaphoreTake(dpi_panel->draw_sem, 0) == pdTRUE, ESP_ERR_INVALID_STATE, TAG, "previous draw operation is not finished");
+        // ensure the previous draw operation is finished
+        ESP_RETURN_ON_FALSE(xSemaphoreTake(dpi_panel->draw_sem, 0) == pdTRUE, ESP_ERR_INVALID_STATE,
+                            TAG, "previous draw operation is not finished");
 
         // write back the user's draw buffer, so that the DMA can see the correct data
         // Note, the user draw buffer should be 1D array, and contiguous in memory, no stride
-        size_t color_data_size = (x_end - x_start) * (y_end - y_start) * dpi_panel->bytes_per_pixel;
+        size_t color_data_size = (x_end - x_start) * (y_end - y_start) * bytes_per_pixel;
         esp_cache_msync(draw_buffer, color_data_size, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 
         esp_async_fbcpy_trans_desc_t fbcpy_trans_config = {
@@ -481,7 +503,7 @@ esp_err_t esp_lcd_dpi_panel_set_pattern(esp_lcd_panel_handle_t panel, mipi_dsi_p
     mipi_dsi_host_ll_dpi_set_pattern_type(hal->host, pattern);
 
     if (pattern == MIPI_DSI_PATTERN_NONE) {
-        // reenable the DSI bridge to generate the DPI stream
+        // re-enable the DSI bridge to generate the DPI stream
         mipi_dsi_brg_ll_enable_dpi_output(hal->bridge, true);
         mipi_dsi_brg_ll_update_dpi_config(hal->bridge);
     }
@@ -494,6 +516,7 @@ esp_err_t esp_lcd_dpi_panel_register_event_callbacks(esp_lcd_panel_handle_t pane
     ESP_RETURN_ON_FALSE(panel && cbs, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
     esp_lcd_dpi_panel_t *dpi_panel = __containerof(panel, esp_lcd_dpi_panel_t, base);
     dpi_panel->on_color_trans_done = cbs->on_color_trans_done;
+    dpi_panel->on_refresh_done = cbs->on_refresh_done;
     dpi_panel->user_ctx = user_ctx;
 
     return ESP_OK;

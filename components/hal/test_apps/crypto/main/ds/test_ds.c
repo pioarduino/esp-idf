@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -114,10 +114,12 @@ _Static_assert(NUM_RESULTS == NUM_MESSAGES, "expected_results size should be the
 #if !CONFIG_IDF_TARGET_ESP32S2
 
 #include "esp_private/periph_ctrl.h"
+#include "hal/aes_ll.h"
 #include "hal/ds_hal.h"
 #include "hal/ds_ll.h"
 #include "hal/hmac_hal.h"
 #include "hal/hmac_ll.h"
+#include "hal/sha_ll.h"
 
 
 static void ds_acquire_enable(void)
@@ -127,7 +129,10 @@ static void ds_acquire_enable(void)
         hmac_ll_reset_register();
     }
 
-    periph_module_enable(PERIPH_SHA_MODULE);
+    SHA_RCC_ATOMIC() {
+        sha_ll_enable_bus_clock(true);
+        sha_ll_reset_register();
+    }
 
     DS_RCC_ATOMIC() {
         ds_ll_enable_bus_clock(true);
@@ -145,7 +150,9 @@ static void ds_disable_release(void)
         ds_ll_enable_bus_clock(false);
     }
 
-    periph_module_disable(PERIPH_SHA_MODULE);
+    SHA_RCC_ATOMIC() {
+        sha_ll_enable_bus_clock(false);
+    }
 
     HMAC_RCC_ATOMIC() {
         hmac_ll_enable_bus_clock(false);
@@ -228,8 +235,15 @@ static esp_err_t esp_ds_encrypt_params(esp_ds_data_t *data,
 
     esp_err_t result = ESP_OK;
 
-    periph_module_enable(PERIPH_AES_MODULE);
-    periph_module_enable(PERIPH_SHA_MODULE);
+    AES_RCC_ATOMIC() {
+        aes_ll_enable_bus_clock(true);
+        aes_ll_reset_register();
+    }
+
+    SHA_RCC_ATOMIC() {
+        sha_ll_enable_bus_clock(true);
+        sha_ll_reset_register();
+    }
 
     ets_ds_data_t *ds_data = (ets_ds_data_t *) data;
     const ets_ds_p_data_t *ds_plain_data = (const ets_ds_p_data_t *) p_data;
@@ -240,8 +254,13 @@ static esp_err_t esp_ds_encrypt_params(esp_ds_data_t *data,
         result = ESP_ERR_INVALID_ARG;
     }
 
-    periph_module_disable(PERIPH_SHA_MODULE);
-    periph_module_disable(PERIPH_AES_MODULE);
+    SHA_RCC_ATOMIC() {
+        sha_ll_enable_bus_clock(false);
+    }
+
+    AES_RCC_ATOMIC() {
+        aes_ll_enable_bus_clock(false);
+    }
 
     return result;
 }

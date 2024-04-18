@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,7 +32,7 @@ esp_err_t esp_cache_msync(void *addr, size_t size, int flags)
 
     uint32_t addr_end = 0;
     bool ovf = __builtin_add_overflow((uint32_t)addr, size, &addr_end);
-    ESP_EARLY_LOGV(TAG, "addr_end: 0x%x\n", addr_end);
+    ESP_EARLY_LOGV(TAG, "addr_end: 0x%" PRIx32, addr_end);
     ESP_RETURN_ON_FALSE_ISR(!ovf, ESP_ERR_INVALID_ARG, TAG, "wrong size, total size overflow");
 
     bool both_dir = (flags & ESP_CACHE_MSYNC_FLAG_DIR_C2M) && (flags & ESP_CACHE_MSYNC_FLAG_DIR_M2C);
@@ -53,11 +53,15 @@ esp_err_t esp_cache_msync(void *addr, size_t size, int flags)
     uint32_t cache_line_size = cache_hal_get_cache_line_size(cache_level, cache_type);
     if ((flags & ESP_CACHE_MSYNC_FLAG_UNALIGNED) == 0) {
         bool aligned_addr = (((uint32_t)addr % cache_line_size) == 0) && ((size % cache_line_size) == 0);
-        ESP_RETURN_ON_FALSE_ISR(aligned_addr, ESP_ERR_INVALID_ARG, TAG, "start address: 0x%x, or the size: 0x%x is(are) not aligned with cache line size (0x%x)B", (uint32_t)addr, size, cache_line_size);
+        ESP_RETURN_ON_FALSE_ISR(aligned_addr, ESP_ERR_INVALID_ARG, TAG, "start address: 0x%" PRIx32 ", or the size: 0x%" PRIx32 " is(are) not aligned with cache line size (0x%" PRIx32 ")B", (uint32_t)addr, (uint32_t)size, cache_line_size);
     }
 
     if (flags & ESP_CACHE_MSYNC_FLAG_DIR_M2C) {
         ESP_EARLY_LOGV(TAG, "M2C DIR");
+
+        if (flags & ESP_CACHE_MSYNC_FLAG_UNALIGNED) {
+            ESP_RETURN_ON_FALSE_ISR(false, ESP_ERR_INVALID_ARG, TAG, "M2C direction doesn't allow ESP_CACHE_MSYNC_FLAG_UNALIGNED");
+        }
 
         esp_os_enter_critical_safe(&s_spinlock);
         //Add preload feature / flag here, IDF-7800
@@ -89,23 +93,18 @@ esp_err_t esp_cache_msync(void *addr, size_t size, int flags)
     return ESP_OK;
 }
 
-esp_err_t esp_cache_aligned_malloc(size_t size, uint32_t flags, void **out_ptr, size_t *actual_size)
+esp_err_t esp_cache_aligned_malloc(size_t size, uint32_t heap_caps, void **out_ptr, size_t *actual_size)
 {
     ESP_RETURN_ON_FALSE_ISR(out_ptr, ESP_ERR_INVALID_ARG, TAG, "null pointer");
+    uint32_t valid_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+    ESP_RETURN_ON_FALSE_ISR((heap_caps & valid_caps) > 0, ESP_ERR_INVALID_ARG, TAG, "not supported cap matches");
 
     uint32_t cache_level = CACHE_LL_LEVEL_INT_MEM;
-    uint32_t heap_caps = 0;
     uint32_t data_cache_line_size = 0;
     void *ptr = NULL;
 
-    if (flags & ESP_CACHE_MALLOC_FLAG_PSRAM) {
+    if (heap_caps & MALLOC_CAP_SPIRAM) {
         cache_level = CACHE_LL_LEVEL_EXT_MEM;
-        heap_caps |= MALLOC_CAP_SPIRAM;
-    } else {
-        heap_caps |= MALLOC_CAP_INTERNAL;
-        if (flags & ESP_CACHE_MALLOC_FLAG_DMA) {
-            heap_caps |= MALLOC_CAP_DMA;
-        }
     }
 
     data_cache_line_size = cache_hal_get_cache_line_size(cache_level, CACHE_TYPE_DATA);
@@ -115,8 +114,10 @@ esp_err_t esp_cache_aligned_malloc(size_t size, uint32_t flags, void **out_ptr, 
     }
 
     size = ALIGN_UP_BY(size, data_cache_line_size);
-    ptr = heap_caps_aligned_alloc(data_cache_line_size, size, heap_caps);
-    ESP_RETURN_ON_FALSE_ISR(ptr, ESP_ERR_NO_MEM, TAG, "no enough heap memory for (%"PRId32")B alignment", data_cache_line_size);
+    ptr = heap_caps_aligned_alloc(data_cache_line_size, size, (uint32_t)heap_caps);
+    if (!ptr) {
+        return ESP_ERR_NO_MEM;
+    }
 
     *out_ptr = ptr;
     if (actual_size) {
@@ -126,7 +127,29 @@ esp_err_t esp_cache_aligned_malloc(size_t size, uint32_t flags, void **out_ptr, 
     return ESP_OK;
 }
 
-esp_err_t esp_cache_aligned_calloc(size_t n, size_t size, uint32_t flags, void **out_ptr, size_t *actual_size)
+esp_err_t esp_cache_aligned_malloc_prefer(size_t size, void **out_ptr, size_t *actual_size, size_t flag_nums, ...)
+{
+    ESP_RETURN_ON_FALSE_ISR(out_ptr, ESP_ERR_INVALID_ARG, TAG, "null pointer");
+
+    esp_err_t ret = ESP_FAIL;
+    va_list argp;
+    uint32_t flags = 0;
+    va_start(argp, flag_nums);
+    *out_ptr = NULL;
+
+    while (flag_nums--) {
+        flags = va_arg(argp, uint32_t);
+        ret = esp_cache_aligned_malloc(size, flags, out_ptr, actual_size);
+        if (ret == ESP_OK) {
+            break;
+        }
+    }
+
+    va_end(argp);
+    return ret;
+}
+
+esp_err_t esp_cache_aligned_calloc(size_t n, size_t size, uint32_t heap_caps, void **out_ptr, size_t *actual_size)
 {
     ESP_RETURN_ON_FALSE_ISR(out_ptr, ESP_ERR_INVALID_ARG, TAG, "null pointer");
 
@@ -138,7 +161,7 @@ esp_err_t esp_cache_aligned_calloc(size_t n, size_t size, uint32_t flags, void *
     ESP_RETURN_ON_FALSE_ISR(!ovf, ESP_ERR_INVALID_ARG, TAG, "wrong size, total size overflow");
 
     void *ptr = NULL;
-    ret = esp_cache_aligned_malloc(size_bytes, flags, &ptr, actual_size);
+    ret = esp_cache_aligned_malloc(size_bytes, heap_caps, &ptr, actual_size);
     if (ret == ESP_OK) {
         memset(ptr, 0, size_bytes);
         *out_ptr = ptr;
@@ -147,22 +170,51 @@ esp_err_t esp_cache_aligned_calloc(size_t n, size_t size, uint32_t flags, void *
     return ret;
 }
 
-esp_err_t esp_cache_get_alignment(uint32_t flags, size_t *out_alignment)
+esp_err_t esp_cache_aligned_calloc_prefer(size_t n, size_t size, void **out_ptr, size_t *actual_size, size_t flag_nums, ...)
+{
+    ESP_RETURN_ON_FALSE_ISR(out_ptr, ESP_ERR_INVALID_ARG, TAG, "null pointer");
+
+    esp_err_t ret = ESP_FAIL;
+    size_t size_bytes = 0;
+    bool ovf = false;
+
+    *out_ptr = NULL;
+    ovf = __builtin_mul_overflow(n, size, &size_bytes);
+    ESP_RETURN_ON_FALSE_ISR(!ovf, ESP_ERR_INVALID_ARG, TAG, "wrong size, total size overflow");
+
+    void *ptr = NULL;
+    va_list argp;
+    va_start(argp, flag_nums);
+    int arg;
+    for (int i = 0; i < flag_nums; i++) {
+        arg = va_arg(argp, int);
+        ret = esp_cache_aligned_malloc_prefer(size_bytes, &ptr, actual_size, flag_nums, arg);
+        if (ret == ESP_OK) {
+            memset(ptr, 0, size_bytes);
+            *out_ptr = ptr;
+
+            arg = va_arg(argp, int);
+            break;
+        }
+
+    }
+    va_end(argp);
+
+    return ret;
+}
+
+esp_err_t esp_cache_get_alignment(uint32_t heap_caps, size_t *out_alignment)
 {
     ESP_RETURN_ON_FALSE(out_alignment, ESP_ERR_INVALID_ARG, TAG, "null pointer");
 
     uint32_t cache_level = CACHE_LL_LEVEL_INT_MEM;
     uint32_t data_cache_line_size = 0;
 
-    if (flags & ESP_CACHE_MALLOC_FLAG_PSRAM) {
+    if (heap_caps & MALLOC_CAP_SPIRAM) {
         cache_level = CACHE_LL_LEVEL_EXT_MEM;
     }
 
     data_cache_line_size = cache_hal_get_cache_line_size(cache_level, CACHE_TYPE_DATA);
-    if (data_cache_line_size == 0) {
-        //default alignment
-        data_cache_line_size = 4;
-    }
 
     *out_alignment = data_cache_line_size;
 

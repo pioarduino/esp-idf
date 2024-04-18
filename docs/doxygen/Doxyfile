@@ -143,6 +143,7 @@ INPUT = \
     $(PROJECT_PATH)/components/esp_driver_spi/include/driver/spi_slave_hd.h \
     $(PROJECT_PATH)/components/esp_driver_spi/include/driver/spi_slave.h \
     $(PROJECT_PATH)/components/esp_driver_tsens/include/driver/temperature_sensor.h \
+    $(PROJECT_PATH)/components/esp_driver_tsens/include/driver/temperature_sensor_etm.h \
     $(PROJECT_PATH)/components/esp_driver_uart/include/driver/uart.h \
     $(PROJECT_PATH)/components/esp_driver_uart/include/driver/uart_vfs.h \
     $(PROJECT_PATH)/components/esp_eth/include/esp_eth_com.h \
@@ -172,6 +173,7 @@ INPUT = \
     $(PROJECT_PATH)/components/esp_hw_support/include/esp_mac.h \
     $(PROJECT_PATH)/components/esp_hw_support/include/esp_random.h \
     $(PROJECT_PATH)/components/esp_hw_support/include/esp_sleep.h \
+    $(PROJECT_PATH)/components/esp_hw_support/ldo/include/esp_ldo_regulator.h \
     $(PROJECT_PATH)/components/esp_lcd/include/esp_lcd_panel_io.h \
     $(PROJECT_PATH)/components/esp_lcd/include/esp_lcd_panel_ops.h \
     $(PROJECT_PATH)/components/esp_lcd/include/esp_lcd_panel_vendor.h \
@@ -217,7 +219,7 @@ INPUT = \
     $(PROJECT_PATH)/components/wpa_supplicant/esp_supplicant/include/esp_rrm.h \
     $(PROJECT_PATH)/components/wpa_supplicant/esp_supplicant/include/esp_wnm.h \
     $(PROJECT_PATH)/components/wpa_supplicant/esp_supplicant/include/esp_wps.h \
-    $(PROJECT_PATH)/components/esp_wifi/wifi_apps/include/esp_nan.h \
+    $(PROJECT_PATH)/components/esp_wifi/wifi_apps/nan_app/include/esp_nan.h \
     $(PROJECT_PATH)/components/esp-tls/esp_tls_errors.h \
     $(PROJECT_PATH)/components/esp-tls/esp_tls.h \
     $(PROJECT_PATH)/components/fatfs/diskio/diskio_impl.h \
@@ -251,6 +253,7 @@ INPUT = \
     $(PROJECT_PATH)/components/hal/include/hal/sdm_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/spi_flash_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/spi_types.h \
+    $(PROJECT_PATH)/components/hal/include/hal/temperature_sensor_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/timer_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/touch_sensor_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/twai_types.h \
@@ -288,11 +291,6 @@ INPUT = \
     $(PROJECT_PATH)/components/protocomm/include/crypto/srp6a/esp_srp.h \
     $(PROJECT_PATH)/components/pthread/include/esp_pthread.h \
     $(PROJECT_PATH)/components/sdmmc/include/sdmmc_cmd.h \
-    $(PROJECT_PATH)/components/soc/$(IDF_TARGET)/include/soc/adc_channel.h \
-    $(PROJECT_PATH)/components/soc/$(IDF_TARGET)/include/soc/clk_tree_defs.h \
-    $(PROJECT_PATH)/components/soc/$(IDF_TARGET)/include/soc/gpio_num.h \
-    $(PROJECT_PATH)/components/soc/$(IDF_TARGET)/include/soc/soc_caps.h \
-    $(PROJECT_PATH)/components/soc/$(IDF_TARGET)/include/soc/uart_channel.h \
     $(PROJECT_PATH)/components/spi_flash/include/esp_flash_spi_init.h \
     $(PROJECT_PATH)/components/spi_flash/include/esp_flash.h \
     $(PROJECT_PATH)/components/spi_flash/include/spi_flash_mmap.h \
@@ -312,7 +310,7 @@ INPUT = \
     $(PROJECT_PATH)/components/wpa_supplicant/esp_supplicant/include/esp_dpp.h \
     $(PROJECT_PATH)/components/wpa_supplicant/esp_supplicant/include/esp_supplicant_utils.h \
 
-## Target specific headers are in seperate Doxyfile files
+## Target specific headers are in separate Doxyfile files
 @INCLUDE = $(PROJECT_PATH)/docs/doxygen/Doxyfile_$(IDF_TARGET)
 
 ## Get warnings for functions that have no documentation for their parameters or return value

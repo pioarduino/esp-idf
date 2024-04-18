@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,15 +10,19 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include "sdkconfig.h"  // TODO: [ESP32C5] IDF-8845 remove
 #include "soc/soc.h"
 #include "hal/assert.h"
+#if CONFIG_IDF_TARGET_ESP32C5_BETA3_VERSION
 #include "modem/modem_syscon_struct.h"
 #include "hal/modem_clock_types.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#if CONFIG_IDF_TARGET_ESP32C5_BETA3_VERSION
 __attribute__((always_inline))
 static inline void modem_syscon_ll_enable_test_clk(modem_syscon_dev_t *hw, bool en)
 {
@@ -396,16 +400,30 @@ static inline void modem_syscon_ll_enable_fe_160m_clock(modem_syscon_dev_t *hw, 
 }
 
 __attribute__((always_inline))
-static inline void modem_syscon_ll_enable_fe_cal_160m_clock(modem_syscon_dev_t *hw, bool en)
-{
-    HAL_ASSERT(0 && "not implemented yet");
-    // hw->clk_conf1.clk_fe_cal_160m_en = en;
-}
-
-__attribute__((always_inline))
 static inline void modem_syscon_ll_enable_fe_apb_clock(modem_syscon_dev_t *hw, bool en)
 {
     hw->clk_conf1.clk_fe_apb_en = en;
+}
+
+// The modem_syscon of esp32c5beta3 adds the enablement of the adc clock on the analog front end compared to esp32h2 and esp32c6.
+__attribute__((always_inline))
+static inline void modem_syscon_ll_enable_fe_adc_clock(modem_syscon_dev_t *hw, bool en)
+{
+    hw->clk_conf1.clk_fe_adc_en = en;
+}
+
+// The modem_syscon of esp32c5beta3 adds the enablement of the dac clock on the analog front end compared to esp32h2 and esp32c6.
+__attribute__((always_inline))
+static inline void modem_syscon_ll_enable_fe_dac_clock(modem_syscon_dev_t *hw, bool en)
+{
+    hw->clk_conf1.clk_fe_dac_en = en;
+}
+
+// The modem_syscon of esp32c5beta3 adds the enablement of the analog power detect clock on the analog front end compared to esp32h2 and esp32c6.
+__attribute__((always_inline))
+static inline void modem_syscon_ll_enable_fe_pwdet_clock(modem_syscon_dev_t *hw, bool en)
+{
+    hw->clk_conf1.clk_fe_pwdet_adc_en = en;
 }
 
 __attribute__((always_inline))
@@ -624,6 +642,7 @@ static inline uint32_t modem_syscon_ll_get_date(modem_syscon_dev_t *hw)
 {
     return hw->date.val;
 }
+#endif
 
 #ifdef __cplusplus
 }

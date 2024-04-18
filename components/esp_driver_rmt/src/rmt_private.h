@@ -21,9 +21,12 @@
 #include "hal/cache_ll.h"
 #include "esp_intr_alloc.h"
 #include "esp_heap_caps.h"
+#include "esp_clk_tree.h"
 #include "esp_pm.h"
 #include "esp_attr.h"
 #include "esp_private/gdma.h"
+#include "esp_private/esp_gpio_reserve.h"
+#include "esp_private/gpio.h"
 #include "driver/rmt_common.h"
 
 #ifdef __cplusplus
@@ -65,6 +68,9 @@ typedef dma_descriptor_align4_t rmt_dma_descriptor_t;
 #else
 #define RMT_GET_NON_CACHE_ADDR(addr) (addr)
 #endif
+
+#define ALIGN_UP(num, align)    (((num) + ((align) - 1)) & ~((align) - 1))
+#define ALIGN_DOWN(num, align)  ((num) & ~((align) - 1))
 
 typedef struct {
     struct {
@@ -185,6 +191,7 @@ typedef struct {
 
 struct rmt_rx_channel_t {
     rmt_channel_t base;                  // channel base class
+    uint32_t filter_clock_resolution_hz; // filter clock resolution, in Hz
     size_t mem_off;                      // starting offset to fetch the symbols in RMT-MEM
     size_t ping_pong_symbols;            // ping-pong size (half of the RMT channel memory)
     rmt_rx_done_callback_t on_recv_done; // callback, invoked on receive done

@@ -15,8 +15,7 @@
 #include "hal/timer_types.h"
 #include "soc/timer_group_struct.h"
 #include "soc/pcr_struct.h"
-// TODO: [ESP32C5] IDF-8693
-// #include "soc/soc_etm_source.h"
+#include "soc/soc_etm_source.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,13 +25,39 @@ extern "C" {
 #define TIMER_LL_GET_HW(group_id) ((group_id == 0) ? (&TIMERG0) : (&TIMERG1))
 #define TIMER_LL_EVENT_ALARM(timer_id) (1 << (timer_id))
 
+#define TIMER_LL_ETM_TASK_TABLE(group, timer, task)                                        \
+    (uint32_t [2][1][GPTIMER_ETM_TASK_MAX]){{{                                             \
+                            [GPTIMER_ETM_TASK_START_COUNT] = TIMER0_TASK_CNT_START_TIMER0, \
+                            [GPTIMER_ETM_TASK_STOP_COUNT] = TIMER0_TASK_CNT_STOP_TIMER0,   \
+                            [GPTIMER_ETM_TASK_EN_ALARM] = TIMER0_TASK_ALARM_START_TIMER0,  \
+                            [GPTIMER_ETM_TASK_RELOAD] = TIMER0_TASK_CNT_RELOAD_TIMER0,     \
+                            [GPTIMER_ETM_TASK_CAPTURE] = TIMER0_TASK_CNT_CAP_TIMER0,       \
+                        }},                                                                \
+                        {{                                                                 \
+                            [GPTIMER_ETM_TASK_START_COUNT] = TIMER1_TASK_CNT_START_TIMER0, \
+                            [GPTIMER_ETM_TASK_STOP_COUNT] = TIMER1_TASK_CNT_STOP_TIMER0,   \
+                            [GPTIMER_ETM_TASK_EN_ALARM] = TIMER1_TASK_ALARM_START_TIMER0,  \
+                            [GPTIMER_ETM_TASK_RELOAD] = TIMER1_TASK_CNT_RELOAD_TIMER0,     \
+                            [GPTIMER_ETM_TASK_CAPTURE] = TIMER1_TASK_CNT_CAP_TIMER0,       \
+                        }},                                                                \
+    }[group][timer][task]
+
+#define TIMER_LL_ETM_EVENT_TABLE(group, timer, event)                                      \
+    (uint32_t [2][1][GPTIMER_ETM_EVENT_MAX]){{{                                            \
+                            [GPTIMER_ETM_EVENT_ALARM_MATCH] = TIMER0_EVT_CNT_CMP_TIMER0,   \
+                        }},                                                                \
+                        {{                                                                 \
+                            [GPTIMER_ETM_EVENT_ALARM_MATCH] = TIMER1_EVT_CNT_CMP_TIMER0,   \
+                        }},                                                                \
+    }[group][timer][event]
+
 /**
  * @brief Enable the bus clock for timer group module
  *
  * @param group_id Group ID
  * @param enable true to enable, false to disable
  */
-static inline void timer_ll_enable_bus_clock(int group_id, bool enable)
+static inline void _timer_ll_enable_bus_clock(int group_id, bool enable)
 {
     if (group_id == 0) {
         PCR.timergroup0_conf.tg0_clk_en = enable;
@@ -43,7 +68,7 @@ static inline void timer_ll_enable_bus_clock(int group_id, bool enable)
 
 /// use a macro to wrap the function, force the caller to use it in a critical section
 /// the critical section needs to declare the __DECLARE_RCC_RC_ATOMIC_ENV variable in advance
-#define timer_ll_enable_bus_clock(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; timer_ll_enable_bus_clock(__VA_ARGS__)
+#define timer_ll_enable_bus_clock(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; _timer_ll_enable_bus_clock(__VA_ARGS__)
 
 /**
  * @brief Reset the timer group module
@@ -54,7 +79,7 @@ static inline void timer_ll_enable_bus_clock(int group_id, bool enable)
  *
  * @param group_id Group ID
  */
-static inline void timer_ll_reset_register(int group_id)
+static inline void _timer_ll_reset_register(int group_id)
 {
     if (group_id == 0) {
         PCR.timergroup0_conf.tg0_rst_en = 1;
@@ -69,7 +94,7 @@ static inline void timer_ll_reset_register(int group_id)
 
 /// use a macro to wrap the function, force the caller to use it in a critical section
 /// the critical section needs to declare the __DECLARE_RCC_RC_ATOMIC_ENV variable in advance
-#define timer_ll_reset_register(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; timer_ll_reset_register(__VA_ARGS__)
+#define timer_ll_reset_register(...) (void)__DECLARE_RCC_RC_ATOMIC_ENV; _timer_ll_reset_register(__VA_ARGS__)
 
 /**
  * @brief Set clock source for timer
@@ -131,6 +156,7 @@ static inline void timer_ll_enable_clock(timg_dev_t *hw, uint32_t timer_num, boo
 __attribute__((always_inline))
 static inline void timer_ll_enable_alarm(timg_dev_t *hw, uint32_t timer_num, bool en)
 {
+    (void)timer_num;
     hw->hw_timer[timer_num].config.tx_alarm_en = en;
 }
 
@@ -178,7 +204,7 @@ static inline void timer_ll_set_count_direction(timg_dev_t *hw, uint32_t timer_n
 }
 
 /**
- * @brief Enable timer, start couting
+ * @brief Enable timer, start counting
  *
  * @param hw Timer Group register base address
  * @param timer_num Timer number in the group

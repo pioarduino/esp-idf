@@ -23,13 +23,13 @@ extern "C" {
  * @brief Given a L2MEM cached address, get the corresponding non-cacheable address
  * @example 0x4FF0_0000 => 0x8FF0_0000
  */
-#define CACHE_LL_L2MEM_NON_CACHE_ADDR(addr) ((intptr_t)(addr) + SOC_NON_CACHEABLE_OFFSET)
+#define CACHE_LL_L2MEM_NON_CACHE_ADDR(addr) ((uintptr_t)(addr) + SOC_NON_CACHEABLE_OFFSET)
 
 /**
  * @brief Given a non-cacheable address, get the corresponding L2MEM cached address
  * @example 0x8FF0_0000 => 0x4FF0_0000
  */
-#define CACHE_LL_L2MEM_CACHE_ADDR(non_cache_addr) ((intptr_t)(non_cache_addr) - SOC_NON_CACHEABLE_OFFSET)
+#define CACHE_LL_L2MEM_CACHE_ADDR(non_cache_addr) ((uintptr_t)(non_cache_addr) - SOC_NON_CACHEABLE_OFFSET)
 
 /**
  * Cache capabilities
@@ -678,12 +678,12 @@ __attribute__((always_inline))
 static inline void cache_ll_l1_freeze_icache(uint32_t cache_id)
 {
     if (cache_id == 0) {
-        Cache_Freeze_L1_ICache0_Enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l1_icache0_enable(CACHE_FREEZE_ACK_BUSY);
     } else if (cache_id == 1) {
-        Cache_Freeze_L1_ICache1_Enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l1_icache1_enable(CACHE_FREEZE_ACK_BUSY);
     } else if (cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L1_ICache0_Enable(CACHE_FREEZE_ACK_BUSY);
-        Cache_Freeze_L1_ICache1_Enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l1_icache0_enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l1_icache1_enable(CACHE_FREEZE_ACK_BUSY);
     }
 }
 
@@ -696,7 +696,7 @@ __attribute__((always_inline))
 static inline void cache_ll_l1_freeze_dcache(uint32_t cache_id)
 {
     if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L1_DCache_Enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l1_dcache_enable(CACHE_FREEZE_ACK_BUSY);
     }
 }
 
@@ -709,7 +709,7 @@ __attribute__((always_inline))
 static inline void cache_ll_l2_freeze_cache(uint32_t cache_id)
 {
     if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L2_Cache_Enable(CACHE_FREEZE_ACK_BUSY);
+        rom_cache_internal_table_ptr->freeze_l2_cache_enable(CACHE_FREEZE_ACK_BUSY);
     }
 }
 
@@ -755,12 +755,12 @@ __attribute__((always_inline))
 static inline void cache_ll_l1_unfreeze_icache(uint32_t cache_id)
 {
     if (cache_id == 0) {
-        Cache_Freeze_L1_ICache0_Disable();
+        rom_cache_internal_table_ptr->freeze_l1_icache0_disable();
     } else if (cache_id == 1) {
-        Cache_Freeze_L1_ICache1_Disable();
+        rom_cache_internal_table_ptr->freeze_l1_icache1_disable();
     } else if (cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L1_ICache1_Disable();
-        Cache_Freeze_L1_ICache0_Disable();
+        rom_cache_internal_table_ptr->freeze_l1_icache1_disable();
+        rom_cache_internal_table_ptr->freeze_l1_icache0_disable();
     }
 }
 
@@ -773,7 +773,7 @@ __attribute__((always_inline))
 static inline void cache_ll_l1_unfreeze_dcache(uint32_t cache_id)
 {
     if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L1_DCache_Disable();
+        rom_cache_internal_table_ptr->freeze_l1_dcache_disable();
     }
 }
 
@@ -786,7 +786,7 @@ __attribute__((always_inline))
 static inline void cache_ll_l2_unfreeze_cache(uint32_t cache_id)
 {
     if (cache_id == 0 || cache_id == CACHE_LL_ID_ALL) {
-        Cache_Freeze_L2_Cache_Disable();
+        rom_cache_internal_table_ptr->freeze_l2_cache_disable();
     }
 }
 

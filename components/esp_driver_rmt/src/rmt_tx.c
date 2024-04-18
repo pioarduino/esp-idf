@@ -23,6 +23,7 @@
 #include "hal/gpio_hal.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
+#include "esp_cache.h"
 #include "driver/gpio.h"
 #include "driver/rmt_tx.h"
 #include "rmt_private.h"
@@ -54,10 +55,20 @@ static esp_err_t rmt_tx_init_dma_link(rmt_tx_channel_t *tx_channel, const rmt_tx
     uint32_t data_cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
     // the alignment should meet both the DMA and cache requirement
     size_t alignment = MAX(data_cache_line_size, sizeof(rmt_symbol_word_t));
-    rmt_symbol_word_t *dma_mem_base = heap_caps_aligned_calloc(alignment, config->mem_block_symbols, sizeof(rmt_symbol_word_t),
+    size_t dma_mem_base_size = ALIGN_UP(config->mem_block_symbols * sizeof(rmt_symbol_word_t), alignment);
+    rmt_symbol_word_t *dma_mem_base = heap_caps_aligned_calloc(alignment, 1, dma_mem_base_size,
                                                                RMT_MEM_ALLOC_CAPS | MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     ESP_RETURN_ON_FALSE(dma_mem_base, ESP_ERR_NO_MEM, TAG, "no mem for tx DMA buffer");
     tx_channel->dma_mem_base = dma_mem_base;
+    // do memory sync only when the data cache exists
+    if (data_cache_line_size) {
+        // write back and then invalidate the cache, we will skip the cache (by non-cacheable address) when access the dma_mem_base
+        // even the cache auto-write back happens, there's no risk the dma_mem_base will be overwritten
+        ESP_RETURN_ON_ERROR(esp_cache_msync(dma_mem_base, dma_mem_base_size,
+                                            ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE),
+                            TAG, "cache sync failed");
+    }
+    // we use the non-cached address to manipulate this DMA buffer
     tx_channel->dma_mem_base_nc = (rmt_symbol_word_t *)RMT_GET_NON_CACHE_ADDR(dma_mem_base);
     for (int i = 0; i < RMT_DMA_NODES_PING_PONG; i++) {
         // each descriptor shares half of the DMA buffer
@@ -185,6 +196,10 @@ exit:
 
 static esp_err_t rmt_tx_destroy(rmt_tx_channel_t *tx_channel)
 {
+    if (tx_channel->base.gpio_num >= 0) {
+        gpio_reset_pin(tx_channel->base.gpio_num);
+        esp_gpio_revoke(BIT64(tx_channel->base.gpio_num));
+    }
     if (tx_channel->base.intr) {
         ESP_RETURN_ON_ERROR(esp_intr_free(tx_channel->base.intr), TAG, "delete interrupt service failed");
     }
@@ -227,24 +242,26 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
         ESP_RETURN_ON_FALSE((config->intr_priority) > 0, ESP_ERR_INVALID_ARG, TAG, "invalid interrupt priority:%d", config->intr_priority);
         ESP_RETURN_ON_FALSE(1 << (config->intr_priority) & RMT_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, TAG, "invalid interrupt priority:%d", config->intr_priority);
     }
-    ESP_GOTO_ON_FALSE(config && ret_chan && config->resolution_hz && config->trans_queue_depth, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
-    ESP_GOTO_ON_FALSE(GPIO_IS_VALID_GPIO(config->gpio_num), ESP_ERR_INVALID_ARG, err, TAG, "invalid GPIO number");
-    ESP_GOTO_ON_FALSE((config->mem_block_symbols & 0x01) == 0 && config->mem_block_symbols >= SOC_RMT_MEM_WORDS_PER_CHANNEL,
-                      ESP_ERR_INVALID_ARG, err, TAG, "mem_block_symbols must be even and at least %d", SOC_RMT_MEM_WORDS_PER_CHANNEL);
+    ESP_RETURN_ON_FALSE(config && ret_chan && config->resolution_hz && config->trans_queue_depth, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    ESP_RETURN_ON_FALSE(GPIO_IS_VALID_OUTPUT_GPIO(config->gpio_num), ESP_ERR_INVALID_ARG, TAG, "invalid GPIO number %d", config->gpio_num);
+    ESP_RETURN_ON_FALSE((config->mem_block_symbols & 0x01) == 0 && config->mem_block_symbols >= SOC_RMT_MEM_WORDS_PER_CHANNEL,
+                        ESP_ERR_INVALID_ARG, TAG, "mem_block_symbols must be even and at least %d", SOC_RMT_MEM_WORDS_PER_CHANNEL);
 
 #if SOC_RMT_SUPPORT_DMA
     // we only support 2 nodes ping-pong, if the configured memory block size needs more than two DMA descriptors, should treat it as invalid
-    ESP_GOTO_ON_FALSE(config->mem_block_symbols <= RMT_DMA_DESC_BUF_MAX_SIZE * RMT_DMA_NODES_PING_PONG / sizeof(rmt_symbol_word_t),
-                      ESP_ERR_INVALID_ARG, err, TAG, "mem_block_symbols can't exceed %d",
-                      RMT_DMA_DESC_BUF_MAX_SIZE * RMT_DMA_NODES_PING_PONG / sizeof(rmt_symbol_word_t));
+    ESP_RETURN_ON_FALSE(config->mem_block_symbols <= RMT_DMA_DESC_BUF_MAX_SIZE * RMT_DMA_NODES_PING_PONG / sizeof(rmt_symbol_word_t),
+                        ESP_ERR_INVALID_ARG, TAG, "mem_block_symbols can't exceed %d",
+                        RMT_DMA_DESC_BUF_MAX_SIZE * RMT_DMA_NODES_PING_PONG / sizeof(rmt_symbol_word_t));
 #else
-    ESP_GOTO_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, err, TAG, "DMA not supported");
+    ESP_RETURN_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, TAG, "DMA not supported");
 #endif
 
     // malloc channel memory
     uint32_t mem_caps = RMT_MEM_ALLOC_CAPS;
     tx_channel = heap_caps_calloc(1, sizeof(rmt_tx_channel_t) + sizeof(rmt_tx_trans_desc_t) * config->trans_queue_depth, mem_caps);
     ESP_GOTO_ON_FALSE(tx_channel, ESP_ERR_NO_MEM, err, TAG, "no mem for tx channel");
+    // GPIO configuration is not done yet
+    tx_channel->base.gpio_num = -1;
     // create DMA descriptors
     if (config->flags.with_dma) {
         mem_caps |= MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
@@ -252,10 +269,18 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
         uint32_t data_cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
         // the alignment should meet both the DMA and cache requirement
         size_t alignment = MAX(data_cache_line_size, RMT_DMA_DESC_ALIGN);
-        tx_channel->dma_nodes = heap_caps_aligned_calloc(alignment, RMT_DMA_NODES_PING_PONG, sizeof(rmt_dma_descriptor_t), mem_caps);
-        ESP_GOTO_ON_FALSE(tx_channel->dma_nodes, ESP_ERR_NO_MEM, err, TAG, "no mem for tx DMA nodes");
+        size_t dma_nodes_mem_size = ALIGN_UP(RMT_DMA_NODES_PING_PONG * sizeof(rmt_dma_descriptor_t), alignment);
+        rmt_dma_descriptor_t *dma_nodes = heap_caps_aligned_calloc(alignment, 1, dma_nodes_mem_size, mem_caps);
+        ESP_GOTO_ON_FALSE(dma_nodes, ESP_ERR_NO_MEM, err, TAG, "no mem for tx DMA nodes");
+        tx_channel->dma_nodes = dma_nodes;
+        // write back and then invalidate the cached dma_nodes, we will skip the cache (by non-cacheable address) when access the dma_nodes
+        if (data_cache_line_size) {
+            ESP_GOTO_ON_ERROR(esp_cache_msync(dma_nodes, dma_nodes_mem_size,
+                                              ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE),
+                              err, TAG, "cache sync failed");
+        }
         // we will use the non-cached address to manipulate the DMA descriptor, for simplicity
-        tx_channel->dma_nodes_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(tx_channel->dma_nodes);
+        tx_channel->dma_nodes_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(dma_nodes);
     }
     // create transaction queues
     ESP_GOTO_ON_ERROR(rmt_tx_create_trans_queue(tx_channel, config), err, TAG, "install trans queues failed");
@@ -304,7 +329,7 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
     rmt_ll_tx_set_mem_blocks(hal->regs, channel_id, tx_channel->base.mem_block_num);
     // set limit threshold, after transmit ping_pong_symbols size, an interrupt event would be generated
     rmt_ll_tx_set_limit(hal->regs, channel_id, tx_channel->ping_pong_symbols);
-    // disable carrier modulation by default, can reenable by `rmt_apply_carrier()`
+    // disable carrier modulation by default, can re-enable by `rmt_apply_carrier()`
     rmt_ll_tx_enable_carrier_modulation(hal->regs, channel_id, false);
     // idle level is determined by register value
     rmt_ll_tx_fix_idle_level(hal->regs, channel_id, 0, true);
@@ -312,20 +337,25 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
     rmt_ll_tx_enable_wrap(hal->regs, channel_id, true);
 
     // GPIO Matrix/MUX configuration
-    tx_channel->base.gpio_num = config->gpio_num;
     gpio_config_t gpio_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         // also enable the input path if `io_loop_back` is on, this is useful for bi-directional buses
         .mode = (config->flags.io_od_mode ? GPIO_MODE_OUTPUT_OD : GPIO_MODE_OUTPUT) | (config->flags.io_loop_back ? GPIO_MODE_INPUT : 0),
         .pull_down_en = false,
         .pull_up_en = true,
-        .pin_bit_mask = 1ULL << config->gpio_num,
+        .pin_bit_mask = BIT64(config->gpio_num),
     };
     ESP_GOTO_ON_ERROR(gpio_config(&gpio_conf), err, TAG, "config GPIO failed");
+    // reserve the GPIO output path, because we don't expect another peripheral to signal to the same GPIO
+    uint64_t old_gpio_rsv_mask = esp_gpio_reserve(BIT64(config->gpio_num));
+    // check if the GPIO is already used by others, RMT TX channel only uses the output path of the GPIO
+    if (old_gpio_rsv_mask & BIT64(config->gpio_num)) {
+        ESP_LOGW(TAG, "GPIO %d is not usable, maybe conflict with others", config->gpio_num);
+    }
     esp_rom_gpio_connect_out_signal(config->gpio_num,
                                     rmt_periph_signals.groups[group_id].channels[channel_id + RMT_TX_CHANNEL_OFFSET_IN_GROUP].tx_sig,
                                     config->flags.invert_out, false);
-    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[config->gpio_num], PIN_FUNC_GPIO);
+    tx_channel->base.gpio_num = config->gpio_num;
 
     portMUX_INITIALIZE(&tx_channel->base.spinlock);
     atomic_init(&tx_channel->base.fsm, RMT_FSM_INIT);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -43,7 +43,7 @@ typedef enum {
     JPEG_LL_INTR_SOS_UNMATCH_ERR = (1 << 20),
     JPEG_LL_INTR_MARKER_ERR_FST = (1 << 21),
     JPEG_LL_INTR_MARKER_ERR_OTHER = (1 << 22),
-    JPEG_LL_INTR_UNDET = (1 << 23),
+    JPEG_LL_INTR_UNDETECT = (1 << 23),
     JPEG_LL_INTR_DECODE_TIMEOUT = (1 << 24),
 } jpeg_ll_decoder_intr_t;
 
@@ -63,7 +63,7 @@ typedef enum {
                                     JPEG_LL_INTR_SOS_UNMATCH_ERR | \
                                     JPEG_LL_INTR_MARKER_ERR_FST | \
                                     JPEG_LL_INTR_MARKER_ERR_OTHER | \
-                                    JPEG_LL_INTR_UNDET | \
+                                    JPEG_LL_INTR_UNDETECT | \
                                     JPEG_LL_INTR_DECODE_TIMEOUT)
 
 
@@ -73,6 +73,9 @@ typedef enum {
     JPEG_LL_EN_FRAME_EOF_ERR = (1 << 16),
     JPEG_LL_EN_FRAME_EOF_LACK = (1 << 16),
 } jpeg_ll_encoder_intr_t;
+
+#define JPEG_LL_ENCODER_EVENT_INTR (JPEG_LL_RLE_PARALLEL_ERR | \
+                                    JPEG_LL_EN_FRAME_EOF_ERR)
 
 /**
  * @brief Enable the hardware clock for JPEG module
@@ -112,7 +115,7 @@ static inline void jpeg_ll_reset_module_register(void)
 static inline void jpeg_ll_dht_ac0_write_codeword(jpeg_dev_t *hw, uint8_t *huffman_bits_table, uint32_t *minimum_code_table)
 {
     uint32_t element_number = 0;
-    for (int idx = 0; idx < JEPG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
+    for (int idx = 0; idx < JPEG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
         element_number += (uint32_t)huffman_bits_table[idx];
         hw->dht_totlen_ac0.dht_totlen_ac0 = element_number;
         hw->dht_codemin_ac0.dht_codemin_ac0 = minimum_code_table[idx];
@@ -143,7 +146,7 @@ static inline void jpeg_ll_dht_ac0_write_value(jpeg_dev_t *hw, uint8_t *huffman_
 static inline void jpeg_ll_dht_ac1_write_codeword(jpeg_dev_t *hw, uint8_t *huffman_bits_table, uint32_t *minimum_code_table)
 {
     uint32_t element_number = 0;
-    for (int idx = 0; idx < JEPG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
+    for (int idx = 0; idx < JPEG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
         element_number += (uint32_t)huffman_bits_table[idx];
         hw->dht_totlen_ac1.dht_totlen_ac1 = element_number;
         hw->dht_codemin_ac1.dht_codemin_ac1 = minimum_code_table[idx];
@@ -174,7 +177,7 @@ static inline void jpeg_ll_dht_ac1_write_value(jpeg_dev_t *hw, uint8_t *huffman_
 static inline void jpeg_ll_dht_dc0_write_codeword(jpeg_dev_t *hw, uint8_t *huffman_bits_table, uint32_t *minimum_code_table)
 {
     uint32_t element_number = 0;
-    for (int idx = 0; idx < JEPG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
+    for (int idx = 0; idx < JPEG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
         element_number += (uint32_t)huffman_bits_table[idx];
         hw->dht_totlen_dc0.dht_totlen_dc0 = element_number;
         hw->dht_codemin_dc0.dht_codemin_dc0 = minimum_code_table[idx];
@@ -205,7 +208,7 @@ static inline void jpeg_ll_dht_dc0_write_value(jpeg_dev_t *hw, uint8_t *huffman_
 static inline void jpeg_ll_dht_dc1_write_codeword(jpeg_dev_t *hw, uint8_t *huffman_bits_table, uint32_t *minimum_code_table)
 {
     uint32_t element_number = 0;
-    for (int idx = 0; idx < JEPG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
+    for (int idx = 0; idx < JPEG_HUFFMAN_BITS_LEN_TABLE_LEN; idx++) {
         element_number += (uint32_t)huffman_bits_table[idx];
         hw->dht_totlen_dc1.dht_totlen_dc1 = element_number;
         hw->dht_codemin_dc1.dht_codemin_dc1 = minimum_code_table[idx];
@@ -503,7 +506,7 @@ static inline void jpeg_ll_sample_mode_select(jpeg_dev_t *hw, jpeg_sample_mode_t
         sample_sel = 1;
         break;
     case JPEG_SAMPLE_MODE_YUV420:
-        sample_sel = 0;
+        sample_sel = 2;
         break;
     default:
         HAL_ASSERT(false);
@@ -527,7 +530,7 @@ static inline void jpeg_ll_pixel_reverse(jpeg_dev_t *hw, bool reverse_en)
  * @brief Configures whether or not to add EOI of “0xffd9” at the end of bitstream
  *
  * @param hw Pointer to JPEG hardware.
- * @param tailer_en 1: Add `0xffd9` at the end ot bitstream.
+ * @param tailer_en 1: Add `0xffd9` at the end of bitstream.
  */
 static inline void jpeg_ll_add_tail(jpeg_dev_t *hw, bool tailer_en)
 {
@@ -627,6 +630,28 @@ static inline void jpeg_ll_disable_intr_mask(jpeg_dev_t *hw, uint32_t mask)
 static inline uint32_t jpeg_ll_get_intr_status(jpeg_dev_t *hw)
 {
     return hw->int_st.val;
+}
+
+static inline void jpeg_ll_config_picture_pixel_format(jpeg_dev_t *hw, jpeg_enc_src_type_t pixel_format)
+{
+    uint8_t cs = 0;
+    switch (pixel_format) {
+    case JPEG_ENC_SRC_RGB888:
+        cs = 0;
+        break;
+    case JPEG_ENC_SRC_YUV422:
+        cs = 1;
+        break;
+    case JPEG_ENC_SRC_RGB565:
+        cs = 2;
+        break;
+    case JPEG_ENC_SRC_GRAY:
+        cs = 3;
+        break;
+    default:
+        abort();
+    }
+    hw->config.color_space = cs;
 }
 
 #ifdef __cplusplus

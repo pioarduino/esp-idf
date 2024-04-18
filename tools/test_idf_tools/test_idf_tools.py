@@ -9,10 +9,12 @@ import shutil
 import sys
 import tempfile
 import unittest
+from subprocess import check_call
+from subprocess import STDOUT
 from unittest.mock import patch
 
 try:
-    from contextlib import redirect_stdout
+    from contextlib import redirect_stdout, redirect_stderr
 except ImportError:
     import contextlib
 
@@ -22,6 +24,13 @@ except ImportError:
         sys.stdout = target
         yield
         sys.stdout = original
+
+    @contextlib.contextmanager  # type: ignore
+    def redirect_stderr(target):
+        original = sys.stderr
+        sys.stderr = target
+        yield
+        sys.stderr = original
 
 try:
     from cStringIO import StringIO
@@ -97,9 +106,8 @@ XTENSA_ELF_ARCHIVE_PATTERN = XTENSA_ELF + '-' \
     + (XTENSA_ELF_VERSION[len('esp-'):] if XTENSA_ELF_VERSION.startswith('esp-') else XTENSA_ELF_VERSION)
 
 
-# TestUsage takes care of general test setup and executes tests that behaves the same on both platforms
-# TestUsage class serves as a parent for classes TestUsageUnix and TestUsageWin
-class TestUsage(unittest.TestCase):
+# TestUsageBase takes care of general test setup to use the idf_tools commands
+class TestUsageBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -158,6 +166,30 @@ class TestUsage(unittest.TestCase):
             idf_tools.main(['--non-interactive'] + action)
         output = output_stream.getvalue()
         return output
+
+    def run_idf_tools_with_error(self, action, assertError=False):
+        output_stream = StringIO()
+        error_stream = StringIO()
+        is_error_occured = False
+        try:
+            with redirect_stderr(error_stream), redirect_stdout(output_stream):
+                idf_tools.main(['--non-interactive'] + action)
+        except SystemExit:
+            is_error_occured = True
+            if assertError:
+                pass
+            else:
+                raise
+        if assertError:
+            self.assertTrue(is_error_occured, 'idf_tools should fail if assertError is set')
+        output = output_stream.getvalue()
+        error = error_stream.getvalue()
+        return output, error
+
+
+# TestUsage executes tests that behaves the same on both platforms
+# TestUsage class serves as a parent for classes TestUsageUnix and TestUsageWin
+class TestUsage(TestUsageBase):
 
     def test_tools_for_wildcards1(self):
         required_tools_installed = 2
@@ -488,6 +520,31 @@ class TestUsageUnix(TestUsage):
                          (self.temp_tools_dir, RISCV_ESP_GDB_VERSION), output)
         self.assertIn('%s/tools/esp-rom-elfs/%s/' %
                       (self.temp_tools_dir, ESP_ROM_ELFS_VERSION), output)
+
+    def test_tools_for_esp32p4(self):
+        required_tools_installed = 4
+        output = self.run_idf_tools_with_action(['install', '--targets=esp32p4'])
+        self.assert_tool_installed(output, OPENOCD, OPENOCD_VERSION)
+        self.assert_tool_installed(output, RISCV_ELF, RISCV_ELF_VERSION, RISCV_ELF_ARCHIVE_PATTERN)
+        self.assert_tool_installed(output, ESP_ROM_ELFS, ESP_ROM_ELFS_VERSION)
+        self.assert_tool_installed(output, RISCV_ESP_GDB, RISCV_ESP_GDB_VERSION)
+        self.assert_tool_not_installed(output, XTENSA_ELF, XTENSA_ELF_VERSION, XTENSA_ELF_ARCHIVE_PATTERN)
+        self.assert_tool_not_installed(output, ESP32ULP, ESP32ULP_VERSION)
+        self.assert_tool_not_installed(output, XTENSA_ESP_GDB, XTENSA_ESP_GDB_VERSION)
+        self.assertEqual(required_tools_installed, output.count('Done'))
+
+        output = self.run_idf_tools_with_action(['check'])
+        for tool_version in [OPENOCD_VERSION, RISCV_ELF_VERSION, ESP_ROM_ELFS_VERSION, RISCV_ESP_GDB_VERSION]:
+            self.assertIn(f'version installed in tools directory: {tool_version}', output)
+
+        output = self.run_idf_tools_with_action(['export'])
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', OPENOCD, OPENOCD_VERSION, OPENOCD, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', RISCV_ELF, RISCV_ELF_VERSION, RISCV_ELF, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', ESP_ROM_ELFS, ESP_ROM_ELFS_VERSION, ''), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', RISCV_ESP_GDB, RISCV_ESP_GDB_VERSION, RISCV_ESP_GDB, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', ESP32ULP, ESP32ULP_VERSION, ESP32ULP, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', XTENSA_ELF, XTENSA_ELF_VERSION, XTENSA_ELF, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', XTENSA_ESP_GDB, XTENSA_ESP_GDB_VERSION, XTENSA_ESP_GDB, 'bin'), output)
 
     # a different test for qemu because of "on_request"
     def test_tools_for_qemu_with_required(self):
@@ -865,6 +922,42 @@ class TestUsageWin(TestUsage):
             self.temp_tools_dir, 'tools', DFU_UTIL, DFU_UTIL_VERSION, 'dfu-util-0.11-win64'
         ), output)
 
+    def test_tools_for_esp32p4_win(self):
+        required_tools_installed = 8
+        output = self.run_idf_tools_with_action(['install', '--targets=esp32p4'])
+        self.assert_tool_installed(output, RISCV_ELF, RISCV_ELF_VERSION, RISCV_ELF_ARCHIVE_PATTERN)
+        self.assert_tool_installed(output, RISCV_ESP_GDB, RISCV_ESP_GDB_VERSION)
+        self.assert_tool_installed(output, ESP_ROM_ELFS, ESP_ROM_ELFS_VERSION)
+        self.assert_tool_installed(output, OPENOCD, OPENOCD_VERSION)
+        self.assert_tool_installed(output, CMAKE, CMAKE_VERSION)
+        self.assert_tool_installed(output, NINJA, NINJA_VERSION)
+        self.assert_tool_installed(output, IDF_EXE, IDF_EXE_VERSION)
+        self.assert_tool_installed(output, CCACHE, CCACHE_VERSION)
+        self.assert_tool_not_installed(output, XTENSA_ELF, XTENSA_ELF_VERSION, XTENSA_ELF_ARCHIVE_PATTERN)
+        self.assert_tool_not_installed(output, ESP32ULP, ESP32ULP_VERSION)
+        self.assert_tool_not_installed(output, XTENSA_ESP_GDB, XTENSA_ESP_GDB_VERSION)
+        self.assert_tool_not_installed(output, DFU_UTIL, DFU_UTIL_VERSION)
+        self.assertEqual(required_tools_installed, output.count('Done'))
+
+        output = self.run_idf_tools_with_action(['check'])
+        for tool_version in [RISCV_ELF_VERSION, RISCV_ESP_GDB_VERSION, ESP_ROM_ELFS_VERSION, OPENOCD_VERSION,
+                             CMAKE_VERSION, NINJA_VERSION, IDF_EXE_VERSION, CCACHE_VERSION]:
+            self.assertIn(f'version installed in tools directory: {tool_version}', output)
+
+        output = self.run_idf_tools_with_action(['export'])
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', RISCV_ELF, RISCV_ELF_VERSION, RISCV_ELF, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', RISCV_ESP_GDB, RISCV_ESP_GDB_VERSION, RISCV_ESP_GDB, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', ESP_ROM_ELFS, ESP_ROM_ELFS_VERSION), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', OPENOCD, OPENOCD_VERSION, OPENOCD, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', CMAKE, CMAKE_VERSION, 'bin'), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', NINJA, NINJA_VERSION), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', IDF_EXE, IDF_EXE_VERSION), output)
+        self.assertIn(os.path.join(self.temp_tools_dir, 'tools', CCACHE, CCACHE_VERSION, 'ccache-4.8-windows-x86_64'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', XTENSA_ELF, XTENSA_ELF_VERSION, XTENSA_ELF, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', ESP32ULP, ESP32ULP_VERSION, ESP32ULP, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', XTENSA_ESP_GDB, XTENSA_ESP_GDB_VERSION, XTENSA_ESP_GDB, 'bin'), output)
+        self.assertNotIn(os.path.join(self.temp_tools_dir, 'tools', DFU_UTIL, DFU_UTIL_VERSION, 'dfu-util-0.11-win64'), output)
+
     # a different test for qemu because of "on_request"
     def test_tools_for_qemu_with_required_win(self):
         required_tools_installed = 14
@@ -1008,6 +1101,41 @@ class TestArmDetection(unittest.TestCase):
             with patch('sys.executable', TestArmDetection.ELF_HEADERS[exec_platform]):
                 for platform in TestArmDetection.ARM_PLATFORMS:
                     self.assertEqual(idf_tools.Platforms.detect_linux_arm_platform(platform), exec_platform)
+
+
+# TestSystemDependencies tests behaviour when system dependencies had been broken, on linux
+@unittest.skipUnless(sys.platform == 'linux', reason='Tools for LINUX differ')
+@unittest.skipUnless(int(os.getenv('IDF_TEST_MAY_BREAK_DEPENDENCIES', 0)) == 1, reason='Do not run destructive tests by default')
+class TestSystemDependencies(TestUsageBase):
+
+    @classmethod
+    def tearDownClass(cls):
+        # We won't restore dependencies because `apt-get update` and `apt-get install` require network access and take a lot of time on the runners
+        print('\nINFO: System dependencies have been modified for TestSystemDependencies. Other tests may not work correctly')
+        super(TestSystemDependencies, cls).tearDownClass()
+
+    def test_commands_when_nodeps(self):
+        # Prerequisites
+        # (don't go to the setUpClass() because it's a part of this test case)
+
+        self.run_idf_tools_with_action(['install', 'required', 'qemu-xtensa'])
+        with open(os.devnull, 'w') as devnull:
+            check_call(['dpkg', '--purge', 'libsdl2-2.0-0'], stdout=devnull, stderr=STDOUT)
+
+        # Tests
+
+        _, err_output = self.run_idf_tools_with_error(['list'])
+        self.assertIn(f'ERROR: tool {QEMU_XTENSA} version {QEMU_XTENSA_VERSION} is installed, but cannot be run', err_output)
+
+        _, err_output = self.run_idf_tools_with_error(['export'])
+        self.assertIn(f'ERROR: tool {QEMU_XTENSA} version {QEMU_XTENSA_VERSION} is installed, but cannot be run', err_output)
+
+        _,err_output = self.run_idf_tools_with_error(['check'], assertError=True)
+        self.assertIn(f'ERROR: tool {QEMU_XTENSA} version {QEMU_XTENSA_VERSION} is installed, but cannot be run', err_output)
+
+        _,err_output = self.run_idf_tools_with_error(['install', 'qemu-xtensa'], assertError=True)
+        self.assertIn(f'ERROR: tool {QEMU_XTENSA} version {QEMU_XTENSA_VERSION} is installed, but getting error', err_output)
+        self.assertIn(f'ERROR: Failed to check the tool while installed', err_output)
 
 
 if __name__ == '__main__':

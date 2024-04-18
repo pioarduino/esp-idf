@@ -20,10 +20,6 @@ examples/peripherals/adc/oneshot_read:
 examples/peripherals/analog_comparator:
   disable:
     - if: SOC_ANA_CMPR_SUPPORTED != 1
-  disable_test:
-    - if: IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: not supported yet
   depends_components:
     - esp_driver_gpio
     - esp_driver_ana_cmpr
@@ -43,6 +39,10 @@ examples/peripherals/dac/dac_cosine_wave:
     - esp_driver_dac
 
 examples/peripherals/gpio:
+  disable:
+    - if: IDF_TARGET == "esp32c5"
+      temporary: true
+      reason: GPIO is not supported on ESP32-C5  # TODO: [ESP32C5] IDF-8717
   depends_components:
     - esp_driver_gpio
 
@@ -115,6 +115,26 @@ examples/peripherals/i2s/i2s_recorder:
   depends_components:
     - esp_driver_spi
     - esp_driver_i2s
+
+examples/peripherals/isp/auto_focus:
+  disable:
+    - if: INCLUDE_DEFAULT == 1
+      temporary: true
+      reason: disable build temporarily # TODO: IDF-8895
+  depends_components:
+    - esp_driver_isp
+
+examples/peripherals/jpeg/jpeg_decode:
+  disable:
+    - if: SOC_JPEG_CODEC_SUPPORTED != 1
+  depends_components:
+    - esp_driver_jpeg
+
+examples/peripherals/jpeg/jpeg_encode:
+  disable:
+    - if: SOC_JPEG_ENCODE_SUPPORTED != 1
+  depends_components:
+    - esp_driver_jpeg
 
 examples/peripherals/lcd/i2c_oled:
   disable:
@@ -424,7 +444,7 @@ examples/peripherals/usb/device:
   disable:
     - if: SOC_USB_OTG_SUPPORTED != 1
   disable_test:
-    - if: IDF_TARGET not in ["esp32s2"]
+    - if: IDF_TARGET not in ["esp32s2", "esp32s3"]
       temporary: true
       reason: lack of runners with usb_device tag
   depends_components:
@@ -437,7 +457,7 @@ examples/peripherals/usb/device/tusb_ncm:
   disable:
     - if: SOC_USB_OTG_SUPPORTED != 1 or SOC_WIFI_SUPPORTED != 1
   disable_test:
-    - if: IDF_TARGET not in ["esp32s2"]
+    - if: IDF_TARGET not in ["esp32s2", "esp32s3"]
       temporary: true
       reason: lack of runners with usb_device tag
   depends_components:
@@ -450,35 +470,12 @@ examples/peripherals/usb/host:
   disable:
     - if: SOC_USB_OTG_SUPPORTED != 1
   disable_test:
-    - if: IDF_TARGET not in ["esp32s3"]
+    - if: IDF_TARGET not in ["esp32s3", "esp32p4"]
       temporary: true
       reason: lack of runners with usb_host_flash_disk tag
   depends_components:
     - usb
     - fatfs
-  depends_filepatterns:
-    - components/hal/usb*.c
-    - components/hal/include/hal/usb*.h
-    - components/hal/esp32*/include/hal/usb*.h
-    - components/soc/esp32*/usb*.c
-    - components/soc/include/soc/usb*.h
-    - components/soc/esp32*/include/soc/usb_dwc_*.h
-    - components/soc/esp32*/include/soc/usb_wrap_*.h
-    - examples/peripherals/usb/host/**/*
-
-
-# Temporarily override and disable cdc_acm_vcp due to component manager CI issue
-examples/peripherals/usb/host/cdc/cdc_acm_vcp:
-  disable:
-    - if: SOC_USB_OTG_SUPPORTED != 1 or IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: CI failing for P4 # IDFCI-2042
-  disable_test:
-    - if: IDF_TARGET not in ["esp32s3"]
-      temporary: true
-      reason: lack of runners with usb_host_flash_disk tag
-  depends_components:
-    - usb
   depends_filepatterns:
     - components/hal/usb*.c
     - components/hal/include/hal/usb*.h

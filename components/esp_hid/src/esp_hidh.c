@@ -10,7 +10,8 @@
 #include "ble_hidh.h"
 #include <string.h>
 #include <stdbool.h>
-#include "esp_event_base.h"
+#include "esp_event.h"
+#include "esp_check.h"
 #if CONFIG_BT_HID_HOST_ENABLED
 #include "esp_hidh_api.h"
 #endif /* CONFIG_BT_HID_HOST_ENABLED */
@@ -20,8 +21,10 @@ ESP_EVENT_DEFINE_BASE(ESP_HIDH_EVENTS);
 
 static const char *TAG = "ESP_HIDH";
 
-static esp_hidh_dev_head_t s_esp_hidh_devices;
+static TAILQ_HEAD(esp_hidh_dev_head_s, esp_hidh_dev_s) s_esp_hidh_devices;
 static SemaphoreHandle_t s_esp_hidh_devices_semaphore = NULL;
+static esp_event_loop_handle_t s_esp_hidh_event_loop_h;
+static esp_event_handler_t s_event_callback;
 
 static inline void lock_devices(void)
 {
@@ -36,7 +39,6 @@ static inline void unlock_devices(void)
         xSemaphoreGive(s_esp_hidh_devices_semaphore);
     }
 }
-
 
 /*
  * Public Functions
@@ -59,82 +61,107 @@ bool esp_hidh_dev_exists(esp_hidh_dev_t *dev)
     return false;
 }
 
+static void esp_hidh_event_handler_wrapper(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
+                                           void *event_data)
+{
+    esp_hidh_preprocess_event_handler(event_handler_arg, event_base, event_id, event_data);
+
+    if (s_event_callback) {
+        s_event_callback(event_handler_arg, event_base, event_id, event_data);
+    }
+
+    esp_hidh_postprocess_event_handler(event_handler_arg, event_base, event_id, event_data);
+}
+
 esp_err_t esp_hidh_init(const esp_hidh_config_t *config)
 {
-    esp_err_t err = ESP_FAIL;
-    if (config == NULL) {
-        ESP_LOGE(TAG, "Config is NULL");
-        return err;
-    }
-
-    if (s_esp_hidh_devices_semaphore != NULL) {
-        ESP_LOGE(TAG, "Already initialized");
-        return err;
-    }
+    esp_err_t ret = ESP_OK;
+    ESP_RETURN_ON_FALSE(config, ESP_ERR_INVALID_ARG, TAG, "Config is NULL");
+    ESP_RETURN_ON_FALSE(!s_esp_hidh_devices_semaphore, ESP_ERR_INVALID_STATE, TAG, "Already initialized");
 
     TAILQ_INIT(&s_esp_hidh_devices);
-
+    s_event_callback = config->callback;
+    const esp_event_loop_args_t event_task_args = {
+        .queue_size = 5,
+        .task_name = "esp_hidh_events",
+        .task_priority = uxTaskPriorityGet(NULL),
+        .task_stack_size = config->event_stack_size > 0 ? config->event_stack_size : 4096,
+        .task_core_id = tskNO_AFFINITY
+    };
+    esp_event_loop_create(&event_task_args, &s_esp_hidh_event_loop_h);
     s_esp_hidh_devices_semaphore = xSemaphoreCreateMutex();
-    if (s_esp_hidh_devices_semaphore == NULL) {
-        ESP_LOGE(TAG, "xSemaphoreCreateMutex failed!");
-        return err;
-    }
-    // unlock_devices();
-    err = ESP_OK;
 
+    ESP_GOTO_ON_FALSE(s_esp_hidh_devices_semaphore && s_esp_hidh_event_loop_h,
+                      ESP_ERR_NO_MEM, alloc_fail, TAG, "Allocation failed");
+
+    ESP_GOTO_ON_ERROR(
+        esp_event_handler_register_with(s_esp_hidh_event_loop_h, ESP_HIDH_EVENTS, ESP_EVENT_ANY_ID,
+                                        esp_hidh_event_handler_wrapper, config->callback_arg),
+        alloc_fail, TAG, "event_loop register failed!");
+
+    // BT and BLE are natively supported by esp_hid.
+    // For USB support you must initialize it manually after esp_hidh_init()
 #if CONFIG_BT_HID_HOST_ENABLED
-    if (err == ESP_OK) {
-        err = esp_bt_hidh_init(config);
-    }
+    ESP_GOTO_ON_ERROR(
+        esp_bt_hidh_init(config),
+        alloc_fail, TAG, "BT HIDH init failed");
 #endif /* CONFIG_BT_HID_HOST_ENABLED */
 
 #if CONFIG_GATTC_ENABLE || CONFIG_BT_NIMBLE_ENABLED
-    if (err == ESP_OK) {
-        err = esp_ble_hidh_init(config);
-    }
+    ESP_GOTO_ON_ERROR(
+        esp_ble_hidh_init(config),
+        bt_fail, TAG, "BLE HIDH init failed");
 #endif /* CONFIG_GATTC_ENABLE */
+    return ret;
 
-    if (err != ESP_OK) {
+#if CONFIG_GATTC_ENABLE || CONFIG_BT_NIMBLE_ENABLED
+bt_fail:
+#if CONFIG_BT_HID_HOST_ENABLED
+    esp_bt_hidh_deinit();
+#endif /* CONFIG_BT_HID_HOST_ENABLED */
+#endif
+
+alloc_fail:
+    if (s_esp_hidh_devices_semaphore) {
         vSemaphoreDelete(s_esp_hidh_devices_semaphore);
         s_esp_hidh_devices_semaphore = NULL;
     }
+    if (s_esp_hidh_event_loop_h) {
+        esp_event_loop_delete(s_esp_hidh_event_loop_h);
+        s_esp_hidh_event_loop_h = NULL;
+    }
+    return ret;
+}
 
-    return err;
+esp_event_loop_handle_t esp_hidh_get_event_loop(void)
+{
+    return s_esp_hidh_event_loop_h;
 }
 
 esp_err_t esp_hidh_deinit(void)
 {
-    esp_err_t err = ESP_FAIL;
-    if (s_esp_hidh_devices_semaphore == NULL) {
-        ESP_LOGE(TAG, "Already uninitialized");
-        return err;
-    }
-
-    if (!TAILQ_EMPTY(&s_esp_hidh_devices)) {
-        ESP_LOGE(TAG, "Please disconnect all devices first!");
-        return err;
-    }
-
-    err = ESP_OK;
+    esp_err_t ret = ESP_OK;
+    ESP_RETURN_ON_FALSE(s_esp_hidh_devices_semaphore, ESP_ERR_INVALID_STATE, TAG, "Already deinitialized");
+    ESP_RETURN_ON_FALSE(TAILQ_EMPTY(&s_esp_hidh_devices), ESP_ERR_INVALID_STATE, TAG, "Please disconnect all devices first!");
 
 #if CONFIG_BT_HID_HOST_ENABLED
-    if (err == ESP_OK) {
-        err = esp_bt_hidh_deinit();
-    }
+    ESP_RETURN_ON_ERROR(
+        esp_bt_hidh_deinit(),
+        TAG, "BT HIDH deinit failed");
 #endif /* CONFIG_BT_HID_HOST_ENABLED */
 
 #if CONFIG_GATTC_ENABLE || CONFIG_BT_NIMBLE_ENABLED
-    if (err == ESP_OK) {
-        err = esp_ble_hidh_deinit();
-    }
+    ESP_RETURN_ON_ERROR(
+        esp_ble_hidh_deinit(),
+        TAG, "BLE HIDH deinit failed");
 #endif /* CONFIG_GATTC_ENABLE */
 
-    if (err == ESP_OK) {
-        TAILQ_INIT(&s_esp_hidh_devices);
-        vSemaphoreDelete(s_esp_hidh_devices_semaphore);
-        s_esp_hidh_devices_semaphore = NULL;
-    }
-    return err;
+    TAILQ_INIT(&s_esp_hidh_devices);
+    vSemaphoreDelete(s_esp_hidh_devices_semaphore);
+    s_esp_hidh_devices_semaphore = NULL;
+    esp_event_loop_delete(s_esp_hidh_event_loop_h);
+    s_esp_hidh_event_loop_h = NULL;
+    return ret;
 }
 
 #if CONFIG_BLUEDROID_ENABLED
@@ -504,7 +531,6 @@ esp_err_t esp_hidh_dev_report_maps_get(esp_hidh_dev_t *dev, size_t *num_maps, es
     return ESP_OK;
 }
 
-
 /*
  * Private Functions
  * */
@@ -557,7 +583,7 @@ esp_hidh_dev_report_t *esp_hidh_dev_get_report_by_id_type_proto(esp_hidh_dev_t *
     esp_hidh_dev_report_t *r = dev->reports;
     while (r) {
         if (r->map_index == map_index && r->report_type == report_type && r->report_id == report_id &&
-            r->protocol_mode == protocol_mode) {
+                r->protocol_mode == protocol_mode) {
             return r;
         }
         r = r->next;
@@ -614,7 +640,7 @@ esp_hidh_dev_report_t *esp_hidh_dev_get_input_report_by_proto_and_data(esp_hidh_
     // first, assume data not include report id
     while (r) {
         if (r->value_len == len && r->report_id == 0 && (r->report_type & ESP_HID_REPORT_TYPE_INPUT) &&
-            r->protocol_mode == protocol_mode) {
+                r->protocol_mode == protocol_mode) {
             *has_report_id = false;
             break;
         }
@@ -630,7 +656,7 @@ esp_hidh_dev_report_t *esp_hidh_dev_get_input_report_by_proto_and_data(esp_hidh_
         r = dev->reports;
         while (r) {
             if (r->value_len == len - 1 && r->report_id == *data && (r->report_type & ESP_HID_REPORT_TYPE_INPUT) &&
-                r->protocol_mode == protocol_mode) {
+                    r->protocol_mode == protocol_mode) {
                 *has_report_id = true;
                 break;
             }
@@ -813,8 +839,8 @@ void esp_hidh_preprocess_event_handler(void *event_handler_arg, esp_event_base_t
     }
 }
 
-void esp_hidh_post_process_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
-                                         void *event_data)
+void esp_hidh_postprocess_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
+                                        void *event_data)
 {
     esp_hidh_event_t event = (esp_hidh_event_t)event_id;
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
@@ -897,8 +923,8 @@ void esp_hidh_preprocess_event_handler(void *event_handler_arg, esp_event_base_t
     }
 }
 
-void esp_hidh_post_process_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
-                                         void *event_data)
+void esp_hidh_postprocess_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
+                                        void *event_data)
 {
     esp_hidh_event_t event = (esp_hidh_event_t)event_id;
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;

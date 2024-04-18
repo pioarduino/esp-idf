@@ -22,6 +22,13 @@
 #include "hal/gpio_hal.h"
 #include "esp_rom_gpio.h"
 #include "esp_private/esp_gpio_reserve.h"
+#include "esp_private/periph_ctrl.h"
+
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT && !SOC_RTCIO_RCC_IS_INDEPENDENT
+#define RTCIO_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
+#else
+#define RTCIO_RCC_ATOMIC()
+#endif
 
 #if (SOC_RTCIO_PIN_COUNT > 0)
 #include "hal/rtc_io_hal.h"
@@ -46,7 +53,7 @@ typedef struct {
 typedef struct {
     int source;               /*!< ISR source */
     int intr_alloc_flags;     /*!< ISR alloc flag */
-    void (*fn)(void*);        /*!< ISR function */
+    void (*fn)(void *);       /*!< ISR function */
     void *arg;                /*!< ISR function args*/
     void *handle;             /*!< ISR handle */
     esp_err_t ret;
@@ -59,6 +66,9 @@ typedef struct {
     gpio_isr_func_t *gpio_isr_func;
     gpio_isr_handle_t gpio_isr_handle;
     uint64_t isr_clr_on_entry_mask; // for edge-triggered interrupts, interrupt status bits should be cleared before entering per-pin handlers
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP && SOC_LP_IO_CLOCK_IS_INDEPENDENT
+    uint32_t gpio_wakeup_mask;
+#endif
 } gpio_context_t;
 
 static gpio_hal_context_t _gpio_hal = {
@@ -71,6 +81,9 @@ static gpio_context_t gpio_context = {
     .isr_core_id = GPIO_ISR_CORE_ID_UNINIT,
     .gpio_isr_func = NULL,
     .isr_clr_on_entry_mask = 0,
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP && SOC_LP_IO_CLOCK_IS_INDEPENDENT
+    .gpio_wakeup_mask = 0,
+#endif
 };
 
 esp_err_t gpio_pullup_en(gpio_num_t gpio_num)
@@ -85,7 +98,7 @@ esp_err_t gpio_pullup_en(gpio_num_t gpio_num)
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         rtc_gpio_pullup_en(gpio_num);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -104,7 +117,7 @@ esp_err_t gpio_pullup_dis(gpio_num_t gpio_num)
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         rtc_gpio_pullup_dis(gpio_num);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -123,7 +136,7 @@ esp_err_t gpio_pulldown_en(gpio_num_t gpio_num)
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         rtc_gpio_pulldown_en(gpio_num);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -142,7 +155,7 @@ esp_err_t gpio_pulldown_dis(gpio_num_t gpio_num)
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         rtc_gpio_pulldown_dis(gpio_num);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -676,7 +689,7 @@ esp_err_t gpio_set_drive_capability(gpio_num_t gpio_num, gpio_drive_cap_t streng
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         ret = rtc_gpio_set_drive_capability(gpio_num, strength);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -697,7 +710,7 @@ esp_err_t gpio_get_drive_capability(gpio_num_t gpio_num, gpio_drive_cap_t *stren
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         ret = rtc_gpio_get_drive_capability(gpio_num, strength);
 #else
-        abort(); // This should be eliminated as unreachable, unless a programming error has occured
+        abort(); // This should be eliminated as unreachable, unless a programming error has occurred
 #endif
     }
 
@@ -789,9 +802,9 @@ void gpio_iomux_in(uint32_t gpio, uint32_t signal_idx)
     gpio_hal_iomux_in(gpio_context.gpio_hal, gpio, signal_idx);
 }
 
-void gpio_iomux_out(uint8_t gpio_num, int func, bool oen_inv)
+void gpio_iomux_out(uint8_t gpio_num, int func, bool out_en_inv)
 {
-    gpio_hal_iomux_out(gpio_context.gpio_hal, gpio_num, func, (uint32_t)oen_inv);
+    gpio_hal_iomux_out(gpio_context.gpio_hal, gpio_num, func, (uint32_t)out_en_inv);
 }
 
 static esp_err_t gpio_sleep_pullup_en(gpio_num_t gpio_num)
@@ -978,6 +991,14 @@ esp_err_t gpio_deep_sleep_wakeup_enable(gpio_num_t gpio_num, gpio_int_type_t int
         return ESP_ERR_INVALID_ARG;
     }
     portENTER_CRITICAL(&gpio_context.gpio_spinlock);
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT
+    if (gpio_context.gpio_wakeup_mask == 0) {
+        RTCIO_RCC_ATOMIC() {
+            rtcio_ll_enable_io_clock(true);
+        }
+    }
+    gpio_context.gpio_wakeup_mask |= (1ULL << gpio_num);
+#endif
     gpio_hal_deepsleep_wakeup_enable(gpio_context.gpio_hal, gpio_num, intr_type);
 #if CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND || CONFIG_PM_SLP_DISABLE_GPIO
     gpio_hal_sleep_sel_dis(gpio_context.gpio_hal, gpio_num);
@@ -996,6 +1017,14 @@ esp_err_t gpio_deep_sleep_wakeup_disable(gpio_num_t gpio_num)
     gpio_hal_deepsleep_wakeup_disable(gpio_context.gpio_hal, gpio_num);
 #if CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND || CONFIG_PM_SLP_DISABLE_GPIO
     gpio_hal_sleep_sel_en(gpio_context.gpio_hal, gpio_num);
+#endif
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT
+    gpio_context.gpio_wakeup_mask &= ~(1ULL << gpio_num);
+    if (gpio_context.gpio_wakeup_mask == 0) {
+        RTCIO_RCC_ATOMIC() {
+            rtcio_ll_enable_io_clock(false);
+        }
+    }
 #endif
     portEXIT_CRITICAL(&gpio_context.gpio_spinlock);
     return ESP_OK;
@@ -1016,7 +1045,7 @@ esp_err_t gpio_dump_io_configuration(FILE *out_stream, uint64_t io_bit_mask)
         uint32_t drv, fun_sel, sig_out;
         gpio_hal_get_io_config(gpio_context.gpio_hal, gpio_num, &pu, &pd, &ie, &oe, &od, &drv, &fun_sel, &sig_out, &slp_sel);
 
-        fprintf(out_stream, "IO[%"PRIu32"]%s -\n", gpio_num, esp_gpio_is_pin_reserved(gpio_num) ? " **RESERVED**" : "");
+        fprintf(out_stream, "IO[%"PRIu32"]%s -\n", gpio_num, esp_gpio_is_reserved(BIT64(gpio_num)) ? " **RESERVED**" : "");
         fprintf(out_stream, "  Pullup: %d, Pulldown: %d, DriveCap: %"PRIu32"\n", pu, pd, drv);
         fprintf(out_stream, "  InputEn: %d, OutputEn: %d, OpenDrain: %d\n", ie, oe, od);
         fprintf(out_stream, "  FuncSel: %"PRIu32" (%s)\n", fun_sel, (fun_sel == PIN_FUNC_GPIO) ? "GPIO" : "IOMUX");

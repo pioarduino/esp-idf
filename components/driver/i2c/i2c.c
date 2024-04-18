@@ -28,6 +28,7 @@
 #include "esp_rom_sys.h"
 #include <sys/param.h>
 #include "soc/clk_tree_defs.h"
+#include "esp_private/gpio.h"
 #if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
 #include "esp_private/sleep_retention.h"
 #endif
@@ -128,13 +129,13 @@ static const char *I2C_TAG = "i2c";
 /**
  * I2C bus are defined in the header files, let's check that the values are correct
  */
-#if SOC_I2C_NUM >= 2
+#if SOC_HP_I2C_NUM >= 2
 _Static_assert(I2C_NUM_1 == 1, "I2C_NUM_1 must be equal to 1");
-#endif // SOC_I2C_NUM >= 2
+#endif // SOC_HP_I2C_NUM >= 2
 #if SOC_LP_I2C_SUPPORTED
-_Static_assert(I2C_NUM_MAX == (SOC_I2C_NUM + SOC_LP_I2C_NUM), "I2C_NUM_MAX must be equal to SOC_I2C_NUM + SOC_LP_I2C_NUM");
+_Static_assert(I2C_NUM_MAX == (SOC_HP_I2C_NUM + SOC_LP_I2C_NUM), "I2C_NUM_MAX must be equal to SOC_HP_I2C_NUM + SOC_LP_I2C_NUM");
 #else
-_Static_assert(I2C_NUM_MAX == SOC_I2C_NUM, "I2C_NUM_MAX must be equal to SOC_I2C_NUM");
+_Static_assert(I2C_NUM_MAX == SOC_HP_I2C_NUM, "I2C_NUM_MAX must be equal to SOC_HP_I2C_NUM");
 #endif /* SOC_LP_I2C_SUPPORTED */
 
 typedef struct {
@@ -224,7 +225,7 @@ static i2c_context_t i2c_context[I2C_NUM_MAX] = {
     I2C_CONTEX_INIT_DEF(I2C_NUM_0),
     /* Now that I2C_NUM_MAX is part of an enum (i2c_port_t), we cannot use
      * it anomore in the preprocessor! */
-#if SOC_I2C_NUM > 1
+#if SOC_HP_I2C_NUM > 1
     I2C_CONTEX_INIT_DEF(I2C_NUM_1),
 #endif
 };
@@ -274,6 +275,16 @@ static void i2c_hw_enable(i2c_port_t i2c_num)
     }
     I2C_EXIT_CRITICAL(&(i2c_context[i2c_num].spinlock));
 }
+
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_I2C_SUPPORT_SLEEP_RETENTION
+static esp_err_t i2c_sleep_retention_init(void *arg)
+{
+    i2c_port_t i2c_num = *(i2c_port_t *)arg;
+    esp_err_t ret = sleep_retention_entries_create(i2c_regs_retention[i2c_num].link_list, i2c_regs_retention[i2c_num].link_num, REGDMA_LINK_PRI_7, I2C_SLEEP_RETENTION_MODULE(i2c_num));
+    ESP_RETURN_ON_ERROR(ret, I2C_TAG, "failed to allocate mem for sleep retention");
+    return ret;
+}
+#endif
 
 /*
     For i2c master mode, we don't need to use a buffer for the data, the APIs will execute the master commands
@@ -413,9 +424,14 @@ esp_err_t i2c_driver_install(i2c_port_t i2c_num, i2c_mode_t mode, size_t slv_rx_
     }
 #endif // SOC_I2C_SUPPORT_SLAVE
 
-#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
-    ret = sleep_retention_entries_create(i2c_regs_retention[i2c_num].link_list, i2c_regs_retention[i2c_num].link_num, REGDMA_LINK_PRI_7, I2C_SLEEP_RETENTION_MODULE(i2c_num));
-    ESP_GOTO_ON_ERROR(ret, err, I2C_TAG, "failed to allocate mem for sleep retention");
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_I2C_SUPPORT_SLEEP_RETENTION
+    sleep_retention_module_init_param_t init_param = {
+        .cbs = { .create = { .handle = i2c_sleep_retention_init, .arg = &i2c_num } }
+    };
+    ret = sleep_retention_module_init(I2C_SLEEP_RETENTION_MODULE(i2c_num), &init_param);
+    if (ret == ESP_OK) {
+        sleep_retention_module_allocate(I2C_SLEEP_RETENTION_MODULE(i2c_num));
+    }
 #endif
     return ESP_OK;
 
@@ -469,8 +485,11 @@ esp_err_t i2c_driver_delete(i2c_port_t i2c_num)
     esp_intr_free(p_i2c->intr_handle);
     p_i2c->intr_handle = NULL;
 
-#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
-    sleep_retention_entries_destroy(I2C_SLEEP_RETENTION_MODULE(i2c_num));
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_I2C_SUPPORT_SLEEP_RETENTION
+    esp_err_t err = sleep_retention_module_free(I2C_SLEEP_RETENTION_MODULE(i2c_num));
+    if (err == ESP_OK) {
+        err = sleep_retention_module_deinit(I2C_SLEEP_RETENTION_MODULE(i2c_num));
+    }
 #endif
 
     if (p_i2c->cmd_mux) {
@@ -967,7 +986,7 @@ esp_err_t i2c_set_pin(i2c_port_t i2c_num, int sda_io_num, int scl_io_num, bool s
     scl_in_sig = i2c_periph_signal[i2c_num].scl_in_sig;
     if (sda_io_num >= 0) {
         gpio_set_level(sda_io_num, I2C_IO_INIT_LEVEL);
-        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);
+        gpio_func_sel(sda_io_num, PIN_FUNC_GPIO);
         gpio_set_direction(sda_io_num, GPIO_MODE_INPUT_OUTPUT_OD);
 
         if (sda_pullup_en == GPIO_PULLUP_ENABLE) {
@@ -981,11 +1000,11 @@ esp_err_t i2c_set_pin(i2c_port_t i2c_num, int sda_io_num, int scl_io_num, bool s
     if (scl_io_num >= 0) {
         if (mode == I2C_MODE_MASTER) {
             gpio_set_level(scl_io_num, I2C_IO_INIT_LEVEL);
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[scl_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(scl_io_num, PIN_FUNC_GPIO);
             gpio_set_direction(scl_io_num, GPIO_MODE_INPUT_OUTPUT_OD);
             esp_rom_gpio_connect_out_signal(scl_io_num, scl_out_sig, 0, 0);
         } else {
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[scl_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(scl_io_num, PIN_FUNC_GPIO);
             gpio_set_direction(scl_io_num, GPIO_MODE_INPUT);
         }
         esp_rom_gpio_connect_in_signal(scl_io_num, scl_in_sig, 0);
@@ -1197,7 +1216,7 @@ static esp_err_t i2c_cmd_allocate(i2c_cmd_desc_t *cmd_desc, size_t n, size_t siz
             /* Allocate the pointer. */
             *outptr = cmd_desc->free_buffer;
 
-            /* Decrement the free size from the user's bufffer. */
+            /* Decrement the free size from the user's buffer. */
             cmd_desc->free_buffer += required;
             cmd_desc->free_size -= required;
         }
@@ -1525,7 +1544,7 @@ esp_err_t i2c_master_cmd_begin(i2c_port_t i2c_num, i2c_cmd_handle_t cmd_handle, 
     // Sometimes when the FSM get stuck, the ACK_ERR interrupt will occur endlessly until we reset the FSM and clear bus.
     esp_err_t ret = ESP_FAIL;
     i2c_obj_t *p_i2c = p_i2c_obj[i2c_num];
-    TickType_t ticks_start = xTaskGetTickCount();
+    const TickType_t ticks_start = xTaskGetTickCount();
     BaseType_t res = xSemaphoreTake(p_i2c->cmd_mux, ticks_to_wait);
     if (res == pdFALSE) {
         return ESP_ERR_TIMEOUT;
@@ -1565,13 +1584,15 @@ esp_err_t i2c_master_cmd_begin(i2c_port_t i2c_num, i2c_cmd_handle_t cmd_handle, 
     i2c_cmd_evt_t evt;
     while (1) {
         TickType_t wait_time = xTaskGetTickCount();
-        if (wait_time - ticks_start > ticks_to_wait) { // out of time
-            wait_time = I2C_CMD_ALIVE_INTERVAL_TICK;
+        const TickType_t elapsed = wait_time - ticks_start;
+        if (elapsed >= ticks_to_wait) { // out of time
+            /* Before triggering a timeout, empty the queue by giving a wait_time of 0:
+             * - if the queue is empty, `pdFALSE` will be returned and the loop will be exited
+             * - if the queue is not empty, we will pop an element and come back here again
+             */
+            wait_time = 0;
         } else {
-            wait_time = ticks_to_wait - (wait_time - ticks_start);
-            if (wait_time < I2C_CMD_ALIVE_INTERVAL_TICK) {
-                wait_time = I2C_CMD_ALIVE_INTERVAL_TICK;
-            }
+            wait_time = MIN(ticks_to_wait - elapsed, I2C_CMD_ALIVE_INTERVAL_TICK);
         }
         // In master mode, since we don't have an interrupt to detective bus error or FSM state, what we do here is to make
         // sure the interrupt mechanism for master mode is still working.

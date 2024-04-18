@@ -34,7 +34,7 @@ API Guides
    partition-tables
    performance/index
    reproducible-builds
-   :SOC_WIFI_SUPPORTED or SOC_BT_SUPPORTED or SOC_IEEE802154_SUPPORTED: RF_calibration
+   :(SOC_WIFI_SUPPORTED or SOC_BT_SUPPORTED or SOC_IEEE802154_SUPPORTED) and not esp32c5: RF_calibration
    thread-local-storage
    tools/index
    unit-tests
@@ -44,3 +44,4 @@ API Guides
    :SOC_WIFI_SUPPORTED: wifi
    :SOC_WIFI_SUPPORTED: wifi-security
    low-power-mode
+   :SOC_WIFI_SUPPORTED or SOC_BT_SUPPORTED or SOC_IEEE802154_SUPPORTED: phy

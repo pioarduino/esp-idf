@@ -10,7 +10,8 @@ Peripherals API
     :SOC_ADC_DMA_SUPPORTED: adc_continuous
     :SOC_ADC_SUPPORTED: adc_calibration
     :SOC_ANA_CMPR_SUPPORTED: ana_cmpr
-    clk_tree
+    :SOC_MIPI_CSI_SUPPORTED: camera_driver
+    :SOC_CLK_TREE_SUPPORTED: clk_tree
     :SOC_DAC_SUPPORTED: dac
     :SOC_ECDSA_SUPPORTED: ecdsa
     :SOC_ETM_SUPPORTED: etm
@@ -21,7 +22,10 @@ Peripherals API
     :SOC_DIG_SIGN_SUPPORTED: ds
     i2c
     :SOC_I2S_SUPPORTED: i2s
-    lcd
+    :SOC_ISP_SUPPORTED: isp
+    :SOC_JPEG_CODEC_SUPPORTED: jpeg
+    lcd/index
+    :SOC_GP_LDO_SUPPORTED: ldo_regulator
     ledc
     :SOC_MCPWM_SUPPORTED: mcpwm
     :SOC_PARLIO_SUPPORTED: parlio

@@ -263,7 +263,7 @@ RMT 是一种特殊的通信外设，无法像 SPI 和 I2C 那样发送原始字
     - 增加 :cpp:member:`rmt_tx_channel_config_t::mem_block_symbols`。若此时启用了 DMA 后端，该方法将失效。
     - 自定义编码器，并在编码函数中构造一个无限循环，详情请参阅 :ref:`rmt-rmt-encoder`。
 
-:cpp:func:`rmt_transmit` 会在其内部构建一个事务描述符，并将其发送到作业队列中，该队列将在 ISR 中调度。因此，在 :cpp:func:`rmt_transmit` 返回时，事务可能尚未启动。为确保完成所有挂起的事务，请调用 :cpp:func:`rmt_tx_wait_all_done`。
+:cpp:func:`rmt_transmit` 会在其内部构建一个事务描述符，并将其发送到作业队列中，该队列通常会在 ISR 上下文中被调度。因此，在 :cpp:func:`rmt_transmit` 返回时，该事务可能尚未启动。注意，你不能在事务结束前就去回收或者修改 payload 中的内容。通过 :cpp:func:`rmt_tx_register_event_callbacks` 来注册事件回调，可以在事务完成的时候被通知。为确保完成所有挂起的事务，你还可以调用 :cpp:func:`rmt_tx_wait_all_done`。
 
 .. _rmt-multiple-channels-simultaneous-transmission:
 
@@ -331,7 +331,7 @@ RMT 是一种特殊的通信外设，无法像 SPI 和 I2C 那样发送原始字
 
 - :cpp:member:`rmt_receive_config_t::signal_range_min_ns` 指定高电平或低电平有效脉冲的最小持续时间。如果脉冲宽度小于指定值，硬件会将其视作干扰信号并忽略。
 - :cpp:member:`rmt_receive_config_t::signal_range_max_ns` 指定高电平或低电平有效脉冲的最大持续时间。如果脉冲宽度大于指定值，接收器会将其视作 **停止信号**，并立即生成接收完成事件。
-- 如果传入的数据包很长，无法一次性保存在用户缓冲区中，可以通过将 :cpp:member:`rmt_receive_config_t::extra_flags::en_partial_rx` 设置为 ``true`` 来开启部分接收功能。在这种情况下，当用户缓冲区快满的时候，驱动会多次调用 :cpp:member:`rmt_rx_event_callbacks_t::on_recv_done` 回调函数来通知用户去处理已经收到的数据。你可以检查 :cpp:member::`rmt_rx_done_event_data_t::is_last` 的值来了解当前事务是否已经结束。
+- 如果传入的数据包很长，无法一次性保存在用户缓冲区中，可以通过将 :cpp:member:`rmt_receive_config_t::extra_flags::en_partial_rx` 设置为 ``true`` 来开启部分接收功能。在这种情况下，当用户缓冲区快满的时候，驱动会多次调用 :cpp:member:`rmt_rx_event_callbacks_t::on_recv_done` 回调函数来通知用户去处理已经收到的数据。你可以检查 :cpp:member::`rmt_rx_done_event_data_t::is_last` 的值来了解当前事务是否已经结束。请注意，并不是所有 ESP 系列芯片都支持这个功能，它依赖硬件提供的 “ping-pong 接收” 或者 “DMA 接收” 的能力。
 
 根据以上配置调用 :cpp:func:`rmt_receive` 后，RMT 接收器会启动 RX 机制。注意，以上配置均针对特定事务存在，也就是说，要开启新一轮的接收时，需要再次设置 :cpp:type:`rmt_receive_config_t` 选项。接收器会将传入信号以 :cpp:type:`rmt_symbol_word_t` 的格式保存在内部内存块或 DMA 缓冲区中。
 
@@ -594,13 +594,14 @@ Kconfig 选项
 FAQ
 ---
 
-* RMT 编码器为什么会产生比预期更多的数据？
+* RMT 为什么会发送比预期更多的数据？
 
-RMT 编码在 ISR 上下文中发生。如果 RMT 编码会话耗时较长（例如，记录调试信息），或者由于中断延迟导致编码会话延迟执行，则传输速率可能会超过编码速率。此时，编码器无法及时准备下一组数据，致使传输器再次发送先前的数据。由于传输器无法停止并等待，可以通过以下方法来缓解此问题：
+    RMT 的传输层编码是在 ISR 上下文中完成的，如果 RMT 编码耗时较长（例如，增加了过多的调试追踪信息），或者由于中断延迟和抢占导致编码工作被推迟执行，导致传输器在编码器更新内存数据之前就读取了老数据，致使传输器再次发送先前的数据。我们无法告诉硬件传输器自动等待新数据的更新，但是可以通过以下方法来缓解此问题：
 
-    - 增加 :cpp:member:`rmt_tx_channel_config_t::mem_block_symbols` 的值，步长为 {IDF_TARGET_SOC_RMT_MEM_WORDS_PER_CHANNEL}。
-    - 将编码函数放置在 IRAM 中。
-    - 如果所用芯片支持 :cpp:member:`rmt_tx_channel_config_t::with_dma`，请启用该选项。
+        - 增加 :cpp:member:`rmt_tx_channel_config_t::mem_block_symbols` 的值，步长为 {IDF_TARGET_SOC_RMT_MEM_WORDS_PER_CHANNEL}。
+        - 将编码函数放置在 IRAM 中。
+        - 如果所用芯片支持 :cpp:member:`rmt_tx_channel_config_t::with_dma`，请启用该选项。
+        - 将RMT驱动安装在另外一个CPU核上，避免和其他高中断频率的外设竞争同一个CPU资源。
 
 API 参考
 -------------

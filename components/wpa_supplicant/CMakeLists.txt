@@ -6,7 +6,7 @@ else()
     set(linker_fragments linker.lf)
 endif()
 
-if(NOT CONFIG_ESP_WIFI_ENABLED AND NOT CMAKE_BUILD_EARLY_EXPANSION)
+if(NOT CONFIG_ESP_WIFI_ENABLED AND NOT CONFIG_ESP_HOST_WIFI_ENABLED AND NOT CMAKE_BUILD_EARLY_EXPANSION)
     # This component provides only "esp_supplicant" headers if WiFi not enabled
     # (implementation supported optionally in a managed component esp_wifi_remote)
     idf_component_register(INCLUDE_DIRS esp_supplicant/include)
@@ -226,6 +226,7 @@ idf_component_register(SRCS "${srcs}" "${esp_srcs}" "${tls_src}" "${roaming_src}
                             "${crypto_src}" "${mbo_src}" "${dpp_src}" "${wps_registrar_src}"
                     INCLUDE_DIRS include port/include esp_supplicant/include
                     PRIV_INCLUDE_DIRS src src/utils esp_supplicant/src src/crypto
+                                      ../esp_wifi/wifi_apps/roaming_app/include
                     LDFRAGMENTS   ${linker_fragments}
                     PRIV_REQUIRES mbedtls esp_timer esp_wifi)
 
@@ -303,6 +304,9 @@ if(CONFIG_ESP_WIFI_WPS_SOFTAP_REGISTRAR)
 endif()
 if(CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA)
         target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_OWE_STA)
+endif()
+if(CONFIG_ESP_WIFI_EAP_TLS1_3)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_TLSV13)
 endif()
 set_property(TARGET ${COMPONENT_LIB} APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,6 +12,8 @@
 #include "esp_flash_encrypt.h"
 #include "esp_secure_boot.h"
 #include "hal/efuse_hal.h"
+
+//TODO:[ESP32C61] IDf-9232
 
 #if CONFIG_IDF_TARGET_ESP32
 #define CRYPT_CNT ESP_EFUSE_FLASH_CRYPT_CNT

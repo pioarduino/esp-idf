@@ -3,6 +3,7 @@ menu "FreeRTOS"
     menu "Kernel"
         # Upstream FreeRTOS configurations go here
 
+
         config FREERTOS_SMP
             bool "Run the Amazon SMP FreeRTOS kernel instead (FEATURE UNDER DEVELOPMENT)"
             depends on !IDF_TARGET_ESP32P4 #TODO: IDF-8113: Enable P4 support on AMZ SMP
@@ -116,7 +117,7 @@ menu "FreeRTOS"
                 - The FreeRTOS idle hook is NOT the same as the ESP-IDF Idle Hook, but both can be enabled
                   simultaneously.
 
-        config FREERTOS_USE_MINIMAL_IDLE_HOOK
+        config FREERTOS_USE_PASSIVE_IDLE_HOOK
             bool "Use FreeRTOS minimal idle hook"
             depends on FREERTOS_SMP
             default n
@@ -126,8 +127,8 @@ menu "FreeRTOS"
 
                 Note:
 
-                - The application must provide the hook function ``void vApplicationMinimalIdleHook( void );``
-                - ``vApplicationMinimalIdleHook()`` is called from FreeRTOS minimal idle task(s)
+                - The application must provide the hook function ``void vApplicationPassiveIdleHook( void );``
+                - ``vApplicationPassiveIdleHook()`` is called from FreeRTOS minimal idle task(s)
 
         config FREERTOS_USE_TICK_HOOK
             bool "configUSE_TICK_HOOK"
@@ -323,6 +324,13 @@ menu "FreeRTOS"
                 esp_pm_dump_locks, if the proportion of rejected sleeps is too high, please increase
                 this value to improve scheduling efficiency
 
+        config FREERTOS_USE_APPLICATION_TASK_TAG
+            bool "configUSE_APPLICATION_TASK_TAG"
+            default n
+            help
+                Enables task tagging functionality and its associated API (see configUSE_APPLICATION_TASK_TAG
+                documentation for more details).
+
     endmenu # Kernel
 
     menu "Port"
@@ -330,7 +338,9 @@ menu "FreeRTOS"
 
         config FREERTOS_TASK_FUNCTION_WRAPPER
             bool "Wrap task functions"
-            depends on COMPILER_OPTIMIZATION_DEBUG || ESP_COREDUMP_ENABLE || ESP_GDBSTUB_ENABLED
+            #TODO: Check if FreeRTOS Task Wrapper must depend on GDBStub (IDF-9505)
+            depends on COMPILER_OPTIMIZATION_DEBUG || ESP_COREDUMP_ENABLE \
+                || ESP_SYSTEM_PANIC_GDBSTUB || ESP_SYSTEM_GDBSTUB_RUNTIME
             default y
             help
                 If enabled, all FreeRTOS task functions will be enclosed in a wrapper function. If a task function

@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "soc/uart_struct.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_private/uart_share_hw_ctrl.h"
 #include "esp_rom_gpio.h"
 #include "hal/gpio_hal.h"
 #include "hal/uart_ll.h"
@@ -46,11 +47,11 @@
 #define READ_BIT   I2C_MASTER_READ  /*!< I2C master read */
 #define ACK_CHECK_EN   0x1     /*!< I2C master will check ack from slave*/
 
-static DRAM_ATTR i2c_dev_t *const I2C[SOC_I2C_NUM] = { &I2C0,
-#if SOC_I2C_NUM > 1
-                                                       &I2C1,
+static DRAM_ATTR i2c_dev_t *const I2C[SOC_HP_I2C_NUM] = { &I2C0,
+#if SOC_HP_I2C_NUM > 1
+                                                          &I2C1,
 #endif
-                                                     };
+                                                        };
 
 #define ACK_VAL 0
 #define NACK_VAL 1
@@ -502,7 +503,7 @@ static void i2c_slave_repeat_read(void)
 
 TEST_CASE_MULTIPLE_DEVICES("I2C repeat write test", "[i2c][test_env=generic_multi_device][timeout=150]", i2c_master_repeat_write, i2c_slave_repeat_read);
 
-#if SOC_I2C_NUM > 1
+#if SOC_HP_I2C_NUM > 1
 
 static void i2c_master_write_test_more_ports(void)
 {
@@ -678,7 +679,10 @@ static void uart_aut_baud_det_init(int rxd_io_num)
     gpio_set_direction(rxd_io_num, GPIO_MODE_INPUT_OUTPUT);
     esp_rom_gpio_connect_out_signal(rxd_io_num, i2c_periph_signal[0].scl_out_sig, 0, 0);
     esp_rom_gpio_connect_in_signal(rxd_io_num, UART_PERIPH_SIGNAL(1, SOC_UART_RX_PIN_IDX), 0);
-    periph_module_enable(PERIPH_UART1_MODULE);
+    HP_UART_BUS_CLK_ATOMIC() {
+        uart_ll_enable_bus_clock(1, true);
+        uart_ll_reset_register(1);
+    }
     /* Reset all the bits */
     uart_ll_disable_intr_mask(&UART1, ~0);
     uart_ll_clr_intsts_mask(&UART1, ~0);
@@ -693,7 +697,7 @@ static void i2c_scl_freq_cal(void)
     const float i2c_cource_clk_period = 0.0125;
     int expt_cnt = 542;
 #else
-    const int i2c_source_clk_freq = 18000000; // Clock sorce: RTC
+    const int i2c_source_clk_freq = 18000000; // Clock source: RTC
     const float i2c_cource_clk_period = 0.056;
     int expt_cnt = 540;
 #endif
@@ -710,7 +714,9 @@ static void i2c_scl_freq_cal(void)
 
     printf("\nSCL high period %.3f (us), SCL low_period %.3f (us)\n\n", (float)(i2c_cource_clk_period * high_period_cnt), (float)(i2c_cource_clk_period * low_period_cnt));
     uart_ll_set_autobaud_en(&UART1, false);
-    periph_module_disable(PERIPH_UART1_MODULE);
+    HP_UART_BUS_CLK_ATOMIC() {
+        uart_ll_enable_bus_clock(1, false);
+    }
 }
 
 TEST_CASE("I2C SCL freq test (local test)", "[i2c][ignore]")

@@ -36,6 +36,11 @@ extern "C" {
 #define I2C_RCC_ATOMIC()
 #endif
 
+#if SOC_LP_I2C_SUPPORTED
+#define LP_I2C_SRC_CLK_ATOMIC()    PERIPH_RCC_ATOMIC()
+#define LP_I2C_BUS_CLK_ATOMIC()    PERIPH_RCC_ATOMIC()
+#endif
+
 #if CONFIG_I2C_ISR_IRAM_SAFE
 #define I2C_MEM_ALLOC_CAPS    (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #else
@@ -100,15 +105,16 @@ typedef struct {
 
 struct i2c_bus_t {
     i2c_port_num_t port_num; // Port(Bus) ID, index from 0
+    bool is_lp_i2c;        // true if current port is lp_i2c. false is hp_i2c
     portMUX_TYPE spinlock; // To protect pre-group register level concurrency access
     i2c_hal_context_t hal; // Hal layer for each port(bus)
-    i2c_clock_source_t clk_src; // Record the port clock source
+    soc_module_clk_t clk_src; // Record the port clock source
     uint32_t clk_src_freq_hz; // Record the clock source frequency
     int sda_num; // SDA pin number
     int scl_num; // SCL pin number
     bool pull_up_enable; // Enable pull-ups
     intr_handle_t intr_handle; // I2C interrupt handle
-    esp_pm_lock_handle_t pm_lock; // power manange lock
+    esp_pm_lock_handle_t pm_lock; // power manage lock
 #if CONFIG_PM_ENABLE
     char pm_lock_name[I2C_PM_LOCK_NAME_LEN_MAX]; // pm lock name
 #endif
@@ -131,15 +137,18 @@ struct i2c_master_bus_t {
     i2c_operation_t i2c_ops[I2C_STATIC_OPERATION_ARRAY_MAX];         // I2C operation array
     _Atomic uint16_t trans_idx;                                      // Index of I2C transaction command.
     SemaphoreHandle_t cmd_semphr;                                    // Semaphore between task and interrupt, using for synchronizing ISR and I2C task.
+    QueueHandle_t event_queue;                                       // I2C event queue
     uint32_t read_buf_pos;                                           // Read buffer position
     bool contains_read;                                              // Whether command array includes read operation, true: yes, otherwise, false.
     uint32_t read_len_static;                                        // Read static buffer length
     uint32_t w_r_size;                                               // The size send/receive last time.
     bool trans_over_buffer;                                          // Data length is more than hardware fifo length, needs interrupt.
     bool async_trans;                                                // asynchronous transaction, true after callback is installed.
-    volatile bool trans_done;                                                 // transaction command finish
+    bool ack_check_disable;                                          // Disable ACK check
+    volatile bool trans_done;                                        // transaction command finish
+    bool bypass_nack_log;                                             // Bypass the error log. Sometimes the error is expected.
     SLIST_HEAD(i2c_master_device_list_head, i2c_master_device_list) device_list;      // I2C device (instance) list
-    // asnyc trans members
+    // async trans members
     bool async_break;                                                // break transaction loop flag.
     i2c_addr_bit_len_t addr_10bits_bus;                              // Slave address is 10 bits.
     size_t queue_size;                                               // I2C transaction queue size.
@@ -163,7 +172,9 @@ struct i2c_master_dev_t {
     i2c_master_bus_t *master_bus;         // I2C master bus base class
     uint16_t device_address;              // I2C device address
     uint32_t scl_speed_hz;                // SCL clock frequency
+    uint32_t scl_wait_us;                // SCL await time (unit:us)
     i2c_addr_bit_len_t addr_10bits;       // Whether I2C device is a 10-bits address device.
+    bool ack_check_disable;               // Disable ACK check
     i2c_master_callback_t on_trans_done;  // I2C master transaction done callback.
     void *user_ctx;                       // Callback user context
 };
@@ -228,7 +239,7 @@ esp_err_t i2c_release_bus_handle(i2c_bus_handle_t i2c_bus);
  *      - ESP_ERR_INVALID_STATE: Set clock source failed because the clk_src is different from other I2C controller
  *      - ESP_FAIL: Set clock source failed because of other error
  */
-esp_err_t i2c_select_periph_clock(i2c_bus_handle_t handle, i2c_clock_source_t clk_src);
+esp_err_t i2c_select_periph_clock(i2c_bus_handle_t handle, soc_module_clk_t clk_src);
 
 /**
  * @brief Set I2C SCL/SDA pins

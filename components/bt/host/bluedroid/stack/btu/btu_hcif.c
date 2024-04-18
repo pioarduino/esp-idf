@@ -998,6 +998,16 @@ static void btu_hcif_hdl_command_complete (UINT16 opcode, UINT8 *p, UINT16 evt_l
     case HCI_WRITE_PAGE_TOUT:
         btm_set_page_timeout_complete(p);
         break;
+#if (ENC_KEY_SIZE_CTRL_MODE == ENC_KEY_SIZE_CTRL_MODE_STD)
+    case HCI_SET_MIN_ENC_KEY_SIZE:
+        btm_set_min_enc_key_size_complete(p);
+        break;
+#endif
+#if (ENC_KEY_SIZE_CTRL_MODE == ENC_KEY_SIZE_CTRL_MODE_VSC)
+    case HCI_VENDOR_BT_SET_MIN_ENC_KEY_SIZE:
+        btm_set_min_enc_key_size_complete(p);
+        break;
+#endif
 #endif
 
 #if (BLE_INCLUDED == TRUE)
@@ -1088,6 +1098,7 @@ static void btu_hcif_hdl_command_complete (UINT16 opcode, UINT8 *p, UINT16 evt_l
         btm_ble_set_addr_resolution_enable_complete(p, evt_len);
         break;
     case HCI_BLE_SET_RAND_PRIV_ADDR_TIMOUT:
+        btm_ble_set_rpa_timeout_complete(p, evt_len);
         break;
 #if (BLE_50_FEATURE_SUPPORT == TRUE)
     case HCI_BLE_SET_EXT_ADV_PARAM:

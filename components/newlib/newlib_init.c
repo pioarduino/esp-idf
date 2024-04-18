@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,46 +20,26 @@
 #include "esp_attr.h"
 #include "soc/soc_caps.h"
 #include "esp_rom_caps.h"
+#include "esp_rom_libc_stubs.h"
 #include "esp_private/startup_internal.h"
 
-#if CONFIG_IDF_TARGET_ESP32
-#include "esp32/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32S2
-#include "esp32s2/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32S3
-#include "esp32s3/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32C3
-#include "esp32c3/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32C2
-#include "esp32c2/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32C6
-#include "esp32c6/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32C5
-#include "esp32c5/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32H2
-#include "esp32h2/rom/libc_stubs.h"
-#elif CONFIG_IDF_TARGET_ESP32P4
-#include "esp32p4/rom/libc_stubs.h"
-#endif
-
 extern int _printf_float(struct _reent *rptr,
-               void *pdata,
-               FILE * fp,
-               int (*pfunc) (struct _reent *, FILE *, const char *, size_t len),
-               va_list * ap);
-
+                         void *pdata,
+                         FILE * fp,
+                         int (*pfunc)(struct _reent *, FILE *, const char *, size_t len),
+                         va_list * ap);
 
 extern int _scanf_float(struct _reent *rptr,
-              void *pdata,
-              FILE *fp,
-              va_list *ap);
+                        void *pdata,
+                        FILE *fp,
+                        va_list *ap);
 
 static void raise_r_stub(struct _reent *rptr)
 {
     _raise_r(rptr, 0);
 }
 
-static void esp_cleanup_r (struct _reent *rptr)
+static void esp_cleanup_r(struct _reent *rptr)
 {
     if (_REENT_STDIN(rptr) != _REENT_STDIN(_GLOBAL_REENT)) {
         _fclose_r(rptr, _REENT_STDIN(rptr));
@@ -69,7 +49,7 @@ static void esp_cleanup_r (struct _reent *rptr)
         _fclose_r(rptr, _REENT_STDOUT(rptr));
     }
 
-    if (_REENT_STDERR(rptr) !=_REENT_STDERR(_GLOBAL_REENT)) {
+    if (_REENT_STDERR(rptr) != _REENT_STDERR(_GLOBAL_REENT)) {
         _fclose_r(rptr, _REENT_STDERR(rptr));
     }
 }
@@ -96,9 +76,9 @@ static struct syscall_stub_table s_stub_table = {
     ._exit_r = NULL,    // never called in ROM
     ._close_r = &_close_r,
     ._open_r = &_open_r,
-    ._write_r = (int (*)(struct _reent *r, int, const void *, int)) &_write_r,
-    ._lseek_r = (int (*)(struct _reent *r, int, int, int)) &_lseek_r,
-    ._read_r = (int (*)(struct _reent *r, int, void *, int)) &_read_r,
+    ._write_r = (int (*)(struct _reent * r, int, const void *, int)) &_write_r,
+    ._lseek_r = (int (*)(struct _reent * r, int, int, int)) &_lseek_r,
+    ._read_r = (int (*)(struct _reent * r, int, void *, int)) &_read_r,
 #if ESP_ROM_HAS_RETARGETABLE_LOCKING
     ._retarget_lock_init = &__retarget_lock_init,
     ._retarget_lock_init_recursive = &__retarget_lock_init_recursive,
@@ -196,8 +176,7 @@ void esp_setup_newlib_syscalls(void) __attribute__((alias("esp_newlib_init")));
  */
 void esp_newlib_init_global_stdio(const char *stdio_dev)
 {
-    if (stdio_dev == NULL)
-    {
+    if (stdio_dev == NULL) {
         _GLOBAL_REENT->__cleanup = NULL;
         _REENT_SDIDINIT(_GLOBAL_REENT) = 0;
         __sinit(_GLOBAL_REENT);
@@ -216,7 +195,7 @@ void esp_newlib_init_global_stdio(const char *stdio_dev)
           file pointers. Thus, the ROM newlib code will never call the ROM version of __swsetup_r().
         - See IDFGH-7728 for more details
         */
-        extern int __swsetup_r (struct _reent *, FILE *);
+        extern int __swsetup_r(struct _reent *, FILE *);
         __swsetup_r(_GLOBAL_REENT, _REENT_STDIN(_GLOBAL_REENT));
         __swsetup_r(_GLOBAL_REENT, _REENT_STDOUT(_GLOBAL_REENT));
         __swsetup_r(_GLOBAL_REENT, _REENT_STDERR(_GLOBAL_REENT));

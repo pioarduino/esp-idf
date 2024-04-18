@@ -11,7 +11,13 @@ check_version:
   extends:
     - .pre_check_template
     - .rules:protected
-    - .before_script:fetch:git_describe
+  tags: [ brew, github_sync ]
+  variables:
+    # need a full clone to get the latest tag
+    # the --shallow-since=$(git log -1 --format=%as $LATEST_GIT_TAG) option is not accurate
+    GIT_STRATEGY: fetch
+    SUBMODULES_TO_FETCH: "none"
+    GIT_DEPTH: 0
   script:
     - export IDF_PATH=$PWD
     - tools/ci/check_idf_version.sh
@@ -19,7 +25,8 @@ check_version:
 check_api_usage:
   extends: .pre_check_template
   script:
-    - tools/ci/check_examples_rom_header.sh
+    - python -m pip install ast-grep-cli # use ast-grep to describe customized lint rules
+    - ast-grep scan
     - tools/ci/check_api_violation.sh
     - tools/ci/check_examples_extra_component_dirs.sh
 
@@ -48,21 +55,6 @@ check_blobs:
     # Check if Wi-Fi, PHY, BT blobs contain references to specific symbols
     - bash $IDF_PATH/tools/ci/check_blobs.sh
 
-check_public_headers:
-  extends:
-    - .pre_check_template
-    - .rules:build:check
-  script:
-    - IDF_TARGET=esp32 python tools/ci/check_public_headers.py --jobs 4 --prefix xtensa-esp32-elf-
-    - IDF_TARGET=esp32s2 python tools/ci/check_public_headers.py --jobs 4 --prefix xtensa-esp32s2-elf-
-    - IDF_TARGET=esp32s3 python tools/ci/check_public_headers.py --jobs 4 --prefix xtensa-esp32s3-elf-
-    - IDF_TARGET=esp32c3 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-    - IDF_TARGET=esp32c2 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-    - IDF_TARGET=esp32c6 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-    - IDF_TARGET=esp32c5 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-    - IDF_TARGET=esp32h2 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-    - IDF_TARGET=esp32p4 python tools/ci/check_public_headers.py --jobs 4 --prefix riscv32-esp-elf-
-
 check_chip_support_components:
   extends:
     - .pre_check_template
@@ -75,7 +67,7 @@ check_chip_support_components:
     expire_in: 1 week
   script:
     - python tools/ci/check_soc_headers_leak.py
-    - find ${IDF_PATH}/components/soc/*/include/soc/ -name "*_struct.h" -print0 | xargs -0 -n1 ./tools/ci/check_soc_struct_headers.py
+    - find ${IDF_PATH}/components/soc/**/include/soc/ -name "*_struct.h" -print0 | xargs -0 -n1 ./tools/ci/check_soc_struct_headers.py
     - tools/ci/check_esp_memory_utils_headers.sh
 
 check_esp_err_to_name:
@@ -106,7 +98,13 @@ check_version_tag:
   extends:
     - .pre_check_template
     - .rules:tag:release
-    - .before_script:fetch:git_describe
+  tags: [ brew, github_sync ]
+  variables:
+    # need a full clone to get the latest tag
+    # the --shallow-since=$(git log -1 --format=%as $LATEST_GIT_TAG) option is not accurate
+    GIT_STRATEGY: fetch
+    SUBMODULES_TO_FETCH: "none"
+    GIT_DEPTH: 0
   script:
     - (git cat-file -t $CI_COMMIT_REF_NAME | grep tag) || (echo "ESP-IDF versions must be annotated tags." && exit 1)
 
@@ -152,6 +150,11 @@ pipeline_variables:
       fi
     - |
       if echo "$CI_MERGE_REQUEST_LABELS" | egrep "(^|,)BUILD_AND_TEST_ALL_APPS(,|$)"; then
+        echo "BUILD_AND_TEST_ALL_APPS=1" >> pipeline.env
+      fi
+    # run full pipeline if testing constraint branch
+    - |
+      if [ -n "$CI_PYTHON_CONSTRAINT_BRANCH" ]; then
         echo "BUILD_AND_TEST_ALL_APPS=1" >> pipeline.env
       fi
     - cat pipeline.env

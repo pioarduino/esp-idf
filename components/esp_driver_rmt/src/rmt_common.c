@@ -19,7 +19,6 @@
 #include "soc/rmt_periph.h"
 #include "hal/rmt_ll.h"
 #include "driver/gpio.h"
-#include "esp_clk_tree.h"
 #include "esp_private/periph_ctrl.h"
 
 static const char *TAG = "rmt";
@@ -205,7 +204,6 @@ esp_err_t rmt_apply_carrier(rmt_channel_handle_t channel, const rmt_carrier_conf
 esp_err_t rmt_del_channel(rmt_channel_handle_t channel)
 {
     ESP_RETURN_ON_FALSE(channel, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
-    gpio_reset_pin(channel->gpio_num);
     return channel->del(channel);
 }
 

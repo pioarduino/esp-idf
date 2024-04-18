@@ -93,6 +93,8 @@
 #define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32C6
 #define REF_CLK_DIV_MIN 2
+#elif CONFIG_IDF_TARGET_ESP32C61
+#define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32C5
 #define REF_CLK_DIV_MIN 2
 #elif CONFIG_IDF_TARGET_ESP32H2
@@ -120,7 +122,7 @@ static uint32_t s_mode_mask;
 
 #define PERIPH_SKIP_LIGHT_SLEEP_NO 2
 
-/* Indicates if light sleep shoule be skipped by peripherals. */
+/* Indicates if light sleep should be skipped by peripherals. */
 static skip_light_sleep_cb_t s_periph_skip_light_sleep_cb[PERIPH_SKIP_LIGHT_SLEEP_NO];
 
 /* Indicates if light sleep entry was skipped in vApplicationSleep for given CPU.
@@ -370,7 +372,7 @@ static esp_err_t esp_pm_sleep_configure(const void *vconfig)
     esp_err_t err = ESP_OK;
     const esp_pm_config_t* config = (const esp_pm_config_t*) vconfig;
 
-#if SOC_PM_SUPPORT_CPU_PD
+#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
     err = sleep_cpu_configure(config->light_sleep_enable);
     if (err != ESP_OK) {
         return err;
@@ -468,6 +470,7 @@ esp_err_t esp_pm_configure(const void* vconfig)
     s_config_changed = true;
     portEXIT_CRITICAL(&s_switch_lock);
 
+    do_switch(PM_MODE_CPU_MAX);
     return ESP_OK;
 }
 
@@ -617,7 +620,7 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
 #endif
         portEXIT_CRITICAL_ISR(&s_switch_lock);
     } while (true);
-    if (new_mode == s_mode) {
+    if ((new_mode == s_mode) && !s_config_changed) {
         portEXIT_CRITICAL_ISR(&s_switch_lock);
         return;
     }

@@ -9,11 +9,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "esp_private/esp_ldo.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "esp_lcd_ili9881c.h"
+#include "esp_ldo_regulator.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -43,13 +43,17 @@ static const char *TAG = "example";
 //////////////////// Please update the following configuration according to your Board Design //////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// The "VDD_MIPI_DPHY" should be supplied with 2.5V, it can source from the integrated LDO unit or from external LDO chip
-#define EXAMPLE_MIPI_DSI_PHY_PWR_LDO_UNIT       3  // LDO_VO3 is connected to VDD_MIPI_DPHY
+// The "VDD_MIPI_DPHY" should be supplied with 2.5V, it can source from the internal LDO regulator or from external LDO chip
+#define EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN       3  // LDO_VO3 is connected to VDD_MIPI_DPHY
 #define EXAMPLE_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV 2500
 #define EXAMPLE_LCD_BK_LIGHT_ON_LEVEL           1
 #define EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL          !EXAMPLE_LCD_BK_LIGHT_ON_LEVEL
 #define EXAMPLE_PIN_NUM_BK_LIGHT                -1
 #define EXAMPLE_PIN_NUM_LCD_RST                 -1
+
+#if CONFIG_EXAMPLE_MONITOR_FPS_BY_GPIO
+#define EXAMPLE_PIN_NUM_FPS_MONITOR             20  // Monitor the FPS by toggling the GPIO
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////// Please update the following configuration according to your Application ///////////////////////////
@@ -64,17 +68,17 @@ static const char *TAG = "example";
 
 static SemaphoreHandle_t lvgl_api_mux = NULL;
 
-extern void example_lvgl_demo_ui(lv_disp_t *disp);
+extern void example_lvgl_demo_ui(lv_display_t *disp);
 
-static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
+static void example_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
     // pass the draw buffer to the driver
-    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
 }
 
 static void example_increase_lvgl_tick(void *arg)
@@ -118,25 +122,32 @@ static void example_lvgl_port_task(void *arg)
 
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_event_data_t *edata, void *user_ctx)
 {
-    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
-    lv_disp_flush_ready(disp_driver);
+    lv_display_t *disp = (lv_display_t *)user_ctx;
+    lv_display_flush_ready(disp);
     return false;
 }
+
+#if CONFIG_EXAMPLE_MONITOR_FPS_BY_GPIO
+static bool example_monitor_fps(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_event_data_t *edata, void *user_ctx)
+{
+    static int io_level = 0;
+    // please note, the real FPS should be 2*frequency of this GPIO toggling
+    gpio_set_level(EXAMPLE_PIN_NUM_FPS_MONITOR, io_level);
+    io_level = !io_level;
+    return false;
+}
+#endif
 
 static void example_bsp_enable_dsi_phy_power(void)
 {
     // Turn on the power for MIPI DSI PHY, so it can go from "No Power" state to "Shutdown" state
-    esp_ldo_unit_handle_t phy_pwr_unit = NULL;
-#if EXAMPLE_MIPI_DSI_PHY_PWR_LDO_UNIT > 0
-    esp_ldo_unit_init_cfg_t ldo_cfg = {
-        .unit_id = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_UNIT,
-        .cfg = {
-            .voltage_mv = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
-        },
+    esp_ldo_channel_handle_t ldo_mipi_phy = NULL;
+#ifdef EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN
+    esp_ldo_channel_config_t ldo_mipi_phy_config = {
+        .chan_id = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_CHAN,
+        .voltage_mv = EXAMPLE_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
     };
-    ESP_ERROR_CHECK(esp_ldo_init_unit(&ldo_cfg, &phy_pwr_unit));
-    ESP_ERROR_CHECK(esp_ldo_enable_unit(phy_pwr_unit));
-
+    ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_mipi_phy_config, &ldo_mipi_phy));
     ESP_LOGI(TAG, "MIPI DSI PHY Powered on");
 #endif
 }
@@ -159,10 +170,22 @@ static void example_bsp_set_lcd_backlight(uint32_t level)
 #endif
 }
 
+#if CONFIG_EXAMPLE_MONITOR_FPS_BY_GPIO
+static void example_bsp_init_fps_monitor_io(void)
+{
+    gpio_config_t monitor_io_conf = {
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_FPS_MONITOR,
+    };
+    ESP_ERROR_CHECK(gpio_config(&monitor_io_conf));
+}
+#endif
+
 void app_main(void)
 {
-    static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
-    static lv_disp_drv_t disp_drv;      // contains callback functions
+#if CONFIG_EXAMPLE_MONITOR_FPS_BY_GPIO
+    example_bsp_init_fps_monitor_io();
+#endif
 
     example_bsp_enable_dsi_phy_power();
     example_bsp_init_lcd_backlight();
@@ -190,7 +213,7 @@ void app_main(void)
     // create ILI9881C control panel
     esp_lcd_panel_handle_t ili9881c_ctrl_panel;
     esp_lcd_panel_dev_config_t lcd_dev_config = {
-        .bits_per_pixel = 16,
+        .bits_per_pixel = 24,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .reset_gpio_num = EXAMPLE_PIN_NUM_LCD_RST,
     };
@@ -205,7 +228,7 @@ void app_main(void)
         .virtual_channel = 0,
         .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
         .dpi_clock_freq_mhz = EXAMPLE_MIPI_DSI_DPI_CLK_MHZ,
-        .pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565,
+        .pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB888,
         .video_timing = {
             .h_size = EXAMPLE_MIPI_DSI_LCD_H_RES,
             .v_size = EXAMPLE_MIPI_DSI_LCD_V_RES,
@@ -221,36 +244,43 @@ void app_main(void)
 #endif
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_dpi(mipi_dsi_bus, &dpi_config, &mipi_dpi_panel));
-    // register event callbacks
-    esp_lcd_dpi_panel_event_callbacks_t cbs = {
-        .on_color_trans_done = example_notify_lvgl_flush_ready,
-    };
-    ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(mipi_dpi_panel, &cbs, &disp_drv));
     ESP_ERROR_CHECK(esp_lcd_panel_init(mipi_dpi_panel));
-
     // turn on backlight
     example_bsp_set_lcd_backlight(EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
 
     ESP_LOGI(TAG, "Initialize LVGL library");
     lv_init();
+    // create a lvgl display
+    lv_display_t *display = lv_display_create(EXAMPLE_MIPI_DSI_LCD_H_RES, EXAMPLE_MIPI_DSI_LCD_V_RES);
+    // associate the mipi panel handle to the display
+    lv_display_set_user_data(display, mipi_dpi_panel);
+    // create draw buffer
     void *buf1 = NULL;
     void *buf2 = NULL;
-    ESP_LOGI(TAG, "Allocate separate LVGL draw buffers from PSRAM");
-    buf1 = heap_caps_malloc(EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    ESP_LOGI(TAG, "Allocate separate LVGL draw buffers");
+    // Note:
+    // Keep the display buffer in **internal** RAM can speed up the UI because LVGL uses it a lot and it should have a fast access time
+    // This example allocate the buffer from PSRAM mainly because we want to save the internal RAM
+    size_t draw_buffer_sz = EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * sizeof(lv_color_t);
+    buf1 = heap_caps_malloc(draw_buffer_sz, MALLOC_CAP_SPIRAM);
     assert(buf1);
-    buf2 = heap_caps_malloc(EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    buf2 = heap_caps_malloc(draw_buffer_sz, MALLOC_CAP_SPIRAM);
     assert(buf2);
     // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_MIPI_DSI_LCD_H_RES * EXAMPLE_LVGL_DRAW_BUF_LINES);
+    lv_display_set_buffers(display, buf1, buf2, draw_buffer_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    // set color depth
+    lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB888);
+    // set the callback which can copy the rendered image to an area of the display
+    lv_display_set_flush_cb(display, example_lvgl_flush_cb);
 
-    // register display driver to LVGL library
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = EXAMPLE_MIPI_DSI_LCD_H_RES;
-    disp_drv.ver_res = EXAMPLE_MIPI_DSI_LCD_V_RES;
-    disp_drv.flush_cb = example_lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = mipi_dpi_panel;
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    ESP_LOGI(TAG, "Register DPI panel event callback for LVGL flush ready notification");
+    esp_lcd_dpi_panel_event_callbacks_t cbs = {
+        .on_color_trans_done = example_notify_lvgl_flush_ready,
+#if CONFIG_EXAMPLE_MONITOR_FPS_BY_GPIO
+        .on_refresh_done = example_monitor_fps,
+#endif
+    };
+    ESP_ERROR_CHECK(esp_lcd_dpi_panel_register_event_callbacks(mipi_dpi_panel, &cbs, display));
 
     ESP_LOGI(TAG, "Use esp_timer as LVGL tick timer");
     const esp_timer_create_args_t lvgl_tick_timer_args = {
@@ -271,7 +301,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Display LVGL Meter Widget");
     // Lock the mutex due to the LVGL APIs are not thread-safe
     if (example_lvgl_lock(-1)) {
-        example_lvgl_demo_ui(disp);
+        example_lvgl_demo_ui(display);
         // Release the mutex
         example_lvgl_unlock();
     }

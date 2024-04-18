@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,11 +25,13 @@
 #include "driver/rtc_io.h"
 #include "driver/uart_select.h"
 #include "driver/lp_io.h"
+#include "esp_private/gpio.h"
 #include "esp_private/uart_share_hw_ctrl.h"
 #include "esp_clk_tree.h"
 #include "sdkconfig.h"
 #include "esp_rom_gpio.h"
 #include "clk_ctrl_os.h"
+#include "esp_pm.h"
 
 #ifdef CONFIG_UART_ISR_IN_IRAM
 #define UART_ISR_ATTR     IRAM_ATTR
@@ -38,6 +40,14 @@
 #define UART_ISR_ATTR
 #define UART_MALLOC_CAPS  MALLOC_CAP_DEFAULT
 #endif
+
+// Whether to use the APB_MAX lock.
+// Requirement of each chip, to keep sending:
+// - ESP32, S2, C3, S3: Protect APB, which is the core clock and clock of UART FIFO
+// - ESP32-C2: Protect APB (UART FIFO clock), core clock (TODO: IDF-8348)
+// - ESP32-C6, H2 and later chips: Protect core clock. Run in light-sleep hasn't been developed yet (TODO: IDF-8349),
+//   also need to avoid auto light-sleep.
+#define PROTECT_APB     (CONFIG_PM_ENABLE)
 
 #define XOFF (0x13)
 #define XON (0x11)
@@ -85,7 +95,7 @@ static const char *UART_TAG = "uart";
 // Check actual UART mode set
 #define UART_IS_MODE_SET(uart_number, mode) ((p_uart_obj[uart_number]->uart_mode == mode))
 
-#define UART_CONTEX_INIT_DEF(uart_num) {\
+#define UART_CONTEXT_INIT_DEF(uart_num) {\
     .hal.dev = UART_LL_GET_HW(uart_num),\
     INIT_CRIT_SECTION_LOCK_IN_STRUCT(spinlock)\
     .hw_enabled = false,\
@@ -139,6 +149,9 @@ typedef struct {
     SemaphoreHandle_t tx_fifo_sem;      /*!< UART TX FIFO semaphore*/
     SemaphoreHandle_t tx_done_sem;      /*!< UART TX done semaphore*/
     SemaphoreHandle_t tx_brk_sem;       /*!< UART TX send break done semaphore*/
+#if PROTECT_APB
+    esp_pm_lock_handle_t pm_lock;   ///< Power management lock
+#endif
 } uart_obj_t;
 
 typedef struct {
@@ -150,19 +163,19 @@ typedef struct {
 static uart_obj_t *p_uart_obj[UART_NUM_MAX] = {0};
 
 static uart_context_t uart_context[UART_NUM_MAX] = {
-    UART_CONTEX_INIT_DEF(UART_NUM_0),
-    UART_CONTEX_INIT_DEF(UART_NUM_1),
+    UART_CONTEXT_INIT_DEF(UART_NUM_0),
+    UART_CONTEXT_INIT_DEF(UART_NUM_1),
 #if SOC_UART_HP_NUM > 2
-    UART_CONTEX_INIT_DEF(UART_NUM_2),
+    UART_CONTEXT_INIT_DEF(UART_NUM_2),
 #endif
 #if SOC_UART_HP_NUM > 3
-    UART_CONTEX_INIT_DEF(UART_NUM_3),
+    UART_CONTEXT_INIT_DEF(UART_NUM_3),
 #endif
 #if SOC_UART_HP_NUM > 4
-    UART_CONTEX_INIT_DEF(UART_NUM_4),
+    UART_CONTEXT_INIT_DEF(UART_NUM_4),
 #endif
 #if (SOC_UART_LP_NUM >= 1)
-    UART_CONTEX_INIT_DEF(LP_UART_NUM_0),
+    UART_CONTEXT_INIT_DEF(LP_UART_NUM_0),
 #endif
 };
 
@@ -678,7 +691,7 @@ esp_err_t uart_set_pin(uart_port_t uart_num, int tx_io_num, int rx_io_num, int r
     /* In the following statements, if the io_num is negative, no need to configure anything. */
     if (tx_io_num >= 0 && !uart_try_set_iomux_pin(uart_num, tx_io_num, SOC_UART_TX_PIN_IDX)) {
         if (uart_num < SOC_UART_HP_NUM) {
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[tx_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(tx_io_num, PIN_FUNC_GPIO);
             gpio_set_level(tx_io_num, 1);
             esp_rom_gpio_connect_out_signal(tx_io_num, UART_PERIPH_SIGNAL(uart_num, SOC_UART_TX_PIN_IDX), 0, 0);
         }
@@ -695,7 +708,7 @@ esp_err_t uart_set_pin(uart_port_t uart_num, int tx_io_num, int rx_io_num, int r
 
     if (rx_io_num >= 0 && !uart_try_set_iomux_pin(uart_num, rx_io_num, SOC_UART_RX_PIN_IDX)) {
         if (uart_num < SOC_UART_HP_NUM) {
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[rx_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(rx_io_num, PIN_FUNC_GPIO);
             gpio_set_pull_mode(rx_io_num, GPIO_PULLUP_ONLY);
             gpio_set_direction(rx_io_num, GPIO_MODE_INPUT);
             esp_rom_gpio_connect_in_signal(rx_io_num, UART_PERIPH_SIGNAL(uart_num, SOC_UART_RX_PIN_IDX), 0);
@@ -713,7 +726,7 @@ esp_err_t uart_set_pin(uart_port_t uart_num, int tx_io_num, int rx_io_num, int r
 
     if (rts_io_num >= 0 && !uart_try_set_iomux_pin(uart_num, rts_io_num, SOC_UART_RTS_PIN_IDX)) {
         if (uart_num < SOC_UART_HP_NUM) {
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[rts_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(rts_io_num, PIN_FUNC_GPIO);
             gpio_set_direction(rts_io_num, GPIO_MODE_OUTPUT);
             esp_rom_gpio_connect_out_signal(rts_io_num, UART_PERIPH_SIGNAL(uart_num, SOC_UART_RTS_PIN_IDX), 0, 0);
         }
@@ -729,7 +742,7 @@ esp_err_t uart_set_pin(uart_port_t uart_num, int tx_io_num, int rx_io_num, int r
 
     if (cts_io_num >= 0  && !uart_try_set_iomux_pin(uart_num, cts_io_num, SOC_UART_CTS_PIN_IDX)) {
         if (uart_num < SOC_UART_HP_NUM) {
-            gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[cts_io_num], PIN_FUNC_GPIO);
+            gpio_func_sel(cts_io_num, PIN_FUNC_GPIO);
             gpio_set_pull_mode(cts_io_num, GPIO_PULLUP_ONLY);
             gpio_set_direction(cts_io_num, GPIO_MODE_INPUT);
             esp_rom_gpio_connect_in_signal(cts_io_num, UART_PERIPH_SIGNAL(uart_num, SOC_UART_CTS_PIN_IDX), 0);
@@ -1270,15 +1283,19 @@ esp_err_t uart_wait_tx_done(uart_port_t uart_num, TickType_t ticks_to_wait)
     } else {
         ticks_to_wait = ticks_to_wait - (ticks_end - ticks_start);
     }
+
+#if PROTECT_APB
+    esp_pm_lock_acquire(p_uart_obj[uart_num]->pm_lock);
+#endif
     //take 2nd tx_done_sem, wait given from ISR
     res = xSemaphoreTake(p_uart_obj[uart_num]->tx_done_sem, (TickType_t)ticks_to_wait);
-    if (res == pdFALSE) {
-        // The TX_DONE interrupt will be disabled in ISR
-        xSemaphoreGive(p_uart_obj[uart_num]->tx_mux);
-        return ESP_ERR_TIMEOUT;
-    }
+#if PROTECT_APB
+    esp_pm_lock_release(p_uart_obj[uart_num]->pm_lock);
+#endif
+
+    // The TX_DONE interrupt will be disabled in ISR
     xSemaphoreGive(p_uart_obj[uart_num]->tx_mux);
-    return ESP_OK;
+    return (res == pdFALSE) ? ESP_ERR_TIMEOUT : ESP_OK;
 }
 
 int uart_tx_chars(uart_port_t uart_num, const char *buffer, uint32_t len)
@@ -1305,6 +1322,9 @@ static int uart_tx_all(uart_port_t uart_num, const char *src, size_t size, bool 
 
     //lock for uart_tx
     xSemaphoreTake(p_uart_obj[uart_num]->tx_mux, (TickType_t)portMAX_DELAY);
+#if PROTECT_APB
+    esp_pm_lock_acquire(p_uart_obj[uart_num]->pm_lock);
+#endif
     p_uart_obj[uart_num]->coll_det_flg = false;
     if (p_uart_obj[uart_num]->tx_buf_size > 0) {
         size_t max_size = xRingbufferGetMaxItemSize(p_uart_obj[uart_num]->tx_ring_buf);
@@ -1348,6 +1368,9 @@ static int uart_tx_all(uart_port_t uart_num, const char *src, size_t size, bool 
         }
         xSemaphoreGive(p_uart_obj[uart_num]->tx_fifo_sem);
     }
+#if PROTECT_APB
+    esp_pm_lock_release(p_uart_obj[uart_num]->pm_lock);
+#endif
     xSemaphoreGive(p_uart_obj[uart_num]->tx_mux);
     return original_size;
 }
@@ -1532,6 +1555,11 @@ static void uart_free_driver_obj(uart_obj_t *uart_obj)
     }
 
     heap_caps_free(uart_obj->rx_data_buf);
+#if PROTECT_APB
+    if (uart_obj->pm_lock) {
+        esp_pm_lock_delete(uart_obj->pm_lock);
+    }
+#endif
     heap_caps_free(uart_obj);
 }
 
@@ -1567,6 +1595,12 @@ static uart_obj_t *uart_alloc_driver_obj(uart_port_t uart_num, int event_queue_s
             !uart_obj->tx_done_sem || !uart_obj->tx_fifo_sem) {
         goto err;
     }
+#if PROTECT_APB
+    if (esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "uart_driver",
+                           &uart_obj->pm_lock) != ESP_OK) {
+        goto err;
+    }
+#endif
 
     return uart_obj;
 
@@ -1791,7 +1825,7 @@ esp_err_t uart_get_collision_flag(uart_port_t uart_num, bool *collision_flag)
 esp_err_t uart_set_wakeup_threshold(uart_port_t uart_num, int wakeup_threshold)
 {
     ESP_RETURN_ON_FALSE((uart_num < UART_NUM_MAX), ESP_ERR_INVALID_ARG, UART_TAG, "uart_num error");
-    ESP_RETURN_ON_FALSE((wakeup_threshold <= UART_THRESHOLD_NUM(uart_num, UART_ACTIVE_THRESHOLD_V) && wakeup_threshold > UART_MIN_WAKEUP_THRESH), ESP_ERR_INVALID_ARG, UART_TAG,
+    ESP_RETURN_ON_FALSE((wakeup_threshold <= UART_THRESHOLD_NUM(uart_num, UART_ACTIVE_THRESHOLD_V) && wakeup_threshold >= UART_MIN_WAKEUP_THRESH), ESP_ERR_INVALID_ARG, UART_TAG,
                         "wakeup_threshold out of bounds");
     UART_ENTER_CRITICAL(&(uart_context[uart_num].spinlock));
     uart_hal_set_wakeup_thrd(&(uart_context[uart_num].hal), wakeup_threshold);

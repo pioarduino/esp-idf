@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,12 +39,16 @@
 #include "ap/sta_info.h"
 #include "wps/wps_defs.h"
 #include "wps/wps.h"
+#if CONFIG_ESP_WIFI_ENABLE_ROAMING_APP
+#include "esp_roaming.h"
+#endif
 
 #ifdef CONFIG_DPP
 #include "common/dpp.h"
 #include "esp_dpp_i.h"
 #endif
 
+bool g_wpa_pmk_caching_disabled = 0;
 const wifi_osi_funcs_t *wifi_funcs;
 struct wpa_funcs *wpa_cb;
 
@@ -110,7 +114,7 @@ int wpa_config_bss(uint8_t *bssid)
 
     esp_wifi_get_macaddr_internal(0, mac);
     ret = wpa_set_bss((char *)mac, (char *)bssid, esp_wifi_sta_get_pairwise_cipher_internal(), esp_wifi_sta_get_group_cipher_internal(),
-                (char *)esp_wifi_sta_get_prof_password_internal(), ssid->ssid, ssid->len);
+                      (char *)esp_wifi_sta_get_prof_password_internal(), ssid->ssid, ssid->len);
     return ret;
 }
 
@@ -132,7 +136,7 @@ bool  wpa_attach(void)
 {
     bool ret = true;
     ret = wpa_sm_init();
-    if(ret) {
+    if (ret) {
         ret = (esp_wifi_register_eapol_txdonecb_internal(eapol_txcb) == ESP_OK);
     }
     esp_set_scan_ie();
@@ -163,8 +167,8 @@ bool wpa_ap_rx_eapol(void *hapd_data, void *sm_data, u8 *data, size_t data_len)
     int wps_type = esp_wifi_get_wps_type_internal();
 
     if ((wps_type == WPS_TYPE_PBC) ||
-	(wps_type == WPS_TYPE_PIN)) {
-	ieee802_1x_receive(hapd, sta->addr, data, data_len);
+            (wps_type == WPS_TYPE_PIN)) {
+        ieee802_1x_receive(hapd, sta->addr, data, data_len);
         return true;
     }
 #endif
@@ -281,27 +285,30 @@ static void wpa_sta_connected_cb(uint8_t *bssid)
 static void wpa_sta_disconnected_cb(uint8_t reason_code)
 {
     switch (reason_code) {
-        case WIFI_REASON_AUTH_EXPIRE:
-        case WIFI_REASON_NOT_AUTHED:
-        case WIFI_REASON_NOT_ASSOCED:
-        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-        case WIFI_REASON_INVALID_PMKID:
-        case WIFI_REASON_AUTH_FAIL:
-        case WIFI_REASON_ASSOC_FAIL:
-        case WIFI_REASON_CONNECTION_FAIL:
-        case WIFI_REASON_HANDSHAKE_TIMEOUT:
-            esp_wpa3_free_sae_data();
+    case WIFI_REASON_AUTH_EXPIRE:
+    case WIFI_REASON_NOT_AUTHED:
+    case WIFI_REASON_NOT_ASSOCED:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_INVALID_PMKID:
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_ASSOC_FAIL:
+    case WIFI_REASON_CONNECTION_FAIL:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        esp_wpa3_free_sae_data();
+        wpa_sta_clear_curr_pmksa();
+        wpa_sm_notify_disassoc(&gWpaSm);
+        break;
+    default:
+        if (g_wpa_pmk_caching_disabled) {
             wpa_sta_clear_curr_pmksa();
-            wpa_sm_notify_disassoc(&gWpaSm);
-            break;
-        default:
-            break;
+        }
+        break;
     }
 #ifdef CONFIG_OWE_STA
     owe_deinit();
 #endif /* CONFIG_OWE_STA */
 
-    supplicant_sta_disconn_handler();
+    supplicant_sta_disconn_handler(reason_code);
 }
 
 #ifdef CONFIG_ESP_WIFI_SOFTAP_SUPPORT
@@ -329,7 +336,7 @@ static int check_n_add_wps_sta(struct hostapd_data *hapd, struct sta_info *sta_i
 
     if (sta_info->eapol_sm) {
         wpa_printf(MSG_DEBUG, "considering station " MACSTR " for WPS", MAC2STR(sta_info->addr));
-        if (esp_send_assoc_resp(hapd, sta_info, sta_info->addr, WLAN_STATUS_SUCCESS, true, subtype) != WLAN_STATUS_SUCCESS) {
+        if (esp_send_assoc_resp(hapd, sta_info->addr, WLAN_STATUS_SUCCESS, true, subtype) != WLAN_STATUS_SUCCESS) {
             wpa_printf(MSG_ERROR, "failed to send assoc response " MACSTR, MAC2STR(sta_info->addr));
             return -1;
         }
@@ -339,7 +346,7 @@ static int check_n_add_wps_sta(struct hostapd_data *hapd, struct sta_info *sta_i
 }
 #endif
 
-static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len,u8 *rsnxe, u8 rsnxe_len, bool *pmf_enable, int subtype)
+static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len, u8 *rsnxe, u8 rsnxe_len, bool *pmf_enable, int subtype)
 {
     struct sta_info *sta_info = NULL;
     struct hostapd_data *hapd = hostapd_get_hapd_data();
@@ -348,52 +355,78 @@ static bool hostap_sta_join(void **sta, u8 *bssid, u8 *wpa_ie, u8 wpa_ie_len,u8 
         goto fail;
     }
 
-    if (*sta && !esp_wifi_ap_is_sta_sae_reauth_node(bssid)) {
-        ap_free_sta(hapd, *sta);
+    if (*sta) {
+        struct sta_info *old_sta = *sta;
+#ifdef CONFIG_SAE
+        if (old_sta->lock && os_semphr_take(old_sta->lock, 0) != TRUE) {
+            wpa_printf(MSG_INFO, "Ignore assoc request as softap is busy with sae calculation for station "MACSTR, MAC2STR(bssid));
+            if (esp_send_assoc_resp(hapd, bssid, WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY, rsnxe ? false : true, subtype) != WLAN_STATUS_SUCCESS) {
+                goto fail;
+            }
+            return false;
+        }
+#endif /* CONFIG_SAE */
+        if (!esp_wifi_ap_is_sta_sae_reauth_node(bssid)) {
+            ap_free_sta(hapd, old_sta);
+        }
+#ifdef CONFIG_SAE
+        else if (old_sta && old_sta->lock) {
+            sta_info = old_sta;
+            goto process_old_sta;
+        }
+#endif /* CONFIG_SAE */
     }
 
-    sta_info = ap_sta_add(hapd, bssid);
+    sta_info = ap_get_sta(hapd, bssid);
     if (!sta_info) {
-        wpa_printf(MSG_ERROR, "failed to add station " MACSTR, MAC2STR(bssid));
-        goto fail;
+        sta_info = ap_sta_add(hapd, bssid);
+        if (!sta_info) {
+            wpa_printf(MSG_ERROR, "failed to add station " MACSTR, MAC2STR(bssid));
+            goto fail;
+        }
     }
-
 #ifdef CONFIG_SAE
     if (sta_info->lock && os_semphr_take(sta_info->lock, 0) != TRUE) {
         wpa_printf(MSG_INFO, "Ignore assoc request as softap is busy with sae calculation for station "MACSTR, MAC2STR(bssid));
-        if (esp_send_assoc_resp(hapd, sta_info, bssid, WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY, rsnxe ? false : true, subtype) != WLAN_STATUS_SUCCESS) {
+        if (esp_send_assoc_resp(hapd, bssid, WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY, rsnxe ? false : true, subtype) != WLAN_STATUS_SUCCESS) {
             goto fail;
         }
         return false;
     }
+
+process_old_sta:
 #endif /* CONFIG_SAE */
 
 #ifdef CONFIG_WPS_REGISTRAR
     if (check_n_add_wps_sta(hapd, sta_info, wpa_ie, wpa_ie_len, pmf_enable, subtype) == 0) {
         if (sta_info->eapol_sm) {
-            *sta = sta_info;
-#ifdef CONFIG_SAE
-            if (sta_info->lock) {
-                os_semphr_give(sta_info->lock);
-            }
-#endif /* CONFIG_SAE */
-            return true;
+            goto done;
         }
     } else {
         goto fail;
     }
 #endif
     if (wpa_ap_join(sta_info, bssid, wpa_ie, wpa_ie_len, rsnxe, rsnxe_len, pmf_enable, subtype)) {
-        *sta = sta_info;
-#ifdef CONFIG_SAE
-        if (sta_info->lock) {
-            os_semphr_give(sta_info->lock);
-        }
-#endif /* CONFIG_SAE */
-        return true;
+        goto done;
+    } else {
+        goto fail;
     }
+done:
+    *sta = sta_info;
+#ifdef CONFIG_SAE
+    if (sta_info->lock) {
+        os_semphr_give(sta_info->lock);
+    }
+#endif /* CONFIG_SAE */
+    return true;
 
 fail:
+
+#ifdef CONFIG_SAE
+    if (sta_info && sta_info->lock) {
+        os_semphr_give(sta_info->lock);
+    }
+#endif /* CONFIG_SAE */
     esp_wifi_ap_deauth_internal(bssid, WLAN_REASON_PREV_AUTH_NOT_VALID);
     return false;
 }
@@ -455,6 +488,10 @@ int esp_supplicant_init(void)
     ret =  esp_wifi_internal_wapi_init();
 #endif
 
+#if CONFIG_ESP_WIFI_ENABLE_ROAMING_APP
+    init_roaming_app();
+#endif
+
     return ret;
 }
 
@@ -465,4 +502,10 @@ int esp_supplicant_deinit(void)
     eloop_destroy();
     wpa_cb = NULL;
     return esp_wifi_unregister_wpa_cb_internal();
+}
+
+esp_err_t esp_supplicant_disable_pmk_caching(bool disable)
+{
+    g_wpa_pmk_caching_disabled = disable;
+    return ESP_OK;
 }

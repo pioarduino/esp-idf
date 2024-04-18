@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -32,17 +32,21 @@
 #include "esp_cpu.h"
 #include "esp_private/wifi_os_adapter.h"
 #include "esp_private/wifi.h"
+#ifdef CONFIG_ESP_PHY_ENABLED
 #include "esp_phy_init.h"
+#include "phy_init_data.h"
+#endif
 #include "soc/dport_reg.h"
 #include "soc/rtc.h"
 #include "soc/syscon_reg.h"
-#include "phy_init_data.h"
 #include "esp_private/periph_ctrl.h"
 #include "esp_private/esp_clk.h"
 #include "nvs.h"
 #include "os.h"
 #include "esp_smartconfig.h"
+#ifdef CONFIG_ESP_COEX_ENABLED
 #include "private/esp_coexist_internal.h"
+#endif
 #include "esp_rom_sys.h"
 #include "esp32s2/rom/ets_sys.h"
 #include "private/esp_modem_wrapper.h"
@@ -58,10 +62,10 @@ extern void wifi_apb80m_release(void);
  If CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is enabled. Prefer to allocate a chunk of memory in SPIRAM firstly.
  If failed, try to allocate it in internal memory then.
  */
-IRAM_ATTR void *wifi_malloc( size_t size )
+IRAM_ATTR void *wifi_malloc(size_t size)
 {
 #if CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP
-    return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_DEFAULT|MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT|MALLOC_CAP_INTERNAL);
+    return heap_caps_malloc_prefer(size, 2, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
 #else
     return malloc(size);
 #endif
@@ -71,10 +75,10 @@ IRAM_ATTR void *wifi_malloc( size_t size )
  If CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is enabled. Prefer to allocate a chunk of memory in SPIRAM firstly.
  If failed, try to allocate it in internal memory then.
  */
-IRAM_ATTR void *wifi_realloc( void *ptr, size_t size )
+IRAM_ATTR void *wifi_realloc(void *ptr, size_t size)
 {
 #if CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP
-    return heap_caps_realloc_prefer(ptr, size, 2, MALLOC_CAP_DEFAULT|MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT|MALLOC_CAP_INTERNAL);
+    return heap_caps_realloc_prefer(ptr, size, 2, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
 #else
     return realloc(ptr, size);
 #endif
@@ -84,10 +88,10 @@ IRAM_ATTR void *wifi_realloc( void *ptr, size_t size )
  If CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is enabled. Prefer to allocate a chunk of memory in SPIRAM firstly.
  If failed, try to allocate it in internal memory then.
  */
-IRAM_ATTR void *wifi_calloc( size_t n, size_t size )
+IRAM_ATTR void *wifi_calloc(size_t n, size_t size)
 {
 #if CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP
-    return heap_caps_calloc_prefer(n, size, 2, MALLOC_CAP_DEFAULT|MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT|MALLOC_CAP_INTERNAL);
+    return heap_caps_calloc_prefer(n, size, 2, MALLOC_CAP_DEFAULT | MALLOC_CAP_SPIRAM, MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
 #else
     return calloc(n, size);
 #endif
@@ -99,23 +103,24 @@ static void * IRAM_ATTR wifi_zalloc_wrapper(size_t size)
     return ptr;
 }
 
-wifi_static_queue_t* wifi_create_queue( int queue_len, int item_size)
+wifi_static_queue_t* wifi_create_queue(int queue_len, int item_size)
 {
     wifi_static_queue_t *queue = NULL;
 
-    queue = (wifi_static_queue_t*)heap_caps_malloc(sizeof(wifi_static_queue_t), MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    queue = (wifi_static_queue_t*)heap_caps_malloc(sizeof(wifi_static_queue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!queue) {
         return NULL;
     }
 
 #if CONFIG_SPIRAM_USE_MALLOC
+    /* Wi-Fi still use internal RAM */
 
-    queue->storage = heap_caps_calloc(1, sizeof(StaticQueue_t) + (queue_len*item_size), MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    queue->storage = heap_caps_calloc(1, sizeof(StaticQueue_t) + (queue_len * item_size), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!queue->storage) {
         goto _error;
     }
 
-    queue->handle = xQueueCreateStatic( queue_len, item_size, ((uint8_t*)(queue->storage)) + sizeof(StaticQueue_t), (StaticQueue_t*)(queue->storage));
+    queue->handle = xQueueCreateStatic(queue_len, item_size, ((uint8_t*)(queue->storage)) + sizeof(StaticQueue_t), (StaticQueue_t*)(queue->storage));
 
     if (!queue->handle) {
         goto _error;
@@ -134,7 +139,7 @@ _error:
 
     return NULL;
 #else
-    queue->handle = xQueueCreate( queue_len, item_size);
+    queue->handle = xQueueCreate(queue_len, item_size);
     return queue;
 #endif
 }
@@ -246,7 +251,37 @@ static int32_t IRAM_ATTR mutex_unlock_wrapper(void *mutex)
 
 static void * queue_create_wrapper(uint32_t queue_len, uint32_t item_size)
 {
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+    /*
+     * Since release/v5.1, FreeRTOS has been updated to always use internal memory (i.e., DRAM)
+     * for dynamic memory allocation. Calling FreeRTOS creation functions (e.g., xTaskCreate(), xQueueCreate())
+     * will guarantee that the memory allocated for those tasks/objects is from internal memory.
+     * For more details, please refer to the Migration Guide in release/v5.1.
+     */
+#if CONFIG_SPIRAM_USE_MALLOC
+    /* Use xQueueCreateWithCaps() to allocate from SPIRAM */
+    return (void *)xQueueCreateWithCaps(queue_len, item_size, MALLOC_CAP_SPIRAM);
+#else
     return (void *)xQueueCreate(queue_len, item_size);
+#endif
+#else
+    return (void *)xQueueCreate(queue_len, item_size);
+#endif
+}
+
+static void queue_delete_wrapper(void *queue)
+{
+    if (queue) {
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+#if CONFIG_SPIRAM_USE_MALLOC
+        vQueueDeleteWithCaps(queue);
+#else
+        vQueueDelete(queue);
+#endif
+#else
+        vQueueDelete(queue);
+#endif
+    }
 }
 
 static int32_t queue_send_wrapper(void *queue, void *item, uint32_t block_time_tick)
@@ -361,17 +396,17 @@ static int get_time_wrapper(void *t)
 
 static void * IRAM_ATTR realloc_internal_wrapper(void *ptr, size_t size)
 {
-    return heap_caps_realloc(ptr, size, MALLOC_CAP_8BIT|MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    return heap_caps_realloc(ptr, size, MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 }
 
 static void * IRAM_ATTR calloc_internal_wrapper(size_t n, size_t size)
 {
-    return heap_caps_calloc(n, size, MALLOC_CAP_8BIT|MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    return heap_caps_calloc(n, size, MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 }
 
 static void * IRAM_ATTR zalloc_internal_wrapper(size_t size)
 {
-    void *ptr = heap_caps_calloc(1, size, MALLOC_CAP_8BIT|MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL);
+    void *ptr = heap_caps_calloc(1, size, MALLOC_CAP_8BIT | MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     return ptr;
 }
 
@@ -578,7 +613,7 @@ wifi_osi_funcs_t g_wifi_osi_funcs = {
     ._mutex_lock = mutex_lock_wrapper,
     ._mutex_unlock = mutex_unlock_wrapper,
     ._queue_create = queue_create_wrapper,
-    ._queue_delete = (void(*)(void *))vQueueDelete,
+    ._queue_delete = queue_delete_wrapper,
     ._queue_send = queue_send_wrapper,
     ._queue_send_from_isr = queue_send_from_isr_wrapper,
     ._queue_send_to_back = queue_send_to_back_wrapper,
@@ -587,8 +622,8 @@ wifi_osi_funcs_t g_wifi_osi_funcs = {
     ._queue_msg_waiting = (uint32_t(*)(void *))uxQueueMessagesWaiting,
     ._event_group_create = (void *(*)(void))xEventGroupCreate,
     ._event_group_delete = (void(*)(void *))vEventGroupDelete,
-    ._event_group_set_bits = (uint32_t(*)(void *,uint32_t))xEventGroupSetBits,
-    ._event_group_clear_bits = (uint32_t(*)(void *,uint32_t))xEventGroupClearBits,
+    ._event_group_set_bits = (uint32_t(*)(void *, uint32_t))xEventGroupSetBits,
+    ._event_group_clear_bits = (uint32_t(*)(void *, uint32_t))xEventGroupClearBits,
     ._event_group_wait_bits = event_group_wait_bits_wrapper,
     ._task_create_pinned_to_core = task_create_pinned_to_core_wrapper,
     ._task_create = task_create_wrapper,

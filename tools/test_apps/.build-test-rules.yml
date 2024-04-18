@@ -20,18 +20,18 @@ tools/test_apps/build_system/ld_non_contiguous_memory:
   disable:
     - if: SOC_MEM_NON_CONTIGUOUS_SRAM != 1
 
-tools/test_apps/linux_compatible/driver_mock:
+tools/test_apps/linux_compatible/generic_build_test:
   enable:
-    - if: IDF_TARGET == "linux"
+    - if: IDF_TARGET in ["esp32", "esp32c3", "linux"]
+  depends_components:
+    - log
 
 tools/test_apps/linux_compatible/linux_freertos:
   enable:
     - if: IDF_TARGET == "linux"
 
-tools/test_apps/linux_compatible/wifi_build_test:
+tools/test_apps/linux_compatible/mock_build_test:
   enable:
-    - if: IDF_TARGET == "linux"
-  disable_test:
     - if: IDF_TARGET == "linux"
 
 tools/test_apps/peripherals/i2c_wifi:
@@ -128,15 +128,10 @@ tools/test_apps/storage/sdmmc_console:
 
 tools/test_apps/system/bootloader_sections:
   disable:
-    - if: IDF_TARGET == "esp32c2"
-      temporary: true
-      reason: target esp32c2 is not supported yet
+    - if: CONFIG_NAME == "rtc_retain" and SOC_RTC_FAST_MEM_SUPPORTED != 1
 
 tools/test_apps/system/build_test:
   disable:
-    # For ROM impl build tests, disable them if none of the tested features are supported in the ROM
-    - if: CONFIG_NAME == "rom_impl_components" and ((ESP_ROM_HAS_HAL_WDT != 1  and ESP_ROM_HAS_HAL_SYSTIMER != 1) and (ESP_ROM_HAS_HEAP_TLSF != 1 and ESP_ROM_HAS_SPI_FLASH != 1))
-    - if: CONFIG_NAME == "no_rom_impl_components" and ((ESP_ROM_HAS_HAL_WDT != 1 and ESP_ROM_HAS_HAL_SYSTIMER != 1) and (ESP_ROM_HAS_HEAP_TLSF != 1 and ESP_ROM_HAS_SPI_FLASH != 1))
     - if: CONFIG_NAME == "no_rvfplib" and ESP_ROM_HAS_RVFPLIB != 1
     - if: CONFIG_NAME == "usb_serial_jtag" AND SOC_USB_SERIAL_JTAG_SUPPORTED != 1
     - if: CONFIG_NAME == "usb_console_ets_printf" AND SOC_USB_OTG_SUPPORTED != 1
@@ -160,15 +155,9 @@ tools/test_apps/system/eh_frame:
       temporary: true
       reason: the other targets are not tested yet
 
-tools/test_apps/system/esp_intr_dump:
-  disable_test:
-    - if: IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: test not pass, should be re-enable # TODO: IDF-8991
-
 tools/test_apps/system/g0_components:
   enable:
-    - if: INCLUDE_DEFAULT == 1 or IDF_TARGET in ["esp32p4", "esp32c5"] # preview targets
+    - if: INCLUDE_DEFAULT == 1 or IDF_TARGET in ["esp32p4", "esp32c5", "esp32c61"] # preview targets
 
 tools/test_apps/system/g1_components:
 
@@ -211,12 +200,14 @@ tools/test_apps/system/no_embedded_paths:
       reason: the other targets are not tested yet
 
 tools/test_apps/system/panic:
-  disable:
-    - if: IDF_TARGET in ["esp32p4"]
-      temporary: true
-      reason: target(s) not supported yet # TODO: IDF-7511
+  enable:
+    - if: INCLUDE_DEFAULT == 1 or IDF_TARGET in ["esp32p4"] # preview targets
 
 tools/test_apps/system/ram_loadable_app:
+  disable:
+    - if: IDF_TARGET == "esp32c5"
+      temporary: true
+      reason: not supported  # TODO: [ESP32C5] IDF-8644
   disable_test:
     - if: IDF_TARGET in ["esp32p4"]
       temporary: true

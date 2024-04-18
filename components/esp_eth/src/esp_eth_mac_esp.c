@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <sys/cdefs.h>
 #include <stdarg.h>
+#include <inttypes.h>
 #include "esp_private/periph_ctrl.h"
 #include "esp_attr.h"
 #include "esp_log.h"
@@ -39,6 +40,8 @@ static const char *TAG = "esp.emac";
 #define MAC_STOP_TIMEOUT_US             (2500) // this is absolute maximum for 10Mbps, it is 10 times faster for 100Mbps
 #define FLOW_CONTROL_LOW_WATER_MARK     (CONFIG_ETH_DMA_RX_BUFFER_NUM / 3)
 #define FLOW_CONTROL_HIGH_WATER_MARK    (FLOW_CONTROL_LOW_WATER_MARK * 2)
+
+#define EMAC_ALLOW_INTR_PRIORITY_MASK   ESP_INTR_FLAG_LOWMED
 
 #define RMII_CLK_HZ                     (50000000)
 #define RMII_10M_SPEED_RX_TX_CLK_DIV    (19)
@@ -217,7 +220,7 @@ static esp_err_t emac_esp32_set_speed(esp_eth_mac_t *mac, eth_speed_t speed)
         }
 #endif
         emac_hal_set_speed(&emac->hal, speed);
-        ESP_LOGD(TAG, "working in %dMbps", speed == ETH_SPEED_10M ? 10 : 100);
+        ESP_LOGD(TAG, "working in %iMbps", speed == ETH_SPEED_10M ? 10 : 100);
         return ESP_OK;
     }
     return ret;
@@ -334,7 +337,7 @@ static void emac_esp32_rx_task(void *arg)
                     ESP_LOGE(TAG, "received frame was truncated");
                     free(buffer);
                 } else {
-                    ESP_LOGD(TAG, "receive len= %d", recv_len);
+                    ESP_LOGD(TAG, "receive len= %" PRIu32, recv_len);
                     emac->eth->stack_input(emac->eth, buffer, recv_len);
                 }
                 /* if allocation failed and there is a waiting frame */
@@ -368,7 +371,7 @@ static esp_err_t emac_config_pll_clock(emac_esp32_t *emac)
     esp_err_t ret = periph_rtc_apll_freq_set(expt_freq, &real_freq);
     ESP_RETURN_ON_FALSE(ret != ESP_ERR_INVALID_ARG, ESP_FAIL, TAG, "Set APLL clock coefficients failed");
     if (ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "APLL is occupied already, it is working at %d Hz", real_freq);
+        ESP_LOGW(TAG, "APLL is occupied already, it is working at %" PRIu32 " Hz", real_freq);
     }
 #elif CONFIG_IDF_TARGET_ESP32P4
     // the RMII reference comes from the MPLL
@@ -376,7 +379,7 @@ static esp_err_t emac_config_pll_clock(emac_esp32_t *emac)
     emac->use_pll = true;
     esp_err_t ret = periph_rtc_mpll_freq_set(expt_freq * 2, &real_freq); // cannot set 50MHz at MPLL, the nearest possible freq is 100 MHz
     if (ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "MPLL is occupied already, it is working at %d Hz", real_freq);
+        ESP_LOGW(TAG, "MPLL is occupied already, it is working at %" PRIu32 " Hz", real_freq);
     }
     // Set divider of MPLL clock
     if (real_freq > RMII_CLK_HZ) {
@@ -388,7 +391,7 @@ static esp_err_t emac_config_pll_clock(emac_esp32_t *emac)
 #endif
     // If the difference of real RMII CLK frequency is not within 50 ppm, i.e. 2500 Hz, the (A/M)PLL is unusable
     ESP_RETURN_ON_FALSE(abs((int)real_freq - (int)expt_freq) <= 2500,
-                        ESP_ERR_INVALID_STATE, TAG, "The (A/M)PLL is working at an unusable frequency %lu Hz", real_freq);
+                        ESP_ERR_INVALID_STATE, TAG, "The (A/M)PLL is working at an unusable frequency %" PRIu32 " Hz", real_freq);
     return ESP_OK;
 }
 
@@ -651,7 +654,7 @@ static esp_err_t esp_emac_config_data_interface(const eth_esp32_emac_config_t *e
         }
         break;
     default:
-        ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC Data Interface:%d", esp32_emac_config->interface);
+        ESP_GOTO_ON_FALSE(false, ESP_ERR_INVALID_ARG, err, TAG, "invalid EMAC Data Interface:%i", esp32_emac_config->interface);
     }
 err:
     return ret;
@@ -663,6 +666,11 @@ esp_eth_mac_t *esp_eth_mac_new_esp32(const eth_esp32_emac_config_t *esp32_config
     esp_eth_mac_t *ret = NULL;
     emac_esp32_t *emac = NULL;
     ESP_RETURN_ON_FALSE(config, NULL, TAG, "can't set mac config to null");
+    if (esp32_config->intr_priority > 0) {
+        ESP_RETURN_ON_FALSE(1 << (esp32_config->intr_priority) & EMAC_ALLOW_INTR_PRIORITY_MASK, NULL,
+                            TAG, "invalid interrupt priority: %d", esp32_config->intr_priority);
+    }
+
     ret_code = esp_emac_alloc_driver_obj(config, &emac);
     ESP_RETURN_ON_FALSE(ret_code == ESP_OK, NULL, TAG, "alloc driver object failed");
 
@@ -674,14 +682,19 @@ esp_eth_mac_t *esp_eth_mac_new_esp32(const eth_esp32_emac_config_t *esp32_config
     }
     /* initialize hal layer driver */
     emac_hal_init(&emac->hal);
+
     /* alloc interrupt */
-    if (config->flags & ETH_MAC_FLAG_WORK_WITH_CACHE_DISABLE) {
-        ret_code = esp_intr_alloc(ETS_ETH_MAC_INTR_SOURCE, ESP_INTR_FLAG_IRAM,
-                                  emac_isr_default_handler, &emac->hal, &(emac->intr_hdl));
+    int isr_flags = 0;
+    if (esp32_config->intr_priority > 0) {
+        isr_flags |= 1 << (esp32_config->intr_priority);
     } else {
-        ret_code = esp_intr_alloc(ETS_ETH_MAC_INTR_SOURCE, 0,
-                                  emac_isr_default_handler, &emac->hal, &(emac->intr_hdl));
+        isr_flags |= ESP_INTR_FLAG_LOWMED;
     }
+    if (config->flags & ETH_MAC_FLAG_WORK_WITH_CACHE_DISABLE) {
+        isr_flags |= ESP_INTR_FLAG_IRAM;
+    }
+    ret_code = esp_intr_alloc(ETS_ETH_MAC_INTR_SOURCE, isr_flags,
+                              emac_isr_default_handler, &emac->hal, &(emac->intr_hdl));
     ESP_GOTO_ON_FALSE(ret_code == ESP_OK, NULL, err, TAG, "alloc emac interrupt failed");
 
 #ifdef SOC_EMAC_USE_IO_MUX

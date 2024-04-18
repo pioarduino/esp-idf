@@ -409,7 +409,7 @@ TEST_CASE("Touch Sensor reading test (SW, Timer, filter)", "[touch]")
 }
 
 /*
- * Test the base patameter mode.
+ * Test the base parameter mode.
  * TEST POINT:
  * 1. measure time and sleep time setting.
  * 2. Charge / incharge voltage threshold setting.
@@ -735,7 +735,7 @@ static esp_err_t test_touch_check_ch_intr_timeout(touch_pad_t pad_num)
                     touch_pad_timeout_resume();
                     break;
                 } else {
-                    esp_rom_printf("-timeout %x T[%"PRIu32"] status %"PRIx32", evt_msk %x -\n",
+                    esp_rom_printf("-timeout %" PRIx32 " T[%"PRIu32"] status %"PRIx32", evt_msk %x -\n",
                                    s_touch_timeout_mask, evt.pad_num, evt.pad_status, evt.intr_mask);
                     touch_pad_timeout_resume();
                 }
@@ -1287,7 +1287,7 @@ esp_err_t test_touch_filter_parameter_jitter(int jitter_step)
     return ESP_OK;
 }
 
-TEST_CASE("Touch Sensor filter paramter test (debounce, reset, jitter)", "[touch]")
+TEST_CASE("Touch Sensor filter parameter test (debounce, reset, jitter)", "[touch]")
 {
     ESP_LOGI(TAG, "*********** touch filter debounce test ********************");
     TEST_ESP_OK(test_touch_filter_parameter_debounce(0));
@@ -1994,7 +1994,7 @@ TEST_CASE("Touch Sensor sleep pad wakeup deep sleep test", "[touch][ignore]")
 #include "touch_scope.h"
 /*
  * 0: 10 channels raw/smooth/benchmark data debug.
- * 1: 5  channges smooth + benchmark data debug.
+ * 1: 5  changes smooth + benchmark data debug.
  * 2: 1  channels filter data.
  */
 #define SCOPE_DEBUG_TYPE            2

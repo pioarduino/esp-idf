@@ -18,7 +18,7 @@
 
 #include "aes/esp_aes.h"
 #include "aes/esp_aes_gcm.h"
-#include "aes/esp_aes_internal.h"
+#include "esp_aes_internal.h"
 #include "hal/aes_hal.h"
 
 #include "mbedtls/aes.h"
@@ -370,21 +370,22 @@ int esp_aes_gcm_starts( esp_gcm_context *ctx,
                         const unsigned char *iv,
                         size_t iv_len )
 {
+    if (!ctx) {
+        ESP_LOGE(TAG, "No AES context supplied");
+        return MBEDTLS_ERR_GCM_BAD_INPUT;
+    }
+
 #if defined(MBEDTLS_GCM_NON_AES_CIPHER_SOFT_FALLBACK)
     if (ctx->ctx_soft != NULL) {
         return mbedtls_gcm_starts_soft(ctx->ctx_soft, mode, iv, iv_len);
     }
 #endif
+
     /* IV is limited to 2^32 bits, so 2^29 bytes */
     /* IV is not allowed to be zero length */
     if ( iv_len == 0 ||
             ( (uint32_t) iv_len  ) >> 29 != 0 ) {
         return ( MBEDTLS_ERR_GCM_BAD_INPUT );
-    }
-
-    if (!ctx) {
-        ESP_LOGE(TAG, "No AES context supplied");
-        return MBEDTLS_ERR_GCM_BAD_INPUT;
     }
 
     if (!iv) {
@@ -441,19 +442,20 @@ int esp_aes_gcm_update_ad( esp_gcm_context *ctx,
                            const unsigned char *aad,
                            size_t aad_len )
 {
+    if (!ctx) {
+        ESP_LOGE(TAG, "No AES context supplied");
+        return MBEDTLS_ERR_GCM_BAD_INPUT;
+    }
+
 #if defined(MBEDTLS_GCM_NON_AES_CIPHER_SOFT_FALLBACK)
     if (ctx->ctx_soft != NULL) {
         return mbedtls_gcm_update_ad_soft(ctx->ctx_soft, aad, aad_len);
     }
 #endif
+
     /* AD are limited to 2^32 bits, so 2^29 bytes */
     if ( ( (uint32_t) aad_len ) >> 29 != 0 ) {
         return ( MBEDTLS_ERR_GCM_BAD_INPUT );
-    }
-
-    if (!ctx) {
-        ESP_LOGE(TAG, "No AES context supplied");
-        return MBEDTLS_ERR_GCM_BAD_INPUT;
     }
 
     if ( (aad_len > 0) && !aad) {
@@ -481,11 +483,17 @@ int esp_aes_gcm_update( esp_gcm_context *ctx,
                         unsigned char *output, size_t output_size,
                         size_t *output_length )
 {
+    if (!ctx) {
+        ESP_LOGE(TAG, "No GCM context supplied");
+        return MBEDTLS_ERR_GCM_BAD_INPUT;
+    }
+
 #if defined(MBEDTLS_GCM_NON_AES_CIPHER_SOFT_FALLBACK)
     if (ctx->ctx_soft != NULL) {
         return mbedtls_gcm_update_soft(ctx->ctx_soft, input, input_length, output, output_size, output_length);
     }
 #endif
+
     size_t nc_off = 0;
     uint8_t nonce_counter[AES_BLOCK_BYTES] = {0};
     uint8_t stream[AES_BLOCK_BYTES] = {0};
@@ -496,10 +504,6 @@ int esp_aes_gcm_update( esp_gcm_context *ctx,
     }
     *output_length = input_length;
 
-    if (!ctx) {
-        ESP_LOGE(TAG, "No GCM context supplied");
-        return MBEDTLS_ERR_GCM_BAD_INPUT;
-    }
     if (!input) {
         ESP_LOGE(TAG, "No input supplied");
         return MBEDTLS_ERR_GCM_BAD_INPUT;
@@ -582,7 +586,7 @@ int esp_aes_gcm_finish( esp_gcm_context *ctx,
 /* Due to restrictions in the hardware (e.g. need to do the whole conversion in one go),
    some combinations of inputs are not supported */
 static bool esp_aes_gcm_input_support_hw_accel(size_t length, const unsigned char *aad, size_t aad_len,
-                                               const unsigned char *input, unsigned char *output, uint8_t *stream_in)
+                                               const unsigned char *input, unsigned char *output)
 {
     bool support_hw_accel = true;
 
@@ -596,10 +600,6 @@ static bool esp_aes_gcm_input_support_hw_accel(size_t length, const unsigned cha
         support_hw_accel = false;
     } else if (!esp_ptr_dma_capable(output) && length > 0) {
         /* output in non internal DMA memory */
-        support_hw_accel = false;
-    } else if (!esp_ptr_dma_capable(stream_in)) {
-        /* Stream in (and therefor other descriptors and buffers that come from the stack)
-           in non internal DMA memory */
         support_hw_accel = false;
     } else if (length == 0) {
         support_hw_accel = false;
@@ -656,6 +656,11 @@ int esp_aes_gcm_crypt_and_tag( esp_gcm_context *ctx,
                                size_t tag_len,
                                unsigned char *tag )
 {
+    if (!ctx) {
+        ESP_LOGE(TAG, "No AES context supplied");
+        return MBEDTLS_ERR_GCM_BAD_INPUT;
+    }
+
 #if defined(MBEDTLS_GCM_NON_AES_CIPHER_SOFT_FALLBACK)
     if (ctx->ctx_soft != NULL) {
         return mbedtls_gcm_crypt_and_tag_soft(ctx->ctx_soft, mode, length, iv, iv_len, aad, aad_len, input, output, tag_len, tag);
@@ -663,22 +668,20 @@ int esp_aes_gcm_crypt_and_tag( esp_gcm_context *ctx,
 #endif
 #if CONFIG_MBEDTLS_HARDWARE_GCM
     int ret;
-    lldesc_t aad_desc[2] = {};
-    lldesc_t *aad_head_desc = NULL;
     size_t remainder_bit;
-    uint8_t stream_in[AES_BLOCK_BYTES] = {};
-    unsigned stream_bytes = aad_len % AES_BLOCK_BYTES; // bytes which aren't in a full block
-    unsigned block_bytes = aad_len - stream_bytes;     // bytes which are in a full block
 
     /* Due to hardware limition only certain cases are fully supported in HW */
-    if (!esp_aes_gcm_input_support_hw_accel(length, aad, aad_len, input, output, stream_in)) {
+    if (!esp_aes_gcm_input_support_hw_accel(length, aad, aad_len, input, output)) {
         return esp_aes_gcm_crypt_and_tag_partial_hw(ctx, mode, length, iv, iv_len, aad, aad_len, input, output, tag_len, tag);
     }
 
-    /* Limit aad len to a single DMA descriptor to simplify DMA handling
-       In practice, e.g. with mbedtls the length of aad will always be short
+    /*  Limit aad len to a single DMA descriptor to simplify DMA handling
+        In practice, e.g. with mbedtls the length of aad will always be short
+        the size field has 12 bits, but 0 not for 4096.
+        to avoid possible problem when the size is not word-aligned, we only use 4096-4 per desc.
+        Maximum size of data in the buffer that a DMA descriptor can hold.
     */
-    if (aad_len > LLDESC_MAX_NUM_PER_DESC) {
+    if (aad_len > DMA_DESCRIPTOR_BUFFER_MAX_SIZE_4B_ALIGNED) {
         return MBEDTLS_ERR_GCM_BAD_INPUT;
     }
     /* IV and AD are limited to 2^32 bits, so 2^29 bytes */
@@ -687,11 +690,6 @@ int esp_aes_gcm_crypt_and_tag( esp_gcm_context *ctx,
             ( (uint32_t) iv_len  ) >> 29 != 0 ||
             ( (uint32_t) aad_len ) >> 29 != 0 ) {
         return ( MBEDTLS_ERR_GCM_BAD_INPUT );
-    }
-
-    if (!ctx) {
-        ESP_LOGE(TAG, "No AES context supplied");
-        return MBEDTLS_ERR_GCM_BAD_INPUT;
     }
 
     if (!iv) {
@@ -718,29 +716,6 @@ int esp_aes_gcm_crypt_and_tag( esp_gcm_context *ctx,
     ctx->aes_ctx.key_in_hardware = 0;
     ctx->aes_ctx.key_in_hardware = aes_hal_setkey(ctx->aes_ctx.key, ctx->aes_ctx.key_bytes, mode);
 
-    if (block_bytes > 0) {
-        aad_desc[0].length = block_bytes;
-        aad_desc[0].size = block_bytes;
-        aad_desc[0].owner = 1;
-        aad_desc[0].buf = aad;
-    }
-
-    if (stream_bytes > 0) {
-        memcpy(stream_in, aad + block_bytes, stream_bytes);
-
-        aad_desc[0].empty = (uint32_t)&aad_desc[1];
-        aad_desc[1].length = AES_BLOCK_BYTES;
-        aad_desc[1].size = AES_BLOCK_BYTES;
-        aad_desc[1].owner = 1;
-        aad_desc[1].buf = stream_in;
-    }
-
-    if (block_bytes > 0) {
-        aad_head_desc = &aad_desc[0];
-    } else if (stream_bytes > 0) {
-        aad_head_desc = &aad_desc[1];
-    }
-
     aes_hal_mode_init(ESP_AES_BLOCK_MODE_GCM);
 
     /* See TRM GCM chapter for description of this calculation */
@@ -753,7 +728,7 @@ int esp_aes_gcm_crypt_and_tag( esp_gcm_context *ctx,
 
     aes_hal_gcm_set_j0(ctx->J0);
 
-    ret = esp_aes_process_dma_gcm(&ctx->aes_ctx, input, output, length, aad_head_desc, aad_len);
+    ret = esp_aes_process_dma_gcm(&ctx->aes_ctx, input, output, length, aad, aad_len);
     if (ret != 0) {
         esp_aes_release_hardware();
         return ret;

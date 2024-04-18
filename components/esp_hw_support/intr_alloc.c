@@ -630,7 +630,7 @@ esp_err_t esp_intr_alloc_intrstatus(int source, int flags, uint32_t intrstatusre
         esp_intr_disable(ret);
     }
 
-#ifdef SOC_CPU_HAS_FLEXIBLE_INTC
+#if SOC_CPU_HAS_FLEXIBLE_INTC
     //Extract the level from the interrupt passed flags
     int level = esp_intr_flags_to_level(flags);
     esp_cpu_intr_set_priority(intr, level);
@@ -640,6 +640,11 @@ esp_err_t esp_intr_alloc_intrstatus(int source, int flags, uint32_t intrstatusre
     } else {
         esp_cpu_intr_set_type(intr, ESP_CPU_INTR_TYPE_LEVEL);
     }
+#endif
+
+#if SOC_INT_PLIC_SUPPORTED
+    /* Make sure the interrupt is not delegated to user mode (IDF uses machine mode only) */
+    RV_CLEAR_CSR(mideleg, BIT(intr));
 #endif
 
     portEXIT_CRITICAL(&spinlock);
@@ -966,6 +971,7 @@ esp_err_t esp_intr_dump(FILE *stream)
             if (vd == NULL) {
                 fprintf(stream, "   *      *    ");
             } else {
+                // # TODO: IDF-9512
                 // esp_cpu_intr_get_* functions need to be extended with cpu parameter.
                 // Showing info for the current cpu only, in the meantime.
                 if (esp_cpu_get_core_id() == cpu) {

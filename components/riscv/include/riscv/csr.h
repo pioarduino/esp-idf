@@ -78,7 +78,7 @@ extern "C" {
     do {                                                                           \
         ESP_STATIC_ASSERT(__builtin_popcount((SIZE)) == 1, "Size must be a power of 2"); \
         ESP_STATIC_ASSERT((ADDR) % ((SIZE)) == 0, "Addr must be aligned to size"); \
-        RV_WRITE_CSR((CSR_PMAADDR0) + (ENTRY), ((ADDR) | ((SIZE >> 1) - 1)) >> 2); \
+        RV_WRITE_CSR((CSR_PMAADDR0) + (ENTRY), ((ADDR) | (((SIZE) >> 1) - 1)) >> 2); \
         RV_WRITE_CSR((CSR_PMACFG0) + (ENTRY), CFG);                                \
     } while (0)
 
@@ -119,7 +119,7 @@ extern "C" {
      generate specific assembly instructions.
    - ADDR is the address to write to the PMPADDRx register. Note this is the unshifted address.
    - CFG is the configuration value to write to the correct CFG entry register. Note that
-     the macro only sets bits in the CFG register, so it sould be zeroed already.
+     the macro only sets bits in the CFG register, so it should be zeroed already.
 */
 #define PMP_ENTRY_SET(ENTRY, ADDR, CFG) do {  \
     RV_WRITE_CSR((CSR_PMPADDR0) + (ENTRY), (ADDR) >> (PMP_SHIFT));    \
@@ -181,6 +181,9 @@ extern "C" {
 
 #define RV_SET_CSR_FIELD(_r, _f, _v) ({ (RV_WRITE_CSR((_r),((RV_READ_CSR(_r) & ~((_f##_V) << (_f##_S)))|(((_v) & (_f##_V))<<(_f##_S)))));})
 #define RV_CLEAR_CSR_FIELD(_r, _f) ({ (RV_WRITE_CSR((_r),(RV_READ_CSR(_r) & ~((_f##_V) << (_f##_S)))));})
+
+#define RV_READ_MSTATUS_AND_DISABLE_INTR() ({ unsigned long __tmp; \
+  asm volatile ("csrrci %0, mstatus, 0x8"  : "=r"(__tmp)); __tmp; })
 
 #define _CSR_STRINGIFY(REG) #REG /* needed so the 'reg' argument can be a macro or a register name */
 

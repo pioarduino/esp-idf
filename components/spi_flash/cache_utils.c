@@ -35,6 +35,10 @@
 #include "esp32c6/rom/cache.h"
 #include "soc/extmem_reg.h"
 #include "soc/ext_mem_defs.h"
+#elif CONFIG_IDF_TARGET_ESP32C61    //TODO: IDF-9526, refactor this
+#include "esp32c61/rom/cache.h"
+#include "soc/cache_reg.h"
+#include "soc/ext_mem_defs.h"
 #elif CONFIG_IDF_TARGET_ESP32H2
 #include "esp32h2/rom/cache.h"
 #include "soc/extmem_reg.h"
@@ -48,12 +52,11 @@
 #include <soc/soc.h>
 #include "sdkconfig.h"
 #ifndef CONFIG_FREERTOS_UNICORE
-#include "esp_ipc.h"
+#include "esp_private/esp_ipc.h"
 #endif
 #include "esp_attr.h"
 #include "esp_memory_utils.h"
 #include "esp_intr_alloc.h"
-#include "spi_flash_mmap.h"
 #include "spi_flash_override.h"
 #include "esp_private/spi_flash_os.h"
 #include "esp_private/freertos_idf_additions_priv.h"
@@ -88,9 +91,9 @@ static inline bool esp_task_stack_is_sane_cache_disabled(void)
 
     return esp_ptr_in_dram(sp)
 #if CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP
-        || esp_ptr_in_rtc_dram_fast(sp)
+           || esp_ptr_in_rtc_dram_fast(sp)
 #endif
-    ;
+           ;
 }
 
 void spi_flash_init_lock(void)
@@ -118,7 +121,7 @@ void spi_flash_op_unlock(void)
 void IRAM_ATTR spi_flash_op_block_func(void *arg)
 {
     // Disable scheduler on this CPU
-#ifdef CONFIG_FREERTOS_SMP
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     /*
     Note: FreeRTOS SMP has changed the behavior of scheduler suspension. But the vTaskPreemptionDisable() function should
     achieve the same affect as before (i.e., prevent the current task from being preempted).
@@ -126,7 +129,7 @@ void IRAM_ATTR spi_flash_op_block_func(void *arg)
     vTaskPreemptionDisable(NULL);
 #else
     vTaskSuspendAll();
-#endif // CONFIG_FREERTOS_SMP
+#endif // #if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     // Restore interrupts that aren't located in IRAM
     esp_intr_noniram_disable();
     uint32_t cpuid = (uint32_t) arg;
@@ -142,13 +145,13 @@ void IRAM_ATTR spi_flash_op_block_func(void *arg)
     spi_flash_restore_cache(cpuid, s_flash_op_cache_state[cpuid]);
     // Restore interrupts that aren't located in IRAM
     esp_intr_noniram_enable();
-#ifdef CONFIG_FREERTOS_SMP
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     //Note: Scheduler suspension behavior changed in FreeRTOS SMP
     vTaskPreemptionEnable(NULL);
 #else
     // Re-enable scheduler
     xTaskResumeAll();
-#endif // CONFIG_FREERTOS_SMP
+#endif // #if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
 }
 
 void IRAM_ATTR spi_flash_disable_interrupts_caches_and_other_cpu(void)
@@ -157,8 +160,8 @@ void IRAM_ATTR spi_flash_disable_interrupts_caches_and_other_cpu(void)
 
     spi_flash_op_lock();
 
-    const int cpuid = xPortGetCoreID();
-    const uint32_t other_cpuid = (cpuid == 0) ? 1 : 0;
+    int cpuid = xPortGetCoreID();
+    uint32_t other_cpuid = (cpuid == 0) ? 1 : 0;
 #ifndef NDEBUG
     // For sanity check later: record the CPU which has started doing flash operation
     assert(s_flash_op_cpu == -1);
@@ -173,33 +176,41 @@ void IRAM_ATTR spi_flash_disable_interrupts_caches_and_other_cpu(void)
         // esp_intr_noniram_disable.
         assert(other_cpuid == 1);
     } else {
-        // Temporarily raise current task priority to prevent a deadlock while
-        // waiting for IPC task to start on the other CPU
-        prvTaskSavedPriority_t SavedPriority;
-        prvTaskPriorityRaise(&SavedPriority, configMAX_PRIORITIES - 1);
-
-        // Signal to the spi_flash_op_block_task on the other CPU that we need it to
-        // disable cache there and block other tasks from executing.
-        s_flash_op_can_start = false;
-        ESP_ERROR_CHECK(esp_ipc_call(other_cpuid, &spi_flash_op_block_func, (void *) other_cpuid));
+        bool ipc_call_was_send_to_other_cpu;
+        do {
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
+            //Note: Scheduler suspension behavior changed in FreeRTOS SMP
+            vTaskPreemptionDisable(NULL);
+#else
+            // Disable scheduler on the current CPU
+            vTaskSuspendAll();
+#endif
+            cpuid = xPortGetCoreID();
+            other_cpuid = (cpuid == 0) ? 1 : 0;
+#ifndef NDEBUG
+            s_flash_op_cpu = cpuid;
+#endif
+            s_flash_op_can_start = false;
+            ipc_call_was_send_to_other_cpu = esp_ipc_call_nonblocking(other_cpuid, &spi_flash_op_block_func, (void *) other_cpuid) == ESP_OK;
+            if (!ipc_call_was_send_to_other_cpu) {
+                // IPC call was not send to other cpu because another nonblocking API is running now.
+                // Enable the Scheduler again will not help the IPC to speed it up
+                // but there is a benefit to schedule to a higher priority task before the nonblocking running IPC call is done.
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
+                //Note: Scheduler suspension behavior changed in FreeRTOS SMP
+                vTaskPreemptionEnable(NULL);
+#else
+                xTaskResumeAll();
+#endif
+            }
+        } while (!ipc_call_was_send_to_other_cpu);
 
         while (!s_flash_op_can_start) {
             // Busy loop and wait for spi_flash_op_block_func to disable cache
             // on the other CPU
         }
-#ifdef CONFIG_FREERTOS_SMP
-        //Note: Scheduler suspension behavior changed in FreeRTOS SMP
-        vTaskPreemptionDisable(NULL);
-#else
-        // Disable scheduler on the current CPU
-        vTaskSuspendAll();
-#endif // CONFIG_FREERTOS_SMP
-        // Can now set the priority back to the normal one
-        prvTaskPriorityRestore(&SavedPriority);
-        // This is guaranteed to run on CPU <cpuid> because the other CPU is now
-        // occupied by highest priority task
-        assert(xPortGetCoreID() == cpuid);
     }
+
     // Kill interrupts that aren't located in IRAM
     esp_intr_noniram_disable();
     // This CPU executes this routine, with non-IRAM interrupts and the scheduler
@@ -248,12 +259,12 @@ void IRAM_ATTR spi_flash_enable_interrupts_caches_and_other_cpu(void)
     // But esp_intr_noniram_enable has to be called on the same CPU which
     // called esp_intr_noniram_disable
     if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
-#ifdef CONFIG_FREERTOS_SMP
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
         //Note: Scheduler suspension behavior changed in FreeRTOS SMP
         vTaskPreemptionEnable(NULL);
 #else
         xTaskResumeAll();
-#endif // CONFIG_FREERTOS_SMP
+#endif // #if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     }
     // Release API lock
     spi_flash_op_unlock();
@@ -290,26 +301,26 @@ void spi_flash_init_lock(void)
 
 void spi_flash_op_lock(void)
 {
-#ifdef CONFIG_FREERTOS_SMP
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
         //Note: Scheduler suspension behavior changed in FreeRTOS SMP
         vTaskPreemptionDisable(NULL);
     }
 #else
     vTaskSuspendAll();
-#endif // CONFIG_FREERTOS_SMP
+#endif // #if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
 }
 
 void spi_flash_op_unlock(void)
 {
-#ifdef CONFIG_FREERTOS_SMP
+#if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
     if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
         //Note: Scheduler suspension behavior changed in FreeRTOS SMP
         vTaskPreemptionEnable(NULL);
     }
 #else
     xTaskResumeAll();
-#endif // CONFIG_FREERTOS_SMP
+#endif // #if ( ( CONFIG_FREERTOS_SMP ) && ( !CONFIG_FREERTOS_UNICORE ) )
 }
 
 
@@ -490,7 +501,7 @@ esp_err_t esp_enable_cache_wrap(bool icache_wrap_enable, bool dcache_wrap_enable
     int i;
     bool flash_spiram_wrap_together, flash_support_wrap = true, spiram_support_wrap = true;
     uint32_t drom0_in_icache = 1;//always 1 in esp32s2
-#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C2 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C2 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32C61 //TODO: [ESP32C61] IDF-9253
     drom0_in_icache = 0;
 #endif
 
@@ -922,7 +933,7 @@ esp_err_t esp_enable_cache_wrap(bool icache_wrap_enable)
 
 #if CONFIG_IDF_TARGET_ESP32P4
 //TODO: IDF-5670
-void esp_config_l2_cache_mode(void)
+void IRAM_ATTR esp_config_l2_cache_mode(void)
 {
     cache_size_t cache_size;
     cache_line_size_t cache_line_size;

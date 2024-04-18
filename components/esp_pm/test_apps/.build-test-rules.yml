@@ -1,7 +1,11 @@
 # Documentation: .gitlab/ci/README.md#manifest-file-to-control-the-buildtest-apps
 
 components/esp_pm/test_apps:
-  disable_test:
-    - if: IDF_TARGET == "esp32p4"
+  enable:
+    - if: INCLUDE_DEFAULT == 1
+  disable:
+    - if: IDF_TARGET == "esp32c5"
       temporary: true
-      reason: test not pass, should be re-enable # TODO: IDF-8976
+      reason: not support yet # TODO: [ESP32C5] IDF-8643
+  depends_components:
+    - esp_pm

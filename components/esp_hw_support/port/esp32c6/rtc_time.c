@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "esp32c6/rom/ets_sys.h"
 #include "soc/rtc.h"
+#include "soc/pcr_reg.h"
 #include "hal/lp_timer_hal.h"
 #include "hal/clk_tree_ll.h"
 #include "hal/timer_ll.h"
@@ -80,7 +81,7 @@ static uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cyc
 
     /* Enable requested clock (150k clock is always on) */
     // All clocks on/off takes time to be stable, so we shouldn't frequently enable/disable the clock
-    // Only enable if orignally was disabled, and set back to the disable state after calibration is done
+    // Only enable if originally was disabled, and set back to the disable state after calibration is done
     // If the clock is already on, then do nothing
     bool dig_32k_xtal_enabled = clk_ll_xtal32k_digi_is_enabled();
     if (cal_clk == RTC_CAL_32K_XTAL && !dig_32k_xtal_enabled) {
@@ -154,10 +155,13 @@ static uint32_t rtc_clk_cal_internal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cyc
 
             /*The Fosc CLK of calibration circuit is divided by 32 for ECO1.
               So we need to multiply the frequency of the Fosc for ECO1 and above chips by 32 times.
-              And ensure that this modification will not affect ECO0.*/
+              And ensure that this modification will not affect ECO0.
+              And the 32-divider belongs to REF_TICK module, so we need to enable its clock during
+              calibration. */
             if (ESP_CHIP_REV_ABOVE(efuse_hal_chip_revision(), 1)) {
                 if (cal_clk == RTC_CAL_RC_FAST) {
                     cal_val = cal_val >> 5;
+                    CLEAR_PERI_REG_MASK(PCR_CTRL_TICK_CONF_REG, PCR_TICK_ENABLE);
                 }
             }
             break;
@@ -218,6 +222,7 @@ uint32_t rtc_clk_cal(rtc_cal_sel_t cal_clk, uint32_t slowclk_cycles)
     if (ESP_CHIP_REV_ABOVE(efuse_hal_chip_revision(), 1)) {
         if (cal_clk == RTC_CAL_RC_FAST) {
             slowclk_cycles = slowclk_cycles >> 5;
+            SET_PERI_REG_MASK(PCR_CTRL_TICK_CONF_REG, PCR_TICK_ENABLE);
         }
     }
 
@@ -278,9 +283,7 @@ static void enable_timer_group0_for_calibration(void)
         }
     }
 #else
-    // no critical section is needed for bootloader
-    int __DECLARE_RCC_RC_ATOMIC_ENV;
-    timer_ll_enable_bus_clock(0, true);
-    timer_ll_reset_register(0);
+    _timer_ll_enable_bus_clock(0, true);
+    _timer_ll_reset_register(0);
 #endif
 }

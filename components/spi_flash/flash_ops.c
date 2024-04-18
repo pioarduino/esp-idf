@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -41,6 +41,8 @@
 #include "esp32c2/rom/cache.h"
 #elif CONFIG_IDF_TARGET_ESP32C6
 #include "esp32c6/rom/cache.h"
+#elif CONFIG_IDF_TARGET_ESP32C61
+#include "esp32c61/rom/cache.h"
 #endif
 #include "esp_rom_spiflash.h"
 #include "esp_flash_partitions.h"
@@ -153,7 +155,7 @@ void IRAM_ATTR esp_mspi_pin_init(void)
     for (esp_mspi_io_t i = 0; i < ESP_MSPI_IO_MAX; i++) {
         reserve_pin_mask |= BIT64(esp_mspi_get_io(i));
     }
-    esp_gpio_reserve_pins(reserve_pin_mask);
+    esp_gpio_reserve(reserve_pin_mask);
 }
 
 esp_err_t IRAM_ATTR spi_flash_init_chip_state(void)

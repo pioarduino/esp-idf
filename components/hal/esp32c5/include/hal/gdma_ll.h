@@ -8,6 +8,8 @@
 #include <stddef.h> /* Required for NULL constant */
 #include <stdint.h>
 #include <stdbool.h>
+#include "soc/soc_caps.h"
+#if SOC_GDMA_SUPPORTED  // TODO: [ESP32C5] IDF-8710
 #include "hal/gdma_types.h"
 #include "soc/gdma_struct.h"
 #include "soc/gdma_reg.h"
@@ -96,6 +98,8 @@ extern "C" {
 
 // TODO: Workaround for C5-beta3 only. C5-mp can still vectorized channels into an array in gdma_struct.h
 #define GDMA_LL_CHANNEL_GET_REG_ADDR(dev, ch)      ((volatile gdma_chn_reg_t*[]){&dev->channel0, &dev->channel1, &dev->channel2}[(ch)])
+
+#define GDMA_LL_AHB_DESC_ALIGNMENT    4
 
 ///////////////////////////////////// Common /////////////////////////////////////////
 
@@ -625,3 +629,5 @@ static inline void gdma_ll_tx_enable_etm_task(gdma_dev_t *dev, uint32_t channel,
 #ifdef __cplusplus
 }
 #endif
+
+#endif  // SOC_GDMA_SUPPORTED

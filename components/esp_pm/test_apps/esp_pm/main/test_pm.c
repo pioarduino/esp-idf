@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -54,12 +54,8 @@ static void switch_freq(int mhz)
         .min_freq_mhz = MIN(mhz, xtal_freq_mhz),
     };
     ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
-    printf("Waiting for frequency to be set to %d MHz...\n", mhz);
-    while (esp_clk_cpu_freq() / MHZ != mhz)
-    {
-        vTaskDelay(pdMS_TO_TICKS(200));
-        printf("Frequency is %d MHz\n", esp_clk_cpu_freq() / MHZ);
-    }
+    TEST_ASSERT_EQUAL_UINT32(mhz, esp_clk_cpu_freq() / MHZ);
+    printf("Frequency is %d MHz\n", esp_clk_cpu_freq() / MHZ);
 }
 
 #if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
@@ -69,6 +65,8 @@ static const int test_freqs[] = {32, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, 64, 48, 32
 #elif CONFIG_IDF_TARGET_ESP32C2
 static const int test_freqs[] = {CONFIG_XTAL_FREQ, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, 80, CONFIG_XTAL_FREQ, 80,
                                  CONFIG_XTAL_FREQ / 2, CONFIG_XTAL_FREQ}; // C2 xtal has 40/26MHz option
+#elif CONFIG_IDF_TARGET_ESP32P4
+static const int test_freqs[] = {40, CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, 90, 40, 90, 10, 90, 20, 40, 360, 90, 180, 90, 40};
 #else
 static const int test_freqs[] = {240, 40, 160, 240, 80, 40, 240, 40, 80, 10, 80, 20, 40};
 #endif
@@ -154,7 +152,7 @@ TEST_CASE("Automatic light occurs when tasks are suspended", "[pm]")
         const int us_per_tick = 1 * portTICK_PERIOD_MS * 1000;
 
         printf("%d %d\n", ticks_to_delay * us_per_tick, timer_diff_us);
-        TEST_ASSERT(timer_diff_us < ticks_to_delay * us_per_tick);
+        TEST_ASSERT(timer_diff_us <= ticks_to_delay * us_per_tick);
     }
 
     light_sleep_disable();

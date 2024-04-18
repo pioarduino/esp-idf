@@ -28,9 +28,6 @@
 #include "driver/rmt_rx.h"
 #include "rmt_private.h"
 
-#define ALIGN_UP(num, align)    (((num) + ((align) - 1)) & ~((align) - 1))
-#define ALIGN_DOWN(num, align)  ((num) & ~((align) - 1))
-
 static const char *TAG = "rmt";
 
 static esp_err_t rmt_del_rx_channel(rmt_channel_handle_t channel);
@@ -146,6 +143,9 @@ static void rmt_rx_unregister_from_group(rmt_channel_t *channel, rmt_group_t *gr
 
 static esp_err_t rmt_rx_destroy(rmt_rx_channel_t *rx_channel)
 {
+    if (rx_channel->base.gpio_num >= 0) {
+        gpio_reset_pin(rx_channel->base.gpio_num);
+    }
     if (rx_channel->base.intr) {
         ESP_RETURN_ON_ERROR(esp_intr_free(rx_channel->base.intr), TAG, "delete interrupt service failed");
     }
@@ -177,21 +177,23 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
     rmt_rx_channel_t *rx_channel = NULL;
     // Check if priority is valid
     if (config->intr_priority) {
-        ESP_GOTO_ON_FALSE((config->intr_priority) > 0, ESP_ERR_INVALID_ARG, err, TAG, "invalid interrupt priority:%d", config->intr_priority);
-        ESP_GOTO_ON_FALSE(1 << (config->intr_priority) & RMT_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, err, TAG, "invalid interrupt priority:%d", config->intr_priority);
+        ESP_RETURN_ON_FALSE((config->intr_priority) > 0, ESP_ERR_INVALID_ARG, TAG, "invalid interrupt priority:%d", config->intr_priority);
+        ESP_RETURN_ON_FALSE(1 << (config->intr_priority) & RMT_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, TAG, "invalid interrupt priority:%d", config->intr_priority);
     }
-    ESP_GOTO_ON_FALSE(config && ret_chan && config->resolution_hz, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument");
-    ESP_GOTO_ON_FALSE(GPIO_IS_VALID_GPIO(config->gpio_num), ESP_ERR_INVALID_ARG, err, TAG, "invalid GPIO number");
-    ESP_GOTO_ON_FALSE((config->mem_block_symbols & 0x01) == 0 && config->mem_block_symbols >= SOC_RMT_MEM_WORDS_PER_CHANNEL,
-                      ESP_ERR_INVALID_ARG, err, TAG, "mem_block_symbols must be even and at least %d", SOC_RMT_MEM_WORDS_PER_CHANNEL);
+    ESP_RETURN_ON_FALSE(config && ret_chan && config->resolution_hz, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
+    ESP_RETURN_ON_FALSE(GPIO_IS_VALID_GPIO(config->gpio_num), ESP_ERR_INVALID_ARG, TAG, "invalid GPIO number %d", config->gpio_num);
+    ESP_RETURN_ON_FALSE((config->mem_block_symbols & 0x01) == 0 && config->mem_block_symbols >= SOC_RMT_MEM_WORDS_PER_CHANNEL,
+                        ESP_ERR_INVALID_ARG, TAG, "mem_block_symbols must be even and at least %d", SOC_RMT_MEM_WORDS_PER_CHANNEL);
 #if !SOC_RMT_SUPPORT_DMA
-    ESP_GOTO_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, err, TAG, "DMA not supported");
+    ESP_RETURN_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, TAG, "DMA not supported");
 #endif // SOC_RMT_SUPPORT_DMA
 
     // malloc channel memory
     uint32_t mem_caps = RMT_MEM_ALLOC_CAPS;
     rx_channel = heap_caps_calloc(1, sizeof(rmt_rx_channel_t), mem_caps);
     ESP_GOTO_ON_FALSE(rx_channel, ESP_ERR_NO_MEM, err, TAG, "no mem for rx channel");
+    // gpio is not configured yet
+    rx_channel->base.gpio_num = -1;
     // create DMA descriptor
     size_t num_dma_nodes = 0;
     if (config->flags.with_dma) {
@@ -202,10 +204,20 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
         uint32_t data_cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
         // the alignment should meet both the DMA and cache requirement
         size_t alignment = MAX(data_cache_line_size, RMT_DMA_DESC_ALIGN);
-        rx_channel->dma_nodes = heap_caps_aligned_calloc(alignment, num_dma_nodes, sizeof(rmt_dma_descriptor_t), mem_caps);
-        ESP_GOTO_ON_FALSE(rx_channel->dma_nodes, ESP_ERR_NO_MEM, err, TAG, "no mem for rx channel DMA nodes");
+        size_t dma_nodes_size = ALIGN_UP(num_dma_nodes * sizeof(rmt_dma_descriptor_t), alignment);
+        rmt_dma_descriptor_t *dma_nodes =  heap_caps_aligned_calloc(alignment, 1, dma_nodes_size, mem_caps);
+        ESP_GOTO_ON_FALSE(dma_nodes, ESP_ERR_NO_MEM, err, TAG, "no mem for rx channel DMA nodes");
+        rx_channel->dma_nodes = dma_nodes;
+        // do memory sync only when the data cache exists
+        if (data_cache_line_size) {
+            // write back and then invalidate the cached dma_nodes, we will skip the cache (by non-cacheable address) when access the dma_nodes
+            // even the cache auto-write back happens, there's no risk the dma_nodes will be overwritten
+            ESP_GOTO_ON_ERROR(esp_cache_msync(dma_nodes, dma_nodes_size,
+                                              ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE),
+                              err, TAG, "cache sync failed");
+        }
         // we will use the non-cached address to manipulate the DMA descriptor, for simplicity
-        rx_channel->dma_nodes_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(rx_channel->dma_nodes);
+        rx_channel->dma_nodes_nc = (rmt_dma_descriptor_t *)RMT_GET_NON_CACHE_ADDR(dma_nodes);
     }
     rx_channel->num_dma_nodes = num_dma_nodes;
     // register the channel to group
@@ -253,6 +265,13 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
         ESP_LOGW(TAG, "channel resolution loss, real=%"PRIu32, rx_channel->base.resolution_hz);
     }
 
+    rx_channel->filter_clock_resolution_hz = group->resolution_hz;
+    // On esp32 and esp32s2, the counting clock used by the RX filter always comes from APB clock
+    // no matter what the clock source is used by the RMT channel as the "core" clock
+#if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2
+    esp_clk_tree_src_get_freq_hz(SOC_MOD_CLK_APB, ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &rx_channel->filter_clock_resolution_hz);
+#endif
+
     rmt_ll_rx_set_mem_blocks(hal->regs, channel_id, rx_channel->base.mem_block_num);
     rmt_ll_rx_set_mem_owner(hal->regs, channel_id, RMT_LL_MEM_OWNER_HW);
 #if SOC_RMT_SUPPORT_RX_PINGPONG
@@ -261,25 +280,25 @@ esp_err_t rmt_new_rx_channel(const rmt_rx_channel_config_t *config, rmt_channel_
     rmt_ll_rx_enable_wrap(hal->regs, channel_id, true);
 #endif
 #if SOC_RMT_SUPPORT_RX_DEMODULATION
-    // disable carrier demodulation by default, can reenable by `rmt_apply_carrier()`
+    // disable carrier demodulation by default, can re-enable by `rmt_apply_carrier()`
     rmt_ll_rx_enable_carrier_demodulation(hal->regs, channel_id, false);
 #endif
 
     // GPIO Matrix/MUX configuration
-    rx_channel->base.gpio_num = config->gpio_num;
     gpio_config_t gpio_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         // also enable the input path is `io_loop_back` is on, this is useful for debug
         .mode = GPIO_MODE_INPUT | (config->flags.io_loop_back ? GPIO_MODE_OUTPUT : 0),
         .pull_down_en = false,
         .pull_up_en = true,
-        .pin_bit_mask = 1ULL << config->gpio_num,
+        .pin_bit_mask = BIT64(config->gpio_num),
     };
+    // gpio_config also connects the IO_MUX to the GPIO matrix
     ESP_GOTO_ON_ERROR(gpio_config(&gpio_conf), err, TAG, "config GPIO failed");
+    rx_channel->base.gpio_num = config->gpio_num;
     esp_rom_gpio_connect_in_signal(config->gpio_num,
                                    rmt_periph_signals.groups[group_id].channels[channel_id + RMT_RX_CHANNEL_OFFSET_IN_GROUP].rx_sig,
                                    config->flags.invert_in);
-    gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[config->gpio_num], PIN_FUNC_GPIO);
 
     // initialize other members of rx channel
     portMUX_INITIALIZE(&rx_channel->base.spinlock);
@@ -343,14 +362,17 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
 {
     ESP_RETURN_ON_FALSE_ISR(channel && buffer && buffer_size && config, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
     ESP_RETURN_ON_FALSE_ISR(channel->direction == RMT_CHANNEL_DIRECTION_RX, ESP_ERR_INVALID_ARG, TAG, "invalid channel direction");
+#if !SOC_RMT_SUPPORT_RX_PINGPONG
+    ESP_RETURN_ON_FALSE_ISR(!config->flags.en_partial_rx, ESP_ERR_NOT_SUPPORTED, TAG, "partial receive not supported");
+#endif
     rmt_rx_channel_t *rx_chan = __containerof(channel, rmt_rx_channel_t, base);
     size_t per_dma_block_size = 0;
     size_t last_dma_block_size = 0;
+    uint32_t data_cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
 
     if (channel->dma_chan) {
         // Currently we assume the user buffer is allocated from internal RAM, PSRAM is not supported yet.
         ESP_RETURN_ON_FALSE_ISR(esp_ptr_internal(buffer), ESP_ERR_INVALID_ARG, TAG, "user buffer not allocated from internal RAM");
-        uint32_t data_cache_line_size = cache_hal_get_cache_line_size(CACHE_LL_LEVEL_INT_MEM, CACHE_TYPE_DATA);
         // DMA doesn't have alignment requirement for SRAM buffer if the burst mode is not enabled,
         // but we need to make sure the buffer is aligned to cache line size
         uint32_t align_mask = data_cache_line_size ? (data_cache_line_size - 1) : 0;
@@ -368,7 +390,7 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
     rmt_hal_context_t *hal = &group->hal;
     int channel_id = channel->channel_id;
 
-    uint32_t filter_reg_value = ((uint64_t)group->resolution_hz * config->signal_range_min_ns) / 1000000000UL;
+    uint32_t filter_reg_value = ((uint64_t)rx_chan->filter_clock_resolution_hz * config->signal_range_min_ns) / 1000000000UL;
     uint32_t idle_reg_value = ((uint64_t)channel->resolution_hz * config->signal_range_max_ns) / 1000000000UL;
     ESP_RETURN_ON_FALSE_ISR(filter_reg_value <= RMT_LL_MAX_FILTER_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_min_ns too big");
     ESP_RETURN_ON_FALSE_ISR(idle_reg_value <= RMT_LL_MAX_IDLE_VALUE, ESP_ERR_INVALID_ARG, TAG, "signal_range_max_ns too big");
@@ -390,6 +412,10 @@ esp_err_t rmt_receive(rmt_channel_handle_t channel, void *buffer, size_t buffer_
 
     if (channel->dma_chan) {
 #if SOC_RMT_SUPPORT_DMA
+        // invalidate the user buffer, in case cache auto-write back happens and breaks the data just written by the DMA
+        if (data_cache_line_size) {
+            ESP_RETURN_ON_ERROR_ISR(esp_cache_msync(buffer, buffer_size, ESP_CACHE_MSYNC_FLAG_DIR_M2C), TAG, "cache sync failed");
+        }
         rmt_rx_mount_dma_buffer(rx_chan, buffer, buffer_size, per_dma_block_size, last_dma_block_size);
         gdma_reset(channel->dma_chan);
         gdma_start(channel->dma_chan, (intptr_t)rx_chan->dma_nodes); // note, we must use the cached descriptor address to start the DMA

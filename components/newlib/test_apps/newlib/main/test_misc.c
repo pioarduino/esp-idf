@@ -12,12 +12,14 @@
 #include <errno.h>
 #include <sys/param.h>
 #include <stdlib.h>
+#ifdef __clang__ // TODO LLVM-330
+#include <sys/dirent.h>
+#else
 #include <dirent.h>
-#include "sys/dirent.h"
+#endif
 #include "unity.h"
 #include "esp_heap_caps.h"
 #include "esp_vfs.h"
-
 
 TEST_CASE("misc - posix_memalign", "[newlib_misc]")
 {

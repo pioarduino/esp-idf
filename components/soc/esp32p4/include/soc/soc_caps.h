@@ -19,7 +19,7 @@
 /*-------------------------- COMMON CAPS ---------------------------------------*/
 // #define SOC_ADC_SUPPORTED               1  //TODO: IDF-6496
 #define SOC_ANA_CMPR_SUPPORTED          1
-// #define SOC_DEDICATED_GPIO_SUPPORTED    1  //TODO: IDF-7552
+#define SOC_DEDICATED_GPIO_SUPPORTED    1
 #define SOC_UART_SUPPORTED              1
 #define SOC_GDMA_SUPPORTED              1
 #define SOC_AHB_GDMA_SUPPORTED          1
@@ -38,6 +38,7 @@
 #define SOC_ASYNC_MEMCPY_SUPPORTED      1
 #define SOC_EMAC_SUPPORTED              1
 #define SOC_USB_OTG_SUPPORTED           1
+#define SOC_WIRELESS_HOST_SUPPORTED     1
 // disable usb serial jtag for esp32p4, current image does not support
 // #define SOC_USB_SERIAL_JTAG_SUPPORTED   1  //TODO: IDF-7496
 #define SOC_TEMP_SENSOR_SUPPORTED       1
@@ -53,11 +54,12 @@
 #define SOC_SDM_SUPPORTED               1
 #define SOC_GPSPI_SUPPORTED             1
 #define SOC_LEDC_SUPPORTED              1
+#define SOC_ISP_SUPPORTED               1
 #define SOC_I2C_SUPPORTED               1
 #define SOC_SYSTIMER_SUPPORTED          1
-// #define SOC_AES_SUPPORTED               1  //TODO: IDF-6519
+#define SOC_AES_SUPPORTED               1
 #define SOC_MPI_SUPPORTED               1
-// #define SOC_SHA_SUPPORTED               1  //TODO: IDF-7541
+#define SOC_SHA_SUPPORTED               1
 #define SOC_HMAC_SUPPORTED              1
 #define SOC_DIG_SIGN_SUPPORTED          1
 #define SOC_ECC_SUPPORTED               1
@@ -68,30 +70,35 @@
 #define SOC_SECURE_BOOT_SUPPORTED       1
 // #define SOC_BOD_SUPPORTED               1  //TODO: IDF-7519
 // #define SOC_APM_SUPPORTED               1  //TODO: IDF-7542
-#define SOC_PMU_SUPPORTED               1  //TODO: IDF-7531
-// #define SOC_PAU_SUPPORTED               1  //TODO: IDF-7531
+#define SOC_PMU_SUPPORTED               1
+#define SOC_DCDC_SUPPORTED              1
+#define SOC_PAU_SUPPORTED               1     //TODO: IDF-7531
 #define SOC_LP_TIMER_SUPPORTED          1
-// #define SOC_ULP_LP_UART_SUPPORTED       1  //TODO: IDF-7533
+#define SOC_ULP_LP_UART_SUPPORTED       1
 #define SOC_LP_GPIO_MATRIX_SUPPORTED    1
 #define SOC_LP_PERIPHERALS_SUPPORTED    1
+#define SOC_LP_I2C_SUPPORTED            1
 #define SOC_SPIRAM_SUPPORTED            1
 #define SOC_PSRAM_DMA_CAPABLE           1
 // #define SOC_ULP_SUPPORTED               1  //TODO: IDF-7534
 #define SOC_SDMMC_HOST_SUPPORTED        1
 #define SOC_CLK_TREE_SUPPORTED          1
-// #define SOC_ASSIST_DEBUG_SUPPORTED      1  //TODO: IDF-7565
+#define SOC_ASSIST_DEBUG_SUPPORTED      1
 #define SOC_WDT_SUPPORTED               1
 #define SOC_SPI_FLASH_SUPPORTED         1
 // #define SOC_TOUCH_SENSOR_SUPPORTED      1  //TODO: IDF-7477
-// #define SOC_RNG_SUPPORTED               1  //TODO: IDF-6522
-#define SOC_MULTI_USAGE_LDO_SUPPORTED   1
+#define SOC_RNG_SUPPORTED               1
+#define SOC_GP_LDO_SUPPORTED            1 // General purpose LDO
 // #define SOC_PPA_SUPPORTED               1  //TODO: IDF-6878
+#define SOC_LIGHT_SLEEP_SUPPORTED       1
+#define SOC_DEEP_SLEEP_SUPPORTED        1
 
 /*-------------------------- XTAL CAPS ---------------------------------------*/
 #define SOC_XTAL_SUPPORT_40M            1
 
 /*-------------------------- AES CAPS -----------------------------------------*/
 #define SOC_AES_SUPPORT_DMA     (1)
+#define SOC_AES_SUPPORT_GCM     (1)
 
 /* Has a centralized DMA, which is shared with all peripherals */
 #define SOC_AES_GDMA            (1)
@@ -148,7 +155,6 @@
 #define SOC_CPU_CORES_NUM               (2U)
 #define SOC_CPU_INTR_NUM                32
 #define SOC_CPU_HAS_FLEXIBLE_INTC       1
-#define SOC_INT_PLIC_SUPPORTED          0       //riscv platform-level interrupt controller
 #define SOC_INT_CLIC_SUPPORTED          1
 #define SOC_INT_HW_NESTED_SUPPORTED     1       // Support for hardware interrupts nesting
 #define SOC_BRANCH_PREDICTOR_SUPPORTED  1
@@ -163,6 +169,7 @@
 
 #define SOC_CPU_HAS_PMA                 1
 #define SOC_CPU_IDRAM_SPLIT_USING_PMP   1
+#define SOC_CPU_PMP_REGION_GRANULARITY  128
 
 /*-------------------------- DIGITAL SIGNATURE CAPS ----------------------------------------*/
 /** The maximum length of a Digital Signature in bits. */
@@ -198,8 +205,8 @@
 // ESP32-P4 has 1 GPIO peripheral
 #define SOC_GPIO_PORT                      1U
 #define SOC_GPIO_PIN_COUNT                 55
-// #define SOC_GPIO_SUPPORT_PIN_GLITCH_FILTER 1  //TODO: IDF-7481
-// #define SOC_GPIO_FLEX_GLITCH_FILTER_NUM    8  //TODO: IDF-7481
+#define SOC_GPIO_SUPPORT_PIN_GLITCH_FILTER 1
+#define SOC_GPIO_FLEX_GLITCH_FILTER_NUM    8
 #define SOC_GPIO_SUPPORT_PIN_HYS_FILTER    1
 
 // GPIO peripheral has the ETM extension
@@ -250,7 +257,8 @@
 
 /*-------------------------- I2C CAPS ----------------------------------------*/
 // ESP32-P4 has 2 I2Cs
-#define SOC_I2C_NUM                 (2U)
+#define SOC_I2C_NUM                 (3U) // I2C_NUM = HP_I2C + LP_I2C
+#define SOC_HP_I2C_NUM              (2U)
 
 #define SOC_I2C_FIFO_LEN            (32) /*!< I2C hardware FIFO depth */
 #define SOC_I2C_CMD_REG_NUM         (8)  /*!< Number of I2C command registers */
@@ -265,6 +273,14 @@
 #define SOC_I2C_SLAVE_SUPPORT_BROADCAST    (1)
 #define SOC_I2C_SLAVE_SUPPORT_I2CRAM_ACCESS   (1)
 #define SOC_I2C_SLAVE_SUPPORT_SLAVE_UNMATCH    (1)
+
+// #define SOC_I2C_SUPPORT_SLEEP_RETENTION (1) // TODO: IDF-9353
+
+/*-------------------------- LP_I2C CAPS -------------------------------------*/
+// ESP32-P4 has 1 LP_I2C
+#define SOC_LP_I2C_NUM              (1U)
+
+#define SOC_LP_I2C_FIFO_LEN         (16) /*!< LP_I2C hardware FIFO depth */
 
 /*-------------------------- I2S CAPS ----------------------------------------*/
 #define SOC_I2S_NUM                 (3U)
@@ -285,7 +301,6 @@
 /*-------------------------- ISP CAPS ----------------------------------------*/
 #define SOC_ISP_NUMS                    1U
 #define SOC_ISP_AF_CTLR_NUMS            1U
-#define SOC_ISP_AF_ENV_DETECTOR_NUMS    1U
 #define SOC_ISP_AF_WINDOW_NUMS          3
 #define SOC_ISP_SHARE_CSI_BRG           1
 
@@ -394,6 +409,7 @@
 #define SOC_SDMMC_NUM_SLOTS          2
 /* Supported host clock delay phase number */
 #define SOC_SDMMC_DELAY_PHASE_NUM    4
+#define SOC_SDMMC_IO_POWER_EXTERNAL  1    ///< SDMMC IO power controlled by external power supply
 
 // TODO: IDF-5353 (Copy from esp32c3, need check)
 /*--------------------------- SHA CAPS ---------------------------------------*/
@@ -415,9 +431,16 @@
 #define SOC_SHA_SUPPORT_SHA1            (1)
 #define SOC_SHA_SUPPORT_SHA224          (1)
 #define SOC_SHA_SUPPORT_SHA256          (1)
+#define SOC_SHA_SUPPORT_SHA384          (1)
+#define SOC_SHA_SUPPORT_SHA512          (1)
+#define SOC_SHA_SUPPORT_SHA512_224      (1)
+#define SOC_SHA_SUPPORT_SHA512_256      (1)
+#define SOC_SHA_SUPPORT_SHA512_T        (1)
 
 /*--------------------------- ECDSA CAPS ---------------------------------------*/
 #define SOC_ECDSA_SUPPORT_EXPORT_PUBKEY     (1)
+#define SOC_ECDSA_SUPPORT_DETERMINISTIC_MODE   (1)
+#define SOC_ECDSA_USES_MPI                  (1)
 
 /*-------------------------- Sigma Delta Modulator CAPS -----------------*/
 #define SOC_SDM_GROUPS               1U
@@ -539,6 +562,7 @@
 #define SOC_UART_SUPPORT_RTC_CLK        (1)         /*!< Support RTC clock as the clock source */
 #define SOC_UART_SUPPORT_XTAL_CLK       (1)         /*!< Support XTAL clock as the clock source */
 #define SOC_UART_SUPPORT_WAKEUP_INT     (1)         /*!< Support UART wakeup interrupt */
+#define SOC_UART_HAS_LP_UART            (1)         /*!< Support LP UART */
 
 // UART has an extra TX_WAIT_SEND state when the FIFO is not empty and XOFF is enabled
 #define SOC_UART_SUPPORT_FSM_TX_WAIT_SEND   (1)
@@ -556,20 +580,23 @@
 
 // TODO: IDF-5351 (Copy from esp32c3, need check)
 /*-------------------------- Power Management CAPS ----------------------------*/
+#define SOC_PM_SUPPORT_EXT1_WAKEUP      (1)
+#define SOC_PM_SUPPORT_EXT1_WAKEUP_MODE_PER_PIN   (1) /*!<Supports one bit per pin to configure the EXT1 trigger level */
+#define SOC_PM_EXT1_WAKEUP_BY_PMU       (1)
 #define SOC_PM_SUPPORT_WIFI_WAKEUP      (1)
-#define SOC_PM_SUPPORT_CPU_PD           (1)
-#define SOC_PM_SUPPORT_MODEM_PD         (1)
 #define SOC_PM_SUPPORT_XTAL32K_PD       (1)
 #define SOC_PM_SUPPORT_RC32K_PD         (1)
 #define SOC_PM_SUPPORT_RC_FAST_PD       (1)
 #define SOC_PM_SUPPORT_VDDSDIO_PD       (1)
-// #define SOC_PM_SUPPORT_TOP_PD           (1) // TODO: IDF-7531
+#define SOC_PM_SUPPORT_TOP_PD           (1)
+#define SOC_PM_SUPPORT_CNNT_PD          (1)
 
 #define SOC_PM_SUPPORT_DEEPSLEEP_CHECK_STUB_ONLY   (1) /*!<Supports CRC only the stub code in RTC memory */
 
-#define SOC_PM_CPU_RETENTION_BY_SW      (0)
+#define SOC_PM_CPU_RETENTION_BY_SW      (1)
 
 #define SOC_PM_PAU_LINK_NUM             (4)
+#define SOC_PAU_IN_TOP_DOMAIN           (1)
 
 /*-------------------------- PSRAM CAPS ----------------------------*/
 #define SOC_PSRAM_VDD_POWER_MPLL    (1)
@@ -591,9 +618,15 @@
 #define SOC_TEMPERATURE_SENSOR_LP_PLL_SUPPORT                (1)
 #define SOC_TEMPERATURE_SENSOR_INTR_SUPPORT                  (1)
 #define SOC_TSENS_IS_INDEPENDENT_FROM_ADC                    (1)  /*!< Temperature sensor is a separate module, not share regs with ADC */
+#define SOC_TEMPERATURE_SENSOR_SUPPORT_ETM                   (1)
 
 /*-------------------------- Memory CAPS --------------------------*/
 #define SOC_MEM_TCM_SUPPORTED                      (1)
 #define SOC_MEM_NON_CONTIGUOUS_SRAM                (1)
 /*--------------------------- EMAC --------------------------------*/
 #define SOC_EMAC_USE_IO_MUX                        (1) /*!< GPIO matrix is used to select GPIO pads */
+
+/*--------------------------- JPEG --------------------------------*/
+#define SOC_JPEG_CODEC_SUPPORTED                  (1)
+#define SOC_JPEG_DECODE_SUPPORTED                 (1)
+#define SOC_JPEG_ENCODE_SUPPORTED                 (1)

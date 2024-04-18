@@ -149,7 +149,7 @@ esp_err_t esp_cam_new_csi_ctlr(const esp_cam_ctlr_csi_config_t *config, esp_cam_
 
     size_t dma_alignment = 4;  //TODO: IDF-9126, replace with dwgdma alignment API
     size_t cache_alignment = 1;
-    ESP_GOTO_ON_ERROR(esp_cache_get_alignment(ESP_CACHE_MALLOC_FLAG_PSRAM | ESP_CACHE_MALLOC_FLAG_DMA, &cache_alignment), err, TAG, "failed to get cache alignment");
+    ESP_GOTO_ON_ERROR(esp_cache_get_alignment(MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA, &cache_alignment), err, TAG, "failed to get cache alignment");
     size_t alignment = MAX(cache_alignment, dma_alignment);
     ESP_LOGD(TAG, "alignment: 0x%x\n", alignment);
 
@@ -161,7 +161,7 @@ esp_err_t esp_cam_new_csi_ctlr(const esp_cam_ctlr_csi_config_t *config, esp_cam_
     mipi_csi_hal_config_t hal_config;
     hal_config.frame_height = config->h_res;
     hal_config.frame_width = config->v_res;
-    hal_config.clk_freq_hz = config->clk_freq_hz;
+    hal_config.lane_bit_rate_mbps = config->lane_bit_rate_mbps;
     hal_config.lanes_num = config->data_lane_num;
     hal_config.byte_swap_en = config->byte_swap_en;
     mipi_csi_hal_init(&ctlr->hal, &hal_config);
@@ -186,7 +186,7 @@ esp_err_t esp_cam_new_csi_ctlr(const esp_cam_ctlr_csi_config_t *config, esp_cam_
         .flow_controller = DW_GDMA_FLOW_CTRL_SRC,
         .chan_priority = 1,
     };
-    ESP_GOTO_ON_ERROR(dw_gdma_new_channel(&csi_dma_alloc_config, &csi_dma_chan), err, TAG, "failed to new dwgdma channle");
+    ESP_GOTO_ON_ERROR(dw_gdma_new_channel(&csi_dma_alloc_config, &csi_dma_chan), err, TAG, "failed to new dwgdma channel");
     ctlr->dma_chan = csi_dma_chan;
 
     size_t csi_transfer_size = ctlr->h_res * ctlr->v_res * ctlr->in_bpp / 64;
@@ -280,29 +280,35 @@ static bool csi_dma_trans_done_callback(dw_gdma_channel_handle_t chan, const dw_
 
     if (ctlr->cbs.on_get_new_trans) {
         need_yield = ctlr->cbs.on_get_new_trans(&(ctlr->base), &new_trans, ctlr->cbs_user_data);
-        assert(new_trans.buflen >= ctlr->fb_size_in_bytes);
-        csi_dma_transfer_config.dst.addr = (uint32_t)(new_trans.buffer);
+        if (!(new_trans.buffer) || new_trans.buflen < ctlr->fb_size_in_bytes) {
+            use_backup = true;
+        } else {
+            csi_dma_transfer_config.dst.addr = (uint32_t)(new_trans.buffer);
+        }
     } else if (xQueueReceiveFromISR(ctlr->trans_que, &new_trans, &high_task_woken) == pdTRUE) {
-        assert(new_trans.buflen >= ctlr->fb_size_in_bytes);
-        csi_dma_transfer_config.dst.addr = (uint32_t)(new_trans.buffer);
+        if (!(new_trans.buffer) || new_trans.buflen < ctlr->fb_size_in_bytes) {
+            use_backup = true;
+        } else {
+            csi_dma_transfer_config.dst.addr = (uint32_t)(new_trans.buffer);
+        }
     } else {
         use_backup = true;
-        new_trans.buffer = ctlr->backup_buffer;
-        new_trans.buflen = ctlr->fb_size_in_bytes;
-        ESP_EARLY_LOGD(TAG, "no new buffer, use driver internal buffer");
-        csi_dma_transfer_config.dst.addr = (uint32_t)ctlr->backup_buffer;
     }
 
-    if (!use_backup) {
-        esp_err_t ret = esp_cache_msync((void *)(ctlr->trans.buffer), ctlr->trans.received_size, ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-        assert(ret == ESP_OK);
+    if (use_backup) {
+        new_trans.buffer = ctlr->backup_buffer;
+        new_trans.buflen = ctlr->fb_size_in_bytes;
+        ESP_EARLY_LOGD(TAG, "no new buffer or no long enough new buffer, use driver internal buffer");
+        csi_dma_transfer_config.dst.addr = (uint32_t)ctlr->backup_buffer;
     }
 
     ESP_EARLY_LOGD(TAG, "new_trans.buffer: %p, new_trans.buflen: %d", new_trans.buffer, new_trans.buflen);
     dw_gdma_channel_config_transfer(chan, &csi_dma_transfer_config);
     dw_gdma_channel_enable_ctrl(chan, true);
 
-    if (!use_backup) {
+    if (ctlr->trans.buffer != ctlr->backup_buffer) {
+        esp_err_t ret = esp_cache_msync((void *)(ctlr->trans.buffer), ctlr->trans.received_size, ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+        assert(ret == ESP_OK);
         assert(ctlr->cbs.on_trans_finished);
         if (ctlr->cbs.on_trans_finished) {
             ctlr->trans.received_size = ctlr->fb_size_in_bytes;
@@ -420,7 +426,7 @@ esp_err_t s_ctlr_csi_stop(esp_cam_ctlr_handle_t handle)
 {
     ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
     csi_controller_t *ctlr = __containerof(handle, csi_controller_t, base);
-    ESP_RETURN_ON_FALSE(ctlr->csi_fsm == CSI_FSM_ENABLED, ESP_ERR_INVALID_STATE, TAG, "driver isn't started");
+    ESP_RETURN_ON_FALSE(ctlr->csi_fsm == CSI_FSM_STARTED, ESP_ERR_INVALID_STATE, TAG, "driver isn't started");
 
     //disable CSI bridge
     mipi_csi_brg_ll_enable(ctlr->hal.bridge_dev, false);

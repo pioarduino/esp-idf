@@ -120,6 +120,8 @@ This command automatically builds the project if necessary, and then flash it to
 
 .. note:: The environment variables ``ESPPORT`` and ``ESPBAUD`` can be used to set default values for the ``-p`` and ``-b`` options, respectively. Providing these options on the command line overrides the default.
 
+``idf.py`` uses the ``write_flash`` command of ``esptool.py`` under the hood to flash the target. You can pass additional arguments to configure the flash writing process using the ``--extra-args`` option. For example, to `write to an external SPI flash chip <https://docs.espressif.com/projects/esptool/en/latest/esptool/advanced-options.html#custom-spi-pin-configuration>`_, use the following command: ``idf.py flash --extra-args="--spi-connection <CLK>,<Q>,<D>,<HD>,<CS>"``. To see the full list of available arguments, run ``esptool.py write_flash --help`` or see the `esptool.py documentation <https://docs.espressif.com/projects/esptool/en/latest/esptool/index.html>`_.
+
 Similarly to the ``build`` command, the command can be run with ``app``, ``bootloader`` and ``partition-table`` arguments to flash only the app, bootloader or partition table as applicable.
 
 Hints on How to Resolve Errors
@@ -238,7 +240,7 @@ To list all available root level options, run ``idf.py --help``. To list options
 
 .. important::
 
-    Note that some older versions of CCache_ may exhibit bugs on some platforms, so if files are not rebuilt as expected, try disabling CCache_ and rebuiling the project. To enable CCache_ by default, set the ``IDF_CCACHE_ENABLE`` environment variable to a non-zero value.
+    Note that some older versions of CCache_ may exhibit bugs on some platforms, so if files are not rebuilt as expected, try disabling CCache_ and rebuilding the project. To enable CCache_ by default, set the ``IDF_CCACHE_ENABLE`` environment variable to a non-zero value.
 
 - ``-v`` flag causes both ``idf.py`` and the build system to produce verbose build output. This can be useful for debugging build problems.
 - ``--cmake-warn-uninitialized`` (or ``-w``)  causes CMake to print uninitialized variable warnings found in the project directory only. This only controls CMake variable warnings inside CMake itself, not other types of build warnings. This option can also be set permanently by setting the ``IDF_CMAKE_WARN_UNINITIALIZED`` environment variable to a non-zero value.

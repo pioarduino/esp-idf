@@ -119,10 +119,11 @@ mainmenu "Espressif IoT Development Framework Configuration"
         select FREERTOS_UNICORE
         select IDF_TARGET_ARCH_RISCV
 
+    # TODO: IDF-9197
     choice IDF_TARGET_ESP32C5_VERSION
         prompt "ESP32-C5 version"
         depends on IDF_TARGET_ESP32C5
-        default IDF_TARGET_ESP32C5_BETA3_VERSION
+        default IDF_TARGET_ESP32C5_MP_VERSION
         help
             ESP32-C5 will support two versions for a period.
             This option is for internal use only.
@@ -132,6 +133,12 @@ mainmenu "Espressif IoT Development Framework Configuration"
             bool
             prompt "ESP32-C5 beta3"
             select ESPTOOLPY_NO_STUB
+
+        config IDF_TARGET_ESP32C5_MP_VERSION
+            bool
+            prompt "ESP32-C5 MP"
+            select ESPTOOLPY_NO_STUB
+            select IDF_ENV_FPGA
     endchoice
 
     config IDF_TARGET_ESP32P4
@@ -144,6 +151,13 @@ mainmenu "Espressif IoT Development Framework Configuration"
         default "y" if IDF_TARGET="esp32h2"
         select FREERTOS_UNICORE
         select IDF_TARGET_ARCH_RISCV
+
+    config IDF_TARGET_ESP32C61
+        bool
+        default "y" if IDF_TARGET="esp32c61"
+        select FREERTOS_UNICORE
+        select IDF_TARGET_ARCH_RISCV
+        select IDF_ENV_FPGA
 
     config IDF_TARGET_LINUX
         bool
@@ -159,7 +173,9 @@ mainmenu "Espressif IoT Development Framework Configuration"
         default 0x000D if IDF_TARGET_ESP32C6
         default 0x0010 if IDF_TARGET_ESP32H2
         default 0x0012 if IDF_TARGET_ESP32P4
-        default 0x0011 if IDF_TARGET_ESP32C5
+        default 0x0011 if IDF_TARGET_ESP32C5 && IDF_TARGET_ESP32C5_BETA3_VERSION  # TODO: IDF-9197
+        default 0x0017 if IDF_TARGET_ESP32C5 && IDF_TARGET_ESP32C5_MP_VERSION     # TODO: IDF-9197
+        default 0x0014 if IDF_TARGET_ESP32C61
         default 0xFFFF
 
 
@@ -612,3 +628,5 @@ mainmenu "Espressif IoT Development Framework Configuration"
             - CONFIG_SPIRAM_SPEED_120M && CONFIG_SPIRAM_MODE_OCT
             - CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
             - CONFIG_MBEDTLS_USE_CRYPTO_ROM_IMPL
+            - CONFIG_ESP_WIFI_EAP_TLS1_3
+            - CONFIG_ESP_WIFI_ENABLE_ROAMING_APP

@@ -1,9 +1,8 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
 
 /*               Notes about WiFi Programming
  *
@@ -119,6 +118,8 @@ typedef struct {
     uint64_t               feature_caps;           /**< Enables additional WiFi features and capabilities */
     bool                   sta_disconnected_pm;    /**< WiFi Power Management for station at disconnected status */
     int                    espnow_max_encrypt_num; /**< Maximum encrypt number of peers supported by espnow */
+    int                    tx_hetb_queue_num;      /**< WiFi TX HE TB QUEUE number for STA HE TB PPDU transmission */
+    bool                   dump_hesigb_enable;     /**< enable dump sigb field */
     int                    magic;                  /**< WiFi init magic number, it should be the last field */
 } wifi_init_config_t;
 
@@ -241,7 +242,19 @@ extern wifi_osi_funcs_t g_wifi_osi_funcs;
 #define WIFI_FTM_RESPONDER 0
 #endif
 
-#define CONFIG_FEATURE_WPA3_SAE_BIT (1<<0)
+#if CONFIG_ESP_WIFI_ENABLE_DUMP_HESIGB && !WIFI_CSI_ENABLED
+#define WIFI_DUMP_HESIGB_ENABLED  true
+#else
+#define WIFI_DUMP_HESIGB_ENABLED  false
+#endif
+
+#if CONFIG_ESP_WIFI_TX_HETB_QUEUE_NUM
+#define WIFI_TX_HETB_QUEUE_NUM CONFIG_ESP_WIFI_TX_HETB_QUEUE_NUM
+#else
+#define WIFI_TX_HETB_QUEUE_NUM 1
+#endif
+
+#define CONFIG_FEATURE_WPA3_SAE_BIT     (1<<0)
 #define CONFIG_FEATURE_CACHE_TX_BUF_BIT (1<<1)
 #define CONFIG_FEATURE_FTM_INITIATOR_BIT (1<<2)
 #define CONFIG_FEATURE_FTM_RESPONDER_BIT (1<<3)
@@ -276,6 +289,8 @@ extern wifi_osi_funcs_t g_wifi_osi_funcs;
     .feature_caps = WIFI_FEATURE_CAPS, \
     .sta_disconnected_pm = WIFI_STA_DISCONNECTED_PM_ENABLED,  \
     .espnow_max_encrypt_num = CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM, \
+    .tx_hetb_queue_num = WIFI_TX_HETB_QUEUE_NUM, \
+    .dump_hesigb_enable = WIFI_DUMP_HESIGB_ENABLED, \
     .magic = WIFI_INIT_CONFIG_MAGIC\
 }
 
@@ -401,6 +416,7 @@ esp_err_t esp_wifi_restore(void);
   *    - ESP_OK: succeed
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_WIFI_NOT_STARTED: WiFi is not started by esp_wifi_start
+  *    - ESP_ERR_WIFI_MODE: WiFi mode error
   *    - ESP_ERR_WIFI_CONN: WiFi internal error, station or soft-AP control block wrong
   *    - ESP_ERR_WIFI_SSID: SSID of AP which station connects is invalid
   */
@@ -452,7 +468,7 @@ esp_err_t esp_wifi_deauth_sta(uint16_t aid);
   *
   * @param     config  configuration settings for scanning, if set to NULL default settings will be used
   *                    of which default values are show_hidden:false, scan_type:active, scan_time.active.min:0,
-  *                    scan_time.active.max:120 miliseconds, scan_time.passive:360 miliseconds
+  *                    scan_time.active.max:120 milliseconds, scan_time.passive:360 milliseconds
   *
   * @param     block if block is true, this API will block the caller until the scan is done, otherwise
   *                         it will return immediately
@@ -544,7 +560,6 @@ esp_err_t esp_wifi_scan_get_ap_record(wifi_ap_record_t *ap_record);
   */
 esp_err_t esp_wifi_clear_ap_list(void);
 
-
 /**
   * @brief     Get information of AP to which the device is associated with
   *
@@ -587,9 +602,11 @@ esp_err_t esp_wifi_get_ps(wifi_ps_type_t *type);
 /**
   * @brief     Set protocol type of specified interface
   *            The default protocol is (WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N).
-  *            if CONFIG_SOC_WIFI_HE_SUPPORT, the default protocol is (WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_11AX).
+  *            if CONFIG_SOC_WIFI_HE_SUPPORT and band is 2.4G, the default protocol is (WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_11AX).
+  *            if CONFIG_SOC_WIFI_HE_SUPPORT and band is 5G, the default protocol is (WIFI_PROTOCOL_11A|WIFI_PROTOCOL_11N|WIFI_PROTOCOL_11AC|WIFI_PROTOCOL_11AX).
   *
-  * @attention Support 802.11b or 802.11bg or 802.11bgn or 802.11bgnax or LR mode
+  * @attention 2.4G: Support 802.11b or 802.11bg or 802.11bgn or 802.11bgnax or LR mode
+  *            5G: Support 802.11a or 802.11an or 802.11anac or 802.11anacax
   *
   * @param     ifx  interfaces
   * @param     protocol_bitmap  WiFi protocol bitmap
@@ -658,7 +675,7 @@ esp_err_t esp_wifi_get_bandwidth(wifi_interface_t ifx, wifi_bandwidth_t *bw);
   * @attention 2. When device is in STA mode, this API should not be called when STA is scanning or connecting to an external AP
   * @attention 3. When device is in softAP mode, this API should not be called when softAP has connected to external STAs
   * @attention 4. When device is in STA+softAP mode, this API should not be called when in the scenarios described above
-  * @attention 5. The channel info set by this API will not be stored in NVS. So If you want to remeber the channel used before wifi stop,
+  * @attention 5. The channel info set by this API will not be stored in NVS. So If you want to remember the channel used before wifi stop,
   *               you need to call this API again after wifi start, or you can call `esp_wifi_set_config()` to store the channel info in NVS.
   *
   * @param     primary  for HT20, primary is the channel number, for HT40, primary is the primary channel
@@ -729,7 +746,6 @@ esp_err_t esp_wifi_set_country(const wifi_country_t *country);
   *    - ESP_ERR_INVALID_ARG: invalid argument
   */
 esp_err_t esp_wifi_get_country(wifi_country_t *country);
-
 
 /**
   * @brief     Set MAC address of WiFi station, soft-AP or NAN interface.
@@ -964,7 +980,7 @@ esp_err_t esp_wifi_set_storage(wifi_storage_t storage);
   * @param     vnd_ie Pointer to the vendor specific element data received.
   * @param     rssi Received signal strength indication.
   */
-typedef void (*esp_vendor_ie_cb_t) (void *ctx, wifi_vendor_ie_type_t type, const uint8_t sa[6], const vendor_ie_data_t *vnd_ie, int rssi);
+typedef void (*esp_vendor_ie_cb_t)(void *ctx, wifi_vendor_ie_type_t type, const uint8_t sa[6], const vendor_ie_data_t *vnd_ie, int rssi);
 
 /**
   * @brief     Set 802.11 Vendor-Specific Information Element
@@ -1017,7 +1033,7 @@ esp_err_t esp_wifi_set_vendor_ie_cb(esp_vendor_ie_cb_t cb, void *ctx);
 esp_err_t esp_wifi_set_max_tx_power(int8_t power);
 
 /**
-  * @brief     Get maximum transmiting power after WiFi start
+  * @brief     Get maximum transmitting power after WiFi start
   *
   * @param     power Maximum WiFi transmitting power, unit is 0.25dBm.
   *
@@ -1096,7 +1112,6 @@ esp_err_t esp_wifi_80211_tx(wifi_interface_t ifx, const void *buffer, int len, b
   */
 typedef void (* wifi_csi_cb_t)(void *ctx, wifi_csi_info_t *data);
 
-
 /**
   * @brief Register the RX callback function of CSI data.
   *
@@ -1126,6 +1141,19 @@ esp_err_t esp_wifi_set_csi_rx_cb(wifi_csi_cb_t cb, void *ctx);
 esp_err_t esp_wifi_set_csi_config(const wifi_csi_config_t *config);
 
 /**
+  * @brief Get CSI data configuration
+  *
+  * @param config configuration
+  *
+  * return
+  *    - ESP_OK: succeed
+  *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
+  *    - ESP_ERR_WIFI_NOT_STARTED: WiFi is not started by esp_wifi_start or promiscuous mode is not enabled
+  *    - ESP_ERR_INVALID_ARG: invalid argument
+  */
+esp_err_t esp_wifi_get_csi_config(wifi_csi_config_t *config);
+
+/**
   * @brief Enable or disable CSI
   *
   * @param en true - enable, false - disable
@@ -1148,7 +1176,7 @@ esp_err_t esp_wifi_set_csi(bool en);
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_INVALID_ARG: Invalid argument, e.g. parameter is NULL, invalid GPIO number etc
   */
-esp_err_t esp_wifi_set_ant_gpio(const wifi_ant_gpio_config_t *config);
+esp_err_t esp_wifi_set_ant_gpio(const wifi_ant_gpio_config_t *config) __attribute__((deprecated("Please use esp_phy_set_ant_gpio instead")));
 
 /**
   * @brief     Get current antenna GPIO configuration
@@ -1160,8 +1188,7 @@ esp_err_t esp_wifi_set_ant_gpio(const wifi_ant_gpio_config_t *config);
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_INVALID_ARG: invalid argument, e.g. parameter is NULL
   */
-esp_err_t esp_wifi_get_ant_gpio(wifi_ant_gpio_config_t *config);
-
+esp_err_t esp_wifi_get_ant_gpio(wifi_ant_gpio_config_t *config) __attribute__((deprecated("Please use esp_phy_get_ant_gpio instead")));
 
 /**
   * @brief     Set antenna configuration
@@ -1173,7 +1200,7 @@ esp_err_t esp_wifi_get_ant_gpio(wifi_ant_gpio_config_t *config);
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_INVALID_ARG: Invalid argument, e.g. parameter is NULL, invalid antenna mode or invalid GPIO number
   */
-esp_err_t esp_wifi_set_ant(const wifi_ant_config_t *config);
+esp_err_t esp_wifi_set_ant(const wifi_ant_config_t *config) __attribute__((deprecated("Please use esp_phy_set_ant instead")));
 
 /**
   * @brief     Get current antenna configuration
@@ -1185,7 +1212,7 @@ esp_err_t esp_wifi_set_ant(const wifi_ant_config_t *config);
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_INVALID_ARG: invalid argument, e.g. parameter is NULL
   */
-esp_err_t esp_wifi_get_ant(wifi_ant_config_t *config);
+esp_err_t esp_wifi_get_ant(wifi_ant_config_t *config) __attribute__((deprecated("Please use esp_phy_get_ant instead")));
 
 /**
  * @brief      Get the TSF time
@@ -1301,6 +1328,26 @@ esp_err_t esp_wifi_ftm_end_session(void);
   *    - others: failed
   */
 esp_err_t esp_wifi_ftm_resp_set_offset(int16_t offset_cm);
+
+/**
+  * @brief      Get FTM measurements report copied into a user provided buffer.
+  *
+  * @attention  1. To get the FTM report, user first needs to allocate a buffer of size
+  *                (sizeof(wifi_ftm_report_entry_t) * num_entries) where the API will fill up to num_entries
+  *                valid FTM measurements in the buffer. Total number of entries can be found in the event
+  *                WIFI_EVENT_FTM_REPORT as ftm_report_num_entries
+  * @attention  2. The internal FTM report is freed upon use of this API which means the API can only be used
+  *                once after every FTM session initiated
+  * @attention  3. Passing the buffer as NULL merely frees the FTM report
+  *
+  * @param      report  Pointer to the buffer for receiving the FTM report
+  * @param      num_entries Number of FTM report entries to be filled in the report
+  *
+  * @return
+  *    - ESP_OK: succeed
+  *    - others: failed
+  */
+esp_err_t esp_wifi_ftm_get_report(wifi_ftm_report_entry_t *report, uint8_t num_entries);
 
 /**
   * @brief      Enable or disable 11b rate of specified interface
@@ -1467,9 +1514,10 @@ esp_err_t esp_wifi_sta_get_negotiated_phymode(wifi_phy_mode_t *phymode);
 esp_err_t esp_wifi_set_dynamic_cs(bool enabled);
 
 /**
-  * @brief      Get the rssi info after station connected to AP
+  * @brief      Get the rssi information of AP to which the device is associated with
   *
-  * @attention  This API should be called after station connected to AP.
+  * @attention 1. This API should be called after station connected to AP.
+  * @attention 2. Use this API only in WIFI_MODE_STA or WIFI_MODE_APSTA mode.
   *
   * @param      rssi store the rssi info received from last beacon.
   *
@@ -1479,6 +1527,32 @@ esp_err_t esp_wifi_set_dynamic_cs(bool enabled);
   *    - ESP_FAIL: failed
   */
 esp_err_t esp_wifi_sta_get_rssi(int *rssi);
+
+#if SOC_WIFI_HE_SUPPORT_5G
+/**
+  * @brief     Set wifi band.
+  *
+  * @param[in]    band wifi band 2.4G / 5G / 2.4G + 5G
+  *
+    * @return
+  *    - ESP_OK: succeed
+  *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
+  *    - ESP_ERR_INVALID_ARG: invalid argument
+  */
+esp_err_t esp_wifi_set_band(wifi_band_t band);
+
+/**
+  * @brief     Get wifi band.
+  *
+  * @param[in]    band store band of wifi
+  *
+    * @return
+  *    - ESP_OK: succeed
+  *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
+  *    - ESP_ERR_INVALID_ARG: invalid argument
+  */
+esp_err_t esp_wifi_get_band(wifi_band_t* band);
+#endif /* SOC_WIFI_HE_SUPPORT_5G */
 
 #ifdef __cplusplus
 }

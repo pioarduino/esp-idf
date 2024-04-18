@@ -19,6 +19,7 @@
 #include "usb/usb_types_ch9.h"
 #include "test_hcd_common.h"
 #include "test_usb_common.h"
+#include "test_usb_mock_msc.h"
 #include "unity.h"
 #include "esp_dma_utils.h"
 
@@ -235,7 +236,6 @@ hcd_pipe_handle_t test_hcd_pipe_alloc(hcd_port_handle_t port_hdl, const usb_ep_d
     //Create a queue for pipe callback to queue up pipe events
     QueueHandle_t pipe_evt_queue = xQueueCreate(EVENT_QUEUE_LEN, sizeof(pipe_event_msg_t));
     TEST_ASSERT_NOT_NULL(pipe_evt_queue);
-    printf("Creating pipe\n");
     hcd_pipe_config_t pipe_config = {
         .callback = pipe_callback,
         .callback_arg = (void *)pipe_evt_queue,
@@ -266,8 +266,10 @@ urb_t *test_hcd_alloc_urb(int num_isoc_packets, size_t data_buffer_size)
     urb_t *urb = heap_caps_calloc(1, sizeof(urb_t) + (sizeof(usb_isoc_packet_desc_t) * num_isoc_packets), MALLOC_CAP_DEFAULT);
     void *data_buffer;
     size_t real_size;
-    esp_dma_malloc(data_buffer_size, 0, &data_buffer, &real_size);
-
+    esp_dma_mem_info_t dma_mem_info = {
+        .dma_alignment_bytes = 4,
+    };
+    esp_dma_capable_malloc(data_buffer_size, &dma_mem_info, &data_buffer, &real_size);
     TEST_ASSERT_NOT_NULL_MESSAGE(urb, "Failed to allocate URB");
     TEST_ASSERT_NOT_NULL_MESSAGE(data_buffer, "Failed to allocate transfer buffer");
 
@@ -327,4 +329,15 @@ uint8_t test_hcd_enum_device(hcd_pipe_handle_t default_pipe)
     //Free URB
     test_hcd_free_urb(urb);
     return ENUM_ADDR;
+}
+
+void test_hcd_set_mock_msc_ep_descriptor(usb_speed_t port_speed)
+{
+    if (port_speed == USB_SPEED_HIGH) {
+        mock_msc_scsi_bulk_out_ep_desc = mock_msc_scsi_bulk_out_ep_desc_hs;     // HS wMaxPacketSize = 512
+        mock_msc_scsi_bulk_in_ep_desc = mock_msc_scsi_bulk_in_ep_desc_hs;
+    } else {
+        mock_msc_scsi_bulk_out_ep_desc = mock_msc_scsi_bulk_out_ep_desc_fs;     // FS wMaxPacketSize = 64
+        mock_msc_scsi_bulk_in_ep_desc = mock_msc_scsi_bulk_in_ep_desc_fs;
+    }
 }
