@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2016-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2016-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -459,6 +459,7 @@ esp_err_t esp_pm_configure(const void* vconfig)
     s_config_changed = true;
     portEXIT_CRITICAL(&s_switch_lock);
 
+    do_switch(PM_MODE_CPU_MAX);
     return ESP_OK;
 }
 
@@ -608,7 +609,7 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
 #endif
         portEXIT_CRITICAL_ISR(&s_switch_lock);
     } while (true);
-    if (new_mode == s_mode) {
+    if ((new_mode == s_mode) && !s_config_changed) {
         portEXIT_CRITICAL_ISR(&s_switch_lock);
         return;
     }

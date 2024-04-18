@@ -479,6 +479,10 @@ config SOC_I2C_SUPPORT_SLAVE
     bool
     default y
 
+config SOC_I2C_SUPPORT_HW_FSM_RST
+    bool
+    default y
+
 config SOC_I2C_SUPPORT_HW_CLR_BUS
     bool
     default y
@@ -855,6 +859,10 @@ config SOC_ECDSA_SUPPORT_EXPORT_PUBKEY
     bool
     default y
 
+config SOC_ECDSA_USES_MPI
+    bool
+    default y
+
 config SOC_SDM_GROUPS
     int
     default 1
@@ -1128,6 +1136,10 @@ config SOC_UART_SUPPORT_XTAL_CLK
     default y
 
 config SOC_UART_SUPPORT_WAKEUP_INT
+    bool
+    default y
+
+config SOC_UART_HAS_LP_UART
     bool
     default y
 

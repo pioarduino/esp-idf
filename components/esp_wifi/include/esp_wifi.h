@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -398,6 +398,7 @@ esp_err_t esp_wifi_restore(void);
   *    - ESP_OK: succeed
   *    - ESP_ERR_WIFI_NOT_INIT: WiFi is not initialized by esp_wifi_init
   *    - ESP_ERR_WIFI_NOT_STARTED: WiFi is not started by esp_wifi_start
+  *    - ESP_ERR_WIFI_MODE: WiFi mode error
   *    - ESP_ERR_WIFI_CONN: WiFi internal error, station or soft-AP control block wrong
   *    - ESP_ERR_WIFI_SSID: SSID of AP which station connects is invalid
   */
@@ -1294,6 +1295,26 @@ esp_err_t esp_wifi_ftm_end_session(void);
 esp_err_t esp_wifi_ftm_resp_set_offset(int16_t offset_cm);
 
 /**
+  * @brief      Get FTM measurements report copied into a user provided buffer.
+  *
+  * @attention  1. To get the FTM report, user first needs to allocate a buffer of size
+  *                (sizeof(wifi_ftm_report_entry_t) * num_entries) where the API will fill up to num_entries
+  *                valid FTM measurements in the buffer. Total number of entries can be found in the event
+  *                WIFI_EVENT_FTM_REPORT as ftm_report_num_entries
+  * @attention  2. The internal FTM report is freed upon use of this API which means the API can only be used
+  *                once afer every FTM session initiated
+  * @attention  3. Passing the buffer as NULL merely frees the FTM report
+  *
+  * @param      report  Pointer to the buffer for receiving the FTM report
+  * @param      num_entries Number of FTM report entries to be filled in the report
+  *
+  * @return
+  *    - ESP_OK: succeed
+  *    - others: failed
+  */
+esp_err_t esp_wifi_ftm_get_report(wifi_ftm_report_entry_t *report, uint8_t num_entries);
+
+/**
   * @brief      Enable or disable 11b rate of specified interface
   *
   * @attention  1. This API should be called after esp_wifi_init() and before esp_wifi_start().
@@ -1458,9 +1479,10 @@ esp_err_t esp_wifi_sta_get_negotiated_phymode(wifi_phy_mode_t *phymode);
 esp_err_t esp_wifi_set_dynamic_cs(bool enabled);
 
 /**
-  * @brief      Get the rssi info after station connected to AP
+  * @brief      Get the rssi information of AP to which the device is associated with
   *
-  * @attention  This API should be called after station connected to AP.
+  * @attention 1. This API should be called after station connected to AP.
+  * @attention 2. Use this API only in WIFI_MODE_STA or WIFI_MODE_APSTA mode.
   *
   * @param      rssi store the rssi info received from last beacon.
   *

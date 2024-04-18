@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -43,7 +43,7 @@ static esp_err_t wpa3_build_sae_commit(u8 *bssid, size_t *sae_msg_len)
         use_pt = 1;
     }
 
-   rsnxe = esp_wifi_sta_get_rsnxe();
+   rsnxe = esp_wifi_sta_get_rsnxe(bssid);
    if (rsnxe && rsnxe[1] >= 1) {
        rsnxe_capa = rsnxe[2];
    }
@@ -419,10 +419,6 @@ static void wpa3_process_rx_commit(wpa3_hostap_auth_event_t *evt)
             }
             goto free;
         }
-    }
-
-    if (!sta->lock) {
-        sta->lock = os_semphr_create(1, 1);
     }
 
     if (sta->lock && os_semphr_take(sta->lock, 0)) {

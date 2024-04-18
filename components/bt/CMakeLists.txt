@@ -30,6 +30,7 @@ set(common_include_dirs
     common/api/include/api
     common/btc/profile/esp/blufi/include
     common/btc/profile/esp/include
+    common/hci_log/include
 )
 
 set(ble_mesh_include_dirs
@@ -85,9 +86,6 @@ if(CONFIG_BT_ENABLED)
             list(APPEND srcs "controller/esp32c3/bt.c")
 
         elseif(CONFIG_IDF_TARGET_ESP32C2)
-            list(APPEND srcs "controller/esp32c2/bt.c")
-
-        elseif(CONFIG_IDF_TARGET_ESP32C2)
             set(ldfragments "linker.lf.esp32c2")
             list(APPEND srcs "controller/esp32c2/bt.c")
 
@@ -114,6 +112,7 @@ if(CONFIG_BT_ENABLED)
 
     list(APPEND srcs "common/btc/core/btc_alarm.c"
          "common/api/esp_blufi_api.c"
+         "common/hci_log/bt_hci_log.c"
          "common/btc/core/btc_manage.c"
          "common/btc/core/btc_task.c"
          "common/btc/profile/esp/blufi/blufi_prf.c"

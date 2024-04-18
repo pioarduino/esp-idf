@@ -293,6 +293,13 @@ menu "FreeRTOS"
                 esp_pm_dump_locks, if the proportion of rejected sleeps is too high, please increase
                 this value to improve scheduling efficiency
 
+        config FREERTOS_USE_APPLICATION_TASK_TAG
+            bool "configUSE_APPLICATION_TASK_TAG"
+            default n
+            help
+                Enables task tagging functionality and its associated API (see configUSE_APPLICATION_TASK_TAG
+                documentation for more details).
+
     endmenu # Kernel
 
     menu "Port"
@@ -300,7 +307,9 @@ menu "FreeRTOS"
 
         config FREERTOS_TASK_FUNCTION_WRAPPER
             bool "Wrap task functions"
-            depends on COMPILER_OPTIMIZATION_DEBUG || ESP_COREDUMP_ENABLE || ESP_GDBSTUB_ENABLED
+            #TODO: Check if FreeRTOS Task Wrapper must depend on GDBStub (IDF-9505)
+            depends on COMPILER_OPTIMIZATION_DEBUG || ESP_COREDUMP_ENABLE \
+                || ESP_SYSTEM_PANIC_GDBSTUB || ESP_SYSTEM_GDBSTUB_RUNTIME
             default y
             help
                 If enabled, all FreeRTOS task functions will be enclosed in a wrapper function. If a task function
