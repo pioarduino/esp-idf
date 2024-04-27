@@ -45,8 +45,7 @@ class TestMkDFU(unittest.TestCase):
             self.addCleanup(os.unlink, f_out.name)
         args = [mkdfu_path, 'write',
                 '-o', f_out.name,
-                '--pid', '2',
-                '--flash-size', '4MB']
+                '--pid', '2']
         if part_size:
             args += ['--part-size', str(part_size)]
         if json_input:
@@ -55,8 +54,6 @@ class TestMkDFU(unittest.TestCase):
             args += [str(addr), f_path]
         p = pexpect.spawn(sys.executable, args, timeout=10, encoding='utf-8')
         self.addCleanup(p.terminate, force=True)
-
-        p.expect_exact('Adding flash chip parameters file with flash_size = 4MB')
 
         for addr, f_path in sorted(file_args, key=lambda e: e[0]):
             p.expect_exact('Adding {} at {}'.format(f_path, hex(addr)))
@@ -117,7 +114,7 @@ class TestSplit(TestMkDFU):
     tests with images prepared in the "2" subdirectory
 
     "2/dfu.bin" was prepared with:
-        mkdfu.py write --part-size 5 --pid 2 --flash-size 4MB -o 2/dfu.bin 0 bin
+        mkdfu.py write --part-size 5 --pid 2 -o 2/dfu.bin 0 bin
     where the content of "bin" is b"\xce" * 10
     '''
     def test_split(self):

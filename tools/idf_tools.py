@@ -55,7 +55,6 @@ import ssl
 import subprocess
 import sys
 import tarfile
-import time
 import zipfile
 from collections import OrderedDict, namedtuple
 
@@ -369,20 +368,20 @@ def urlretrieve_ctx(url, filename, reporthook=None, data=None, context=None):
 # https://github.com/espressif/esp-idf/issues/3819#issuecomment-515167118
 # https://github.com/espressif/esp-idf/issues/4063#issuecomment-531490140
 # https://stackoverflow.com/a/43046729
-def rename_with_retry(path_from, path_to):  # type: (str, str) -> None
-    retry_count = 20 if sys.platform.startswith('win') else 1
+def rename_with_retry(path_from, path_to):
+    if sys.platform.startswith('win'):
+        retry_count = 100
+    else:
+        retry_count = 1
+
     for retry in range(retry_count):
         try:
             os.rename(path_from, path_to)
             return
-        except OSError:
-            msg = 'Rename {} to {} failed'.format(path_from, path_to)
+        except (OSError, WindowsError):       # WindowsError until Python 3.3, then OSError
             if retry == retry_count - 1:
-                fatal(msg + '. Antivirus software might be causing this. Disabling it temporarily could solve the issue.')
                 raise
-            warn(msg + ', retrying...')
-            # Sleep before the next try in order to pass the antivirus check on Windows
-            time.sleep(0.5)
+            warn('Rename {} to {} failed, retrying...'.format(path_from, path_to))
 
 
 def strip_container_dirs(path, levels):
@@ -1028,10 +1027,7 @@ def get_idf_env():  # type: () -> Any
     try:
         idf_env_file_path = os.path.join(global_idf_tools_path, IDF_ENV_FILE)  # type: ignore
         with open(idf_env_file_path, 'r') as idf_env_file:
-            idf_env_json = json.load(idf_env_file)
-            if 'sha' not in idf_env_json['idfInstalled']:
-                idf_env_json['idfInstalled']['sha'] = {'targets': []}
-            return idf_env_json
+            return json.load(idf_env_file)
     except (IOError, OSError):
         if not os.path.exists(idf_env_file_path):
             warn('File {} was not found. '.format(idf_env_file_path))
@@ -1041,14 +1037,17 @@ def get_idf_env():  # type: () -> Any
             os.rename(idf_env_file_path, os.path.join(os.path.dirname(idf_env_file_path), (filename + '_failed' + ending)))
 
         info('Creating {}' .format(idf_env_file_path))
-        return {'idfInstalled': {'sha': {'targets': []}}}
+        return {'idfSelectedId': 'sha', 'idfInstalled': {'sha': {'targets': {}}}}
 
 
 def export_targets_to_idf_env_json(targets):  # type: (list[str]) -> None
     idf_env_json = get_idf_env()
     targets = list(set(targets + get_user_defined_targets()))
 
-    idf_env_json['idfInstalled']['sha']['targets'] = targets
+    for env in idf_env_json['idfInstalled']:
+        if env == idf_env_json['idfSelectedId']:
+            idf_env_json['idfInstalled'][env]['targets'] = targets
+            break
 
     try:
         if global_idf_tools_path:  # mypy fix for Optional[str] in the next call
@@ -1083,12 +1082,16 @@ def get_user_defined_targets():  # type: () -> list[str]
     try:
         with open(os.path.join(global_idf_tools_path, IDF_ENV_FILE), 'r') as idf_env_file:  # type: ignore
             idf_env_json = json.load(idf_env_file)
-            if 'sha' not in idf_env_json['idfInstalled']:
-                idf_env_json['idfInstalled']['sha'] = {'targets': []}
     except (OSError, IOError):
+        # warn('File {} was not found. Installing tools for all esp targets.'.format(os.path.join(global_idf_tools_path, IDF_ENV_FILE)))  # type: ignore
         return []
 
-    return idf_env_json['idfInstalled']['sha']['targets']  # type: ignore
+    targets = []
+    for env in idf_env_json['idfInstalled']:
+        if env == idf_env_json['idfSelectedId']:
+            targets = idf_env_json['idfInstalled'][env]['targets']
+            break
+    return targets
 
 
 def get_all_targets_from_tools_json():  # type: () -> list[str]
@@ -1494,8 +1497,8 @@ def action_install_python_env(args):  # type: ignore
         try:
             subprocess.check_call([virtualenv_python, '-m', 'pip', '--version'], stdout=sys.stdout, stderr=sys.stderr)
         except subprocess.CalledProcessError:
-            warn('pip is not available in the existing virtual environment, new virtual environment will be created.')
-            # Reinstallation of the virtual environment could help if pip was installed for the main Python
+            warn('PIP is not available in the virtual environment.')
+            # Reinstallation of the virtual environment could help if PIP was installed for the main Python
             reinstall = True
 
     if reinstall and os.path.exists(idf_python_env_path):
@@ -1503,57 +1506,17 @@ def action_install_python_env(args):  # type: ignore
         shutil.rmtree(idf_python_env_path)
 
     if not os.path.exists(virtualenv_python):
-        # Before creating the virtual environment, check if pip is installed.
-        try:
-            subprocess.check_call([sys.executable, '-m', 'pip', '--version'])
-        except subprocess.CalledProcessError:
-            fatal('Python interpreter at {} doesn\'t have pip installed. '
-                  'Please check the Getting Started Guides for the steps to install prerequisites for your OS.'.format(sys.executable))
-            raise SystemExit(1)
+        info('Creating a new Python environment in {}'.format(idf_python_env_path))
 
-        virtualenv_installed_via_pip = False
         try:
             import virtualenv  # noqa: F401
         except ImportError:
             info('Installing virtualenv')
             subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--user', 'virtualenv'],
                                   stdout=sys.stdout, stderr=sys.stderr)
-            virtualenv_installed_via_pip = True
-            # since we just installed virtualenv via pip, we know that version is recent enough
-            # so the version check below is not necessary.
 
-        with_seeder_option = True
-        if not virtualenv_installed_via_pip:
-            # virtualenv is already present in the system and may have been installed via OS package manager
-            # check the version to determine if we should add --seeder option
-            try:
-                major_ver = int(virtualenv.__version__.split('.')[0])
-                if major_ver < 20:
-                    warn('Virtualenv version {} is old, please consider upgrading it'.format(virtualenv.__version__))
-                    with_seeder_option = False
-            except (ValueError, NameError, AttributeError, IndexError):
-                pass
-
-        info('Creating a new Python environment in {}'.format(idf_python_env_path))
-        virtualenv_options = ['--python', sys.executable]
-        if with_seeder_option:
-            virtualenv_options += ['--seeder', 'pip']
-
-        env_copy = os.environ.copy()
-        # Virtualenv with setuptools>=60 produces on recent Debian/Ubuntu systems virtual environments with
-        # local/bin/python paths. SETUPTOOLS_USE_DISTUTILS=stdlib is a workaround to keep bin/python paths.
-        # See https://github.com/pypa/setuptools/issues/3278 for more information.
-        env_copy['SETUPTOOLS_USE_DISTUTILS'] = 'stdlib'
-        subprocess.check_call([sys.executable, '-m', 'virtualenv'] +
-                              virtualenv_options +
-                              [idf_python_env_path],
-                              stdout=sys.stdout, stderr=sys.stderr,
-                              env=env_copy)
-
-    env_copy = os.environ.copy()
-    if env_copy.get('PIP_USER')  == 'yes':
-        warn('Found PIP_USER="yes" in the environment. Disabling PIP_USER in this shell to install packages into a virtual environment.')
-        env_copy['PIP_USER'] = 'no'
+        subprocess.check_call([sys.executable, '-m', 'virtualenv', '--seeder', 'pip', idf_python_env_path],
+                              stdout=sys.stdout, stderr=sys.stderr)
     run_args = [virtualenv_python, '-m', 'pip', 'install', '--no-warn-script-location']
     requirements_txt = os.path.join(global_idf_path, 'requirements.txt')
     run_args += ['-r', requirements_txt]
@@ -1569,7 +1532,7 @@ def action_install_python_env(args):  # type: ignore
         run_args += ['--find-links', wheels_dir]
 
     info('Installing Python packages from {}'.format(requirements_txt))
-    subprocess.check_call(run_args, stdout=sys.stdout, stderr=sys.stderr, env=env_copy)
+    subprocess.check_call(run_args, stdout=sys.stdout, stderr=sys.stderr)
 
 
 def action_add_version(args):

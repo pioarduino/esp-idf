@@ -17,7 +17,7 @@
 import os
 import subprocess
 import sys
-from unittest import TestCase, main
+import unittest
 
 try:
     from StringIO import StringIO
@@ -36,17 +36,7 @@ extension_path = os.path.join(current_dir, 'test_idf_extensions', 'test_ext')
 link_path = os.path.join(current_dir, '..', 'idf_py_actions', 'test_ext')
 
 
-class TestWithoutExtensions(TestCase):
-    def setUp(self):
-        self.initial_env = dict(os.environ)
-        os.environ['IDF_COMPONENT_MANAGER'] = '0'
-        os.environ['IDF_EXTRA_ACTIONS_PATH'] = ''
-
-    def tearDown(self):
-        os.environ = self.initial_env
-
-
-class TestExtensions(TestWithoutExtensions):
+class TestExtensions(unittest.TestCase):
     def test_extension_loading(self):
         try:
             os.symlink(extension_path, link_path)
@@ -88,7 +78,7 @@ class TestExtensions(TestWithoutExtensions):
             os.remove(link_path)
 
 
-class TestDependencyManagement(TestWithoutExtensions):
+class TestDependencyManagement(unittest.TestCase):
     def test_dependencies(self):
         result = idf.init_cli()(
             args=['--dry-run', 'flash'],
@@ -139,7 +129,7 @@ class TestDependencyManagement(TestWithoutExtensions):
             'WARNING: Command "clean" is found in the list of commands more than once.', capturedOutput.getvalue())
 
 
-class TestVerboseFlag(TestWithoutExtensions):
+class TestVerboseFlag(unittest.TestCase):
     def test_verbose_messages(self):
         output = subprocess.check_output(
             [
@@ -165,7 +155,7 @@ class TestVerboseFlag(TestWithoutExtensions):
         self.assertNotIn('Verbose mode on', output)
 
 
-class TestGlobalAndSubcommandParameters(TestWithoutExtensions):
+class TestGlobalAndSubcommandParameters(unittest.TestCase):
     def test_set_twice_same_value(self):
         """Can set -D twice: globally and for subcommand if values are the same"""
 
@@ -184,24 +174,21 @@ class TestGlobalAndSubcommandParameters(TestWithoutExtensions):
             )
 
 
-class TestDeprecations(TestWithoutExtensions):
+class TestDeprecations(unittest.TestCase):
     def test_exit_with_error_for_subcommand(self):
         try:
-            subprocess.check_output(
-                [sys.executable, idf_py_path, '-C%s' % current_dir, 'test-2'], env=os.environ, stderr=subprocess.STDOUT)
+            subprocess.check_output([sys.executable, idf_py_path, '-C%s' % current_dir, 'test-2'], env=os.environ,
+                                    stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             self.assertIn('Error: Command "test-2" is deprecated and was removed.', e.output.decode('utf-8', 'ignore'))
 
     def test_exit_with_error_for_option(self):
         try:
-            subprocess.check_output(
-                [sys.executable, idf_py_path, '-C%s' % current_dir, '--test-5=asdf'],
-                env=os.environ,
-                stderr=subprocess.STDOUT)
+            subprocess.check_output([sys.executable, idf_py_path, '-C%s' % current_dir, '--test-5=asdf'],
+                                    env=os.environ, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            self.assertIn(
-                'Error: Option "test_5" is deprecated since v2.0 and was removed in v3.0.',
-                e.output.decode('utf-8', 'ignore'))
+            self.assertIn('Error: Option "test_5" is deprecated since v2.0 and was removed in v3.0.',
+                          e.output.decode('utf-8', 'ignore'))
 
     def test_deprecation_messages(self):
         output = subprocess.check_output(
@@ -219,8 +206,7 @@ class TestDeprecations(TestWithoutExtensions):
                 'ta',
                 'test-1',
             ],
-            env=os.environ,
-            stderr=subprocess.STDOUT).decode('utf-8', 'ignore')
+            env=os.environ, stderr=subprocess.STDOUT).decode('utf-8', 'ignore')
 
         self.assertIn('Warning: Option "test_sub_1" is deprecated and will be removed in future versions.', output)
         self.assertIn(
@@ -236,4 +222,4 @@ class TestDeprecations(TestWithoutExtensions):
 
 
 if __name__ == '__main__':
-    main()
+    unittest.main()

@@ -237,6 +237,11 @@ test_efuse_table_on_host_esp32s2:
   variables:
     IDF_TARGET: esp32s2
 
+test_efuse_table_on_host_esp32s3:
+  extends: .test_efuse_table_on_host_template
+  variables:
+    IDF_TARGET: esp32s3
+
 test_efuse_table_on_host_esp32c3:
   extends: .test_efuse_table_on_host_template
   variables:
@@ -247,18 +252,12 @@ test_espcoredump:
   artifacts:
     when: always
     paths:
-      - components/espcoredump/test/**/.coverage
-      - components/espcoredump/test/**/output
+      - components/espcoredump/test/.coverage
+      - components/espcoredump/test/output
     expire_in: 1 week
-  variables:
-    IDF_COREDUMP_ELF_REPO: "https://gitlab-ci-token:${BOT_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/idf/idf-coredump-elf.git"
-    IDF_COREDUMP_ELF_TAG: idf-20210915
-    # install CMake version specified in tools.json
-    SETUP_TOOLS_LIST: "all"
   script:
-    - retry_failed git clone ${IDF_COREDUMP_ELF_REPO} -b $IDF_COREDUMP_ELF_TAG
     - cd components/espcoredump/test/
-    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_espcoredump.sh ${CI_PROJECT_DIR}/idf-coredump-elf
+    - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ./test_espcoredump.sh
 
 test_logtrace_proc:
   extends: .host_test_template
@@ -312,13 +311,6 @@ test_docs:
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 ./test_docs.py
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 ./test_sphinx_idf_extensions.py
 
-test_sbom:
-  extends:
-    - .host_test_template
-    - .rules:patterns:sbom
-  script:
-    - python ${IDF_PATH}/tools/test_sbom/test_submodules.py
-
 test_autocomplete:
   extends: .host_test_template
   image: $CI_DOCKER_REGISTRY/linux-shells:1
@@ -328,8 +320,6 @@ test_autocomplete:
       - ${IDF_PATH}/*.out
     expire_in: 1 week
   script:
-  # workaround for issues with missing requirements for python2.7
-    - pyenv global 2.7.18 && pip2.7 install -r requirements.txt
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh ${IDF_PATH}/tools/ci/test_autocomplete.py
 
 test_detect_python:

@@ -64,6 +64,38 @@ check_docs_gh_links:
     - ${IDF_PATH}/tools/ci/multirun_with_pyenv.sh -p 3.6.10 ./build_docs.py gh-linkcheck
 #------------------------------------------------------------------------------
 
+.build_ssc_template:
+  extends:
+    - .build_template
+    - .rules:build_tests:integration_test
+  artifacts:
+    paths:
+      - SSC/ssc_bin
+    expire_in: 1 week
+  script:
+    - retry_failed git clone $SSC_REPOSITORY
+    - python $CHECKOUT_REF_SCRIPT SSC SSC
+    - cd SSC
+    - MAKEFLAGS= ./ci_build_ssc.sh $TARGET_NAME
+
+build_ssc_esp32:
+  extends: .build_ssc_template
+  parallel: 3
+  variables:
+    TARGET_NAME: "ESP32"
+
+build_ssc_esp32s2:
+  extends: .build_ssc_template
+  parallel: 2
+  variables:
+    TARGET_NAME: "ESP32S2"
+
+build_ssc_esp32c3:
+  extends: .build_ssc_template
+  parallel: 3
+  variables:
+    TARGET_NAME: "ESP32C3"
+
 .build_esp_idf_tests_cmake:
   extends:
     - .build_template
@@ -105,6 +137,11 @@ build_esp_idf_tests_cmake_esp32s2:
   extends: .build_esp_idf_tests_cmake
   variables:
     IDF_TARGET: esp32s2
+
+build_esp_idf_tests_cmake_esp32s3:
+  extends: .build_esp_idf_tests_cmake
+  variables:
+    IDF_TARGET: esp32s3
 
 build_esp_idf_tests_cmake_esp32c3:
   extends: .build_esp_idf_tests_cmake
@@ -154,9 +191,7 @@ build_examples_make:
 
 # same as above, but for CMake
 .build_examples_cmake:
-  extends:
-    - .build_examples_template
-    - .before_script_build_cmake
+  extends: .build_examples_template
   artifacts:
     paths:
       - build_${TEST_PREFIX}/list.json
@@ -216,6 +251,12 @@ build_test_apps_esp32s2:
   parallel: 8
   variables:
     IDF_TARGET: esp32s2
+
+build_test_apps_esp32s3:
+  extends: .build_test_apps
+  parallel: 8
+  variables:
+    IDF_TARGET: esp32s3
 
 build_test_apps_esp32c3:
   extends: .build_test_apps
@@ -392,7 +433,6 @@ build_template_app:
     name: $CI_DOCKER_REGISTRY/sonarqube-scanner:2
   before_script:
     - source tools/ci/utils.sh
-    - is_based_on_commits $REQUIRED_ANCESTOR_COMMITS
     - export PYTHONPATH="$CI_PROJECT_DIR/tools:$CI_PROJECT_DIR/tools/ci/python_packages:$PYTHONPATH"
     - fetch_submodules
     # Exclude the submodules, all paths ends with /**
@@ -400,7 +440,7 @@ build_template_app:
     # get all exclude paths specified in tools/ci/sonar_exclude_list.txt | ignore lines start with # | xargs | replace all <space> to <comma>
     - export CUSTOM_EXCLUDES=$(cat $CI_PROJECT_DIR/tools/ci/sonar_exclude_list.txt | grep -v '^#' | xargs | sed -e 's/ /,/g')
     # Exclude the report dir
-    - export EXCLUSIONS="$CUSTOM_EXCLUDES,$SUBMODULES,$REPORT_DIR/**,docs/_static/**,**/*.png,**/*.jpg"
+    - export EXCLUSIONS="$SUBMODULES,$REPORT_DIR/**,docs/_static/**,**/*.png,**/*.jpg"
     - python $NORMALIZE_CLANGTIDY_PY $CI_PROJECT_DIR/$REPORT_DIR/warnings.txt $CI_PROJECT_DIR/$REPORT_DIR/clang_tidy_report.txt $CI_PROJECT_DIR
   variables:
     GIT_DEPTH: 0

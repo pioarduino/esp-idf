@@ -110,11 +110,6 @@ class Reference(object):
         )
 
 
-class IgnorePair():
-    def __init__(self, pair):  # type: (str) -> None
-        self.symbol, self.function_call = pair.split('/')
-
-
 class ElfInfo(object):
     def __init__(self, elf_file):  # type: (BinaryIO) -> None
         self.elf_file = elf_file
@@ -179,7 +174,7 @@ class ElfInfo(object):
         return None
 
 
-def load_rtl_file(rtl_filename, tu_filename, functions, ignore_pairs):  # type: (str, str, List[RtlFunction], List[IgnorePair]) -> None
+def load_rtl_file(rtl_filename, tu_filename, functions):  # type: (str, str, List[RtlFunction]) -> None
     last_function = None  # type: Optional[RtlFunction]
     for line in open(rtl_filename):
         # Find function definition
@@ -195,17 +190,6 @@ def load_rtl_file(rtl_filename, tu_filename, functions, ignore_pairs):  # type: 
             match = re.match(CALL_REGEX, line)
             if match:
                 target = match.group('target')
-
-                # if target matches on of the IgnorePair function_call attributes, remove
-                # the last occurrence of the associated symbol from the last_function.refs list.
-                call_matching_pairs = [pair for pair in ignore_pairs if pair.function_call == target]
-                if call_matching_pairs and last_function and last_function.refs:
-                    for pair in call_matching_pairs:
-                        ignored_symbols = [ref for ref in last_function.refs if pair.symbol in ref]
-                        if ignored_symbols:
-                            last_ref = ignored_symbols.pop()
-                            last_function.refs = [ref for ref in last_function.refs if last_ref != ref]
-
                 if target not in last_function.calls:
                     last_function.calls.append(target)
                 continue
@@ -335,12 +319,12 @@ def match_rtl_funcs_to_symbols(rtl_functions, elfinfo):  # type: (List[RtlFuncti
     return symbols, refs
 
 
-def get_symbols_and_refs(rtl_list, elf_file, ignore_pairs):  # type: (List[str], BinaryIO, List[IgnorePair]) -> Tuple[List[Symbol], List[Reference]]
+def get_symbols_and_refs(rtl_list, elf_file):  # type: (List[str], BinaryIO) -> Tuple[List[Symbol], List[Reference]]
     elfinfo = ElfInfo(elf_file)
 
     rtl_functions = []  # type: List[RtlFunction]
     for file_name in rtl_list:
-        load_rtl_file(file_name, file_name, rtl_functions, ignore_pairs)
+        load_rtl_file(file_name, file_name, rtl_functions)
 
     return match_rtl_funcs_to_symbols(rtl_functions, elfinfo)
 
@@ -393,10 +377,6 @@ def main():
         '--to-sections', help='comma-separated list of target sections'
     )
     find_refs_parser.add_argument(
-        '--ignore-symbols', help='comma-separated list of symbol/function_name pairs. \
-                                  This will force the parser to ignore the symbol preceding the call to function_name'
-    )
-    find_refs_parser.add_argument(
         '--exit-code',
         action='store_true',
         help='If set, exits with non-zero code when any references found',
@@ -419,11 +399,7 @@ def main():
     if not rtl_list:
         raise RuntimeError('No RTL files specified')
 
-    ignore_pairs = []
-    for pair in args.ignore_symbols.split(',') if args.ignore_symbols else []:
-        ignore_pairs.append(IgnorePair(pair))
-
-    _, refs = get_symbols_and_refs(rtl_list, args.elf_file, ignore_pairs)
+    _, refs = get_symbols_and_refs(rtl_list, args.elf_file)
 
     if args.action == 'find-refs':
         from_sections = args.from_sections.split(',') if args.from_sections else []

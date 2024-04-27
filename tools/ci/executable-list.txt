@@ -5,7 +5,6 @@ components/esp_wifi/test_md5/test_md5.sh
 components/espcoredump/espcoredump.py
 components/espcoredump/test/test_espcoredump.py
 components/espcoredump/test/test_espcoredump.sh
-components/espcoredump/test_apps/build_espcoredump.sh
 components/heap/test_multi_heap_host/test_all_configs.sh
 components/mbedtls/esp_crt_bundle/gen_crt_bundle.py
 components/mbedtls/esp_crt_bundle/test_gen_crt_bundle/test_gen_crt_bundle.py
@@ -66,6 +65,7 @@ tools/ci/test_check_kconfigs.py
 tools/ci/test_configure_ci_environment.sh
 tools/cmake/convert_to_cmake.py
 tools/docker/entrypoint.sh
+tools/docker/hooks/build
 tools/esp_app_trace/logtrace_proc.py
 tools/esp_app_trace/sysviewtrace_proc.py
 tools/esp_app_trace/test/logtrace/test.sh
@@ -102,7 +102,6 @@ tools/test_idf_size/test.sh
 tools/test_idf_tools/test_idf_tools.py
 tools/test_mkdfu/test_mkdfu.py
 tools/test_mkuf2/test_mkuf2.py
-tools/test_sbom/test_submodules.py
 tools/unit-test-app/tools/get_available_configs.sh
 tools/unit-test-app/unit_test.py
 tools/windows/eclipse_make.sh
