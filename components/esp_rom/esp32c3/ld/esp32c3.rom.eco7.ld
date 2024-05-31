@@ -9,7 +9,7 @@ esf_buf_recycle = 0x400015c4;
 /*hal_mac_tx_set_ppdu = 0x400015d4;*/
 ic_mac_deinit = 0x400015dc;
 lmacDiscardMSDU = 0x400015f4;
-lmacSetTxFrame = 0x40001628;
+/*lmacSetTxFrame = 0x40001628;*/
 lmacTxDone = 0x4000162c;
 lmacTxFrame = 0x40001630;
 mac_tx_set_htsig = 0x40001638;
@@ -33,7 +33,7 @@ wDev_ProcessFiq = 0x400017f0;
 wDev_ProcessRxSucData = 0x400017f4;
 //ppProcTxDone = 0x40001804;
 //pm_tx_data_done_process = 0x40001808;
-ieee80211_encap_esfbuf = 0x4000185c;
+/*ieee80211_encap_esfbuf = 0x4000185c;*/
 /*sta_input = 0x40001870;*/
 ieee80211_crypto_decap = 0x4000189c;
 ieee80211_decap = 0x400018a0;
@@ -162,9 +162,7 @@ r_lld_cca_lbt_handle = 0x40001df8;
 r_lld_cca_scst_timeout_check = 0x40001dfc;
 r_lld_cca_chan_avl_timeout_check = 0x40001e00;
 
-r_lld_scan_start_hook = 0x40001c74;
 r_lld_con_start_hook = 0x40001ca8;
-r_lld_init_start_hook = 0x40001cb8;
 
 /* ble Functions eco */
 r_bt_bb_isr = 0x40000b9c;
@@ -212,6 +210,8 @@ r_llc_llcp_channel_map_ind_ack = 0x40001d68;
 r_rwble_isr = 0x40001464;
 r_lld_scan_start_eco = 0x40001d24;
 r_lld_scan_try_sched_eco = 0x40001dac;
+r_lld_scan_start_hook = 0x40001c74;
+r_lld_init_start_hook = 0x40001cb8;
 */
 
 
