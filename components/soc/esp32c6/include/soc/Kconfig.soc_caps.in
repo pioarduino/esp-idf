@@ -239,6 +239,10 @@ config SOC_MODEM_CLOCK_SUPPORTED
     bool
     default y
 
+config SOC_PM_SUPPORTED
+    bool
+    default y
+
 config SOC_XTAL_SUPPORT_40M
     bool
     default y
@@ -471,14 +475,6 @@ config SOC_GPIO_SUPPORT_ETM
     bool
     default y
 
-config SOC_GPIO_ETM_EVENTS_PER_GROUP
-    int
-    default 8
-
-config SOC_GPIO_ETM_TASKS_PER_GROUP
-    int
-    default 8
-
 config SOC_GPIO_SUPPORT_RTC_INDEPENDENT
     bool
     default y
@@ -522,6 +518,10 @@ config SOC_GPIO_CLOCKOUT_BY_GPIO_MATRIX
 config SOC_CLOCKOUT_HAS_SOURCE_GATE
     bool
     default y
+
+config SOC_GPIO_CLOCKOUT_CHANNEL_NUM
+    int
+    default 3
 
 config SOC_RTCIO_PIN_COUNT
     int
@@ -796,6 +796,10 @@ config SOC_RMT_SUPPORT_XTAL
     default y
 
 config SOC_RMT_SUPPORT_RC_FAST
+    bool
+    default y
+
+config SOC_RMT_SUPPORT_SLEEP_RETENTION
     bool
     default y
 
@@ -1108,6 +1112,10 @@ config SOC_TIMER_GROUP_TOTAL_TIMERS
     default 2
 
 config SOC_TIMER_SUPPORT_ETM
+    bool
+    default y
+
+config SOC_TIMER_SUPPORT_SLEEP_RETENTION
     bool
     default y
 
@@ -1468,5 +1476,9 @@ config SOC_PHY_COMBO_MODULE
     default y
 
 config SOC_CAPS_NO_RESET_BY_ANA_BOD
+    bool
+    default y
+
+config SOC_LP_CORE_SINGLE_INTERRUPT_VECTOR
     bool
     default y

@@ -22,6 +22,7 @@
 
 #include "soc/lldesc.h"
 #include "driver/gpio.h"
+#include "esp_private/gpio.h"
 #include "hal/gpio_hal.h"
 #include "driver/i2s_types_legacy.h"
 #include "hal/i2s_hal.h"
@@ -348,14 +349,22 @@ static esp_err_t i2s_dma_intr_init(i2s_port_t i2s_num, int intr_flag)
     gdma_trigger_t trig = {.periph = GDMA_TRIG_PERIPH_I2S};
 
     switch (i2s_num) {
+#if SOC_I2S_NUM > 2
+    case I2S_NUM_2:
+        trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S2;
+        break;
+#endif
 #if SOC_I2S_NUM > 1
     case I2S_NUM_1:
         trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S1;
         break;
 #endif
-    default:
+    case I2S_NUM_0:
         trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S0;
         break;
+    default:
+        ESP_LOGE(TAG, "Unsupported I2S port number");
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     /* Set GDMA config */
@@ -1849,7 +1858,7 @@ static void gpio_matrix_out_check_and_set(gpio_num_t gpio, uint32_t signal_idx, 
 {
     //if pin = -1, do not need to configure
     if (gpio != -1) {
-        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio], PIN_FUNC_GPIO);
+        gpio_func_sel(gpio, PIN_FUNC_GPIO);
         gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
         esp_rom_gpio_connect_out_signal(gpio, signal_idx, out_inv, oen_inv);
     }
@@ -1858,7 +1867,7 @@ static void gpio_matrix_out_check_and_set(gpio_num_t gpio, uint32_t signal_idx, 
 static void gpio_matrix_in_check_and_set(gpio_num_t gpio, uint32_t signal_idx, bool inv)
 {
     if (gpio != -1) {
-        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio], PIN_FUNC_GPIO);
+        gpio_func_sel(gpio, PIN_FUNC_GPIO);
         /* Set direction, for some GPIOs, the input function are not enabled as default */
         gpio_set_direction(gpio, GPIO_MODE_INPUT);
         esp_rom_gpio_connect_in_signal(gpio, signal_idx, inv);

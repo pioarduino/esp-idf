@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,12 +19,26 @@
 extern "C" {
 #endif
 
+/**
+ * @brief BF configurations
+ */
+typedef struct {
+    isp_bf_edge_padding_mode_t padding_mode;                                 ///< BF edge padding mode
+    uint8_t padding_data;                                                    ///< BF edge padding pixel data
+    uint8_t bf_template[ISP_BF_TEMPLATE_X_NUMS][ISP_BF_TEMPLATE_Y_NUMS];     ///< BF template data
+    uint8_t denoising_level;                                                 ///< BF denoising level, from 2 to 20, the bigger the better denoising performance, but the worse detailed
+    uint8_t padding_line_tail_valid_start_pixel;                             ///< BF edge padding line tail valid start pixel
+    uint8_t padding_line_tail_valid_end_pixel;                               ///< BF edge padding line tail valid end pixel
+} isp_hal_bf_cfg_t;
 
 /**
- * Context that should be maintained by both the driver and the HAL
+ * @brief Context that should be maintained by both the driver and the HAL
  */
 typedef struct {
     void *hw;    ///< Beginning address of the ISP registers
+
+    /* BF */
+    isp_hal_bf_cfg_t bf_cfg;    ///< BF configurations
 } isp_hal_context_t;
 
 /**
@@ -50,14 +64,6 @@ void isp_hal_init(isp_hal_context_t *hal, int isp_id);
  */
 void isp_hal_af_window_config(const isp_hal_context_t *hal, int window_id, const isp_af_window_t *window);
 
-/**
- * @brief Get AF oneshot result
- *
- * @param[in]  hal      Context of the HAL layer
- * @param[out] out_res  AF result
- */
-void isp_hal_af_get_oneshot_result(const isp_hal_context_t *hal, isp_af_result_t *out_res);
-
 /*---------------------------------------------------------------
                       INTR
 ---------------------------------------------------------------*/
@@ -69,6 +75,16 @@ void isp_hal_af_get_oneshot_result(const isp_hal_context_t *hal, isp_af_result_t
  */
 uint32_t isp_hal_check_clear_intr_event(const isp_hal_context_t *hal, uint32_t mask);
 
+/*---------------------------------------------------------------
+                      BF
+---------------------------------------------------------------*/
+/**
+ * @brief Configure ISP BF registers
+ *
+ * @param[in] hal        Context of the HAL layer
+ * @param[in] config     BF config, set NULL to de-config the ISP BF
+ */
+void isp_hal_bf_config(isp_hal_context_t *hal, isp_hal_bf_cfg_t *config);
 
 #ifdef __cplusplus
 }

@@ -18,15 +18,25 @@
 #include "ulp_lp_core_lp_timer_shared.h"
 #include "hal/lp_core_ll.h"
 
+#if CONFIG_IDF_TARGET_ESP32P4
+#include "esp32p4/rom/rtc.h"
+#endif
+
 #if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32C5
 #define LP_CORE_RCC_ATOMIC() PERIPH_RCC_ATOMIC()
 #else
 #define LP_CORE_RCC_ATOMIC()
 #endif
 
+#if ESP_ROM_HAS_LP_ROM
+extern uint32_t _rtc_ulp_memory_start;
+#endif //ESP_ROM_HAS_LP_ROM
+
 const static char* TAG = "ulp-lp-core";
 
 #define WAKEUP_SOURCE_MAX_NUMBER 5
+
+#define RESET_HANDLER_ADDR (intptr_t)(&_rtc_ulp_memory_start + 0x80 / 4) // Placed after the 0x80 byte long vector table
 
 /* Maps the flags defined in ulp_lp_core.h e.g. ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU to their actual HW values */
 static uint32_t wakeup_src_sw_to_hw_flag_lookup[WAKEUP_SOURCE_MAX_NUMBER] = {
@@ -60,13 +70,20 @@ esp_err_t ulp_lp_core_run(ulp_lp_core_cfg_t* cfg)
     /* If we have a LP ROM we boot from it, before jumping to the app code */
     intptr_t boot_addr;
     if (cfg->skip_lp_rom_boot) {
-        boot_addr = (intptr_t)RTC_SLOW_MEM;
+        boot_addr = RESET_HANDLER_ADDR;
     } else {
         boot_addr = SOC_LP_ROM_LOW;
+        /* Disable UART init in ROM, it defaults to XTAL clk src
+         * which is not powered on during deep sleep
+         * This will cause the ROM code to get stuck during UART output
+         * if used
+         */
+        REG_SET_BIT(LP_UART_INIT_CTRL_REG, 1 << 0);
     }
 
     lp_core_ll_set_boot_address(boot_addr);
-    lp_core_ll_set_app_boot_address((intptr_t)RTC_SLOW_MEM);
+    lp_core_ll_set_app_boot_address(RESET_HANDLER_ADDR);
+
 #endif //ESP_ROM_HAS_LP_ROM
 
     LP_CORE_RCC_ATOMIC() {
@@ -128,8 +145,11 @@ esp_err_t ulp_lp_core_load_binary(const uint8_t* program_binary, size_t program_
 
     /* Turn off LP CPU before loading binary */
     ulp_lp_core_stop();
-
-    uint8_t* base = (uint8_t*) RTC_SLOW_MEM;
+#if ESP_ROM_HAS_LP_ROM
+    uint32_t* base = (uint32_t*)&_rtc_ulp_memory_start;
+#else
+    uint32_t* base = RTC_SLOW_MEM;
+#endif
 
     //Start by clearing memory reserved with zeros, this will also will initialize the bss:
     hal_memset(base, 0, CONFIG_ULP_COPROC_RESERVE_MEM);
@@ -143,4 +163,9 @@ void ulp_lp_core_stop(void)
     /* Disable wake-up source and put lp core to sleep */
     lp_core_ll_set_wakeup_source(0);
     lp_core_ll_request_sleep();
+}
+
+void ulp_lp_core_sw_intr_trigger(void)
+{
+    lp_core_ll_hp_wake_lp();
 }

@@ -161,15 +161,7 @@ config SOC_GPIO_PORT
 
 config SOC_GPIO_PIN_COUNT
     int
-    default 25
-
-config SOC_GPIO_ETM_EVENTS_PER_GROUP
-    int
-    default 8
-
-config SOC_GPIO_ETM_TASKS_PER_GROUP
-    int
-    default 8
+    default 22
 
 config SOC_GPIO_SUPPORT_RTC_INDEPENDENT
     bool
@@ -189,7 +181,7 @@ config SOC_GPIO_DEEP_SLEEP_WAKE_VALID_GPIO_MASK
 
 config SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK
     hex
-    default 0x000000007FFFFF00
+    default 0x00000000003FFF80
 
 config SOC_GPIO_SUPPORT_FORCE_HOLD
     bool
@@ -199,9 +191,9 @@ config SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
     bool
     default y
 
-config SOC_GPIO_CLOCKOUT_BY_GPIO_MATRIX
-    bool
-    default y
+config SOC_GPIO_CLOCKOUT_CHANNEL_NUM
+    int
+    default 3
 
 config SOC_DEDIC_GPIO_OUT_CHANNELS_NUM
     int
@@ -575,22 +567,6 @@ config SOC_SHA_SUPPORT_SHA256
     bool
     default y
 
-config SOC_SDM_GROUPS
-    int
-    default 1
-
-config SOC_SDM_CHANNELS_PER_GROUP
-    int
-    default 4
-
-config SOC_SDM_CLK_SUPPORT_PLL_F80M
-    bool
-    default y
-
-config SOC_SDM_CLK_SUPPORT_XTAL
-    bool
-    default y
-
 config SOC_SPI_PERIPH_NUM
     int
     default 2
@@ -803,7 +779,7 @@ config SOC_EFUSE_DIS_ICACHE
     bool
     default y
 
-config SOC_EFUSE_BLOCK9_KEY_PURPOSE_QUIRK
+config SOC_EFUSE_ECDSA_KEY
     bool
     default y
 

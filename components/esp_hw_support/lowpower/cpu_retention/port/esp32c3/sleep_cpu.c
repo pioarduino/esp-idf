@@ -14,7 +14,6 @@
 #include "esp_check.h"
 #include "esp_sleep.h"
 #include "esp_log.h"
-#include "esp_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
@@ -102,7 +101,7 @@ bool cpu_domain_pd_allowed(void)
 
 esp_err_t sleep_cpu_configure(bool light_sleep_enable)
 {
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
+#if ESP_SLEEP_POWER_DOWN_CPU
     if (light_sleep_enable) {
         ESP_RETURN_ON_ERROR(esp_sleep_cpu_retention_init(), TAG, "Failed to enable CPU power down during light sleep.");
     } else {

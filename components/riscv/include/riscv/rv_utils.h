@@ -14,6 +14,7 @@
 #include "esp_attr.h"
 #include "riscv/csr.h"
 #include "riscv/interrupt.h"
+#include "riscv/csr_pie.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -138,11 +139,11 @@ FORCE_INLINE_ATTR void rv_utils_intr_global_disable(void)
  * and `interrupt_intc.h`.
  */
 
-#if SOC_CPU_HAS_FPU
-
 /* ------------------------------------------------- FPU Related ----------------------------------------------------
  *
  * ------------------------------------------------------------------------------------------------------------------ */
+
+#if SOC_CPU_HAS_FPU
 
 FORCE_INLINE_ATTR bool rv_utils_enable_fpu(void)
 {
@@ -168,9 +169,72 @@ FORCE_INLINE_ATTR void rv_utils_disable_fpu(void)
 #endif /* SOC_CPU_HAS_FPU */
 
 
+/* ------------------------------------------------- PIE Related ----------------------------------------------------
+ *
+ * ------------------------------------------------------------------------------------------------------------------ */
+
+#if SOC_CPU_HAS_PIE
+
+FORCE_INLINE_ATTR void rv_utils_enable_pie(void)
+{
+    RV_WRITE_CSR(CSR_PIE_STATE_REG, 1);
+}
+
+
+FORCE_INLINE_ATTR void rv_utils_disable_pie(void)
+{
+    RV_WRITE_CSR(CSR_PIE_STATE_REG, 0);
+}
+
+#endif /* SOC_CPU_HAS_FPU */
+
+
+
 /* -------------------------------------------------- Memory Ports -----------------------------------------------------
  *
  * ------------------------------------------------------------------------------------------------------------------ */
+
+#if SOC_ASYNCHRONOUS_BUS_ERROR_MODE
+
+FORCE_INLINE_ATTR uintptr_t rv_utils_asynchronous_bus_get_error_pc(void)
+{
+    uint32_t error_pc;
+    uint32_t mcause, mexstatus;
+
+    mexstatus = RV_READ_CSR(MEXSTATUS);
+    /* MEXSTATUS: Bit 8: Indicates that a load/store access fault (MCAUSE=5/7)
+     * is due to bus-error exception. If this bit is not cleared before exiting
+     * the exception handler, it will trigger a bus error again.
+     * Since we have not mechanisms to recover a normal program execution after
+     * load/store error appears, do nothing. */
+    if ((mexstatus & BIT(8)) == 0) {
+        return 0;
+    }
+    mcause = RV_READ_CSR(mcause) & 0xFF;
+    if (mcause == 5) { /* Load access fault */
+        /* Get the oldest PC at which the load instruction failed */
+        error_pc = RV_READ_CSR(LDPC1);
+        if (error_pc == 0) {
+            error_pc = RV_READ_CSR(LDPC0);
+        }
+    } else if (mcause == 7) { /* Store access fault */
+        /* Get the oldest PC at which the store instruction failed */
+        error_pc = RV_READ_CSR(STPC2);
+        if (error_pc == 0) {
+            error_pc = RV_READ_CSR(STPC1);
+            if (error_pc == 0) {
+                error_pc = RV_READ_CSR(STPC0);
+            }
+        }
+    } else {
+        return 0;
+    }
+    /* Bit 0: Valid bit indicating that this CSR holds the PC (program counter).
+     * Clear this bit */
+    return error_pc & ~(1);
+}
+
+#endif // SOC_ASYNCHRONOUS_BUS_ERROR_MODE
 
 /* ---------------------------------------------------- Debugging ------------------------------------------------------
  *

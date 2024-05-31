@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -91,16 +91,29 @@ void gdma_ahb_hal_enable_burst(gdma_hal_context_t *hal, int chan_id, gdma_channe
     }
 }
 
-void gdma_ahb_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back)
+void gdma_ahb_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back, bool eof_till_popped)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
         ahb_dma_ll_rx_enable_owner_check(hal->ahb_dma_dev, chan_id, en_owner_check);
         // RX direction always has the descriptor write-back feature enabled
+        // RX direction don't need config eof_mode
     } else {
         ahb_dma_ll_tx_enable_owner_check(hal->ahb_dma_dev, chan_id, en_owner_check);
         ahb_dma_ll_tx_enable_auto_write_back(hal->ahb_dma_dev, chan_id, en_desc_write_back);
+        ahb_dma_ll_tx_set_eof_mode(hal->ahb_dma_dev, chan_id, eof_till_popped);
     }
 }
+
+#if GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
+void gdma_ahb_hal_set_burst_size(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t burst_sz)
+{
+    if (dir == GDMA_CHANNEL_DIRECTION_RX) {
+        ahb_dma_ll_rx_set_burst_size(hal->ahb_dma_dev, chan_id, burst_sz);
+    } else {
+        ahb_dma_ll_tx_set_burst_size(hal->ahb_dma_dev, chan_id, burst_sz);
+    }
+}
+#endif // GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
 
 void gdma_ahb_hal_enable_intr(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t intr_event_mask, bool en_or_dis)
 {
@@ -244,4 +257,8 @@ void gdma_ahb_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 #if SOC_GDMA_SUPPORT_ETM
     hal->enable_etm_task = gdma_ahb_hal_enable_etm_task;
 #endif // SOC_GDMA_SUPPORT_ETM
+#if GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
+    hal->set_burst_size = gdma_ahb_hal_set_burst_size;
+#endif // GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
+    ahb_dma_ll_set_default_memory_range(hal->ahb_dma_dev);
 }

@@ -142,12 +142,13 @@ When the ULP is woken up, it will go through the following steps:
 
 .. list::
 
-    :CONFIG_ESP_ROM_HAS_LP_ROM: #. Unless :cpp:member:`ulp_lp_core_cfg_t::skip_lp_rom_boot` is specified: run ROM start-up code and jump to the entry point in LP RAM. ROM start-up code will initialize lp-uart as well as print boot messages.
+    :CONFIG_ESP_ROM_HAS_LP_ROM: #. Unless :cpp:member:`ulp_lp_core_cfg_t::skip_lp_rom_boot` is specified, run ROM start-up code and jump to the entry point in LP RAM. ROM start-up code will initialize LP UART as well as print boot messages.
     #. Initialize system feature, e.g., interrupts
     #. Call user code ``main()``
     #. Return from ``main()``
     #. If ``lp_timer_sleep_duration_us`` is specified, then configure the next wake-up alarm
     #. Call :cpp:func:`ulp_lp_core_halt`
+
 
 ULP LP-Core Peripheral Support
 ------------------------------
@@ -165,16 +166,50 @@ To enhance the capabilities of the ULP LP-Core coprocessor, it has access to per
     ULP LP-Core ROM
     ---------------
 
-    The ULP LP-Core ROM is a small pre-built piece of code located in LP-ROM, which is not modifiable by users. Similar to the bootloader ROM code ran by the main CPU, this code is executed when the ULP LP-Core coprocessor is started. The ROM code initializes the ULP LP-Core coprocessor and then jumps to the user program. The ROM code is responsible for initializing the LP UART and printing boot messages.
+    The ULP LP-Core ROM is a small pre-built piece of code located in LP-ROM, which is not modifiable by users. Similar to the bootloader ROM code ran by the main CPU, this code is executed when the ULP LP-Core coprocessor is started. The ROM code initializes the ULP LP-Core coprocessor and then jumps to the user program. The ROM code also prints boot messages if the LP UART has been initialized.
 
-    The ROM code is not executed if :cpp:member:`ulp_lp_core_cfg_t::skip_lp_rom_boot` is set to true. This is useful when you need the ULP to wake-up as quickly as possible and the extra overhead of initializing UART and printing is unwanted.
+    The ROM code is not executed if :cpp:member:`ulp_lp_core_cfg_t::skip_lp_rom_boot` is set to true. This is useful when you need the ULP to wake-up as quickly as possible and the extra overhead of initializing and printing is unwanted.
 
-    In addition to the boot-up code mentioned above the ROM code also provides the following functions and interfaces:
+    In addition to the boot-up code mentioned above, the ROM code also provides the following functions and interfaces:
 
-    * :component_file:`ROM.ld Interface <esp_rom/esp32p4/ld/esp32p4lp.rom.ld>`
-    * :component_file:`newlib.ld Interface <esp_rom/esp32p4/ld/esp32p4lp.rom.newlib.ld>`
+    * :component_file:`ROM.ld Interface <esp_rom/{IDF_TARGET_PATH_NAME}/ld/{IDF_TARGET_PATH_NAME}lp.rom.ld>`
+    * :component_file:`newlib.ld Interface <esp_rom/{IDF_TARGET_PATH_NAME}/ld/{IDF_TARGET_PATH_NAME}lp.rom.newlib.ld>`
 
     Since these functions are already present in LP-ROM no matter what, using these in your program allows you to reduce the RAM footprint of your ULP application.
+
+
+ULP LP-Core Interrupts
+----------------------
+
+The LP-Core coprocessor can be configured to handle interrupts from various sources. Examples of such interrupts could be LP IO low/high or LP timer interrupts. To register a handler for an interrupt simply override any of the weak handlers provided by IDF. A complete list of handlers can be found in :component_file:`ulp_lp_core_interrupts.h <ulp/lp_core/lp_core/include/ulp_lp_core_interrupts.h>`. For details on which interrupts are available on a specific target, please consult the Low Power CPU chapter in the Technical Reference Manual.`
+
+For example, to override the handler for the LP IO interrupt, you can define the following function in your ULP LP-Core code:
+
+.. code-block:: c
+
+    void LP_CORE_ISR_ATTR ulp_lp_core_lp_io_intr_handler(void)
+    {
+        // Handle the interrupt and clear the interrupt source
+    }
+
+:c:macro:`LP_CORE_ISR_ATTR` is a macro that is used to define the interrupt handler function. This macro ensures that registers are saved and restored correctly when the interrupt handler is called.
+
+In addition to configuring the interrupt related registers for the interrupt source you want to handle, you also need to enable the interrupts globally in the LP-Core interrupt controller. This can be done using the :cpp:func:`ulp_lp_core_intr_enable` function.
+
+Debugging ULP LP-Core Applications
+----------------------------------
+
+When programming the LP-Core, it can sometimes be challenging to figure out why the program is not behaving as expected. Here are some strategies to help you debug your LP-Core program:
+
+ * Use the LP-UART to print: the LP-Core has access to the LP-UART peripheral, which can be used for printing information independently of the main CPU sleep state. See :example:`system/ulp/lp_core/lp_uart/lp_uart_print` for an example of how to use this driver.
+
+ * Share program state through shared variables: as described in :ref:`ulp-lp-core-access-variables`, both the main CPU and the ULP core can easily access global variables in RTC memory. Writing state information to such a variable from the ULP and reading it from the main CPU can help you discern what is happening on the ULP core. The downside of this approach is that it requires the main CPU to be awake, which will not always be the case. Keeping the main CPU awake might even, in some cases, mask problems, as some issues may only occur when certain power domains are powered down.
+
+ * Panic handler: the LP-Core has a panic handler that can dump the state of the LP-Core registers to the LP-UART when an exception is detected. To enable the panic handler, set the :ref:`CONFIG_ULP_PANIC_OUTPUT_ENABLE` option to ``y``. This option can be kept disabled to reduce LP-RAM usage by the LP-Core application. To recover a backtrace from the panic dump it is possible to use  esp-idf-monitor_., e.g.:
+
+.. code-block:: bash
+
+    python -m esp_idf_monitor --toolchain-prefix riscv32-esp-elf- --target {IDF_TARGET_NAME} --decode-panic backtrace PATH_TO_ULP_ELF_FILE
 
 
 Application Examples
@@ -184,6 +219,7 @@ Application Examples
 * :example:`system/ulp/lp_core/lp_i2c` reads external I2C ambient light sensor (BH1750) while the main CPU is in Deep-sleep and wakes up the main CPU once a threshold is met.
 * :example:`system/ulp/lp_core/lp_uart/lp_uart_echo` reads data written to a serial console and echoes it back. This example demonstrates the usage of the LP UART driver running on the LP core.
 * :example:`system/ulp/lp_core/lp_uart/lp_uart_print` shows how to print various statements from a program running on the LP core.
+* :example:`system/ulp/lp_core/interrupt` shows how to register an interrupt handler on the LP core to receive an interrupt triggered by the main CPU.
 
 API Reference
 -------------
@@ -203,3 +239,6 @@ LP Core API Reference
 .. include-build-file:: inc/ulp_lp_core_i2c.inc
 .. include-build-file:: inc/ulp_lp_core_uart.inc
 .. include-build-file:: inc/ulp_lp_core_print.inc
+.. include-build-file:: inc/ulp_lp_core_interrupts.inc
+
+.. _esp-idf-monitor: https://github.com/espressif/esp-idf-monitor

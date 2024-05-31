@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -54,6 +54,11 @@ esp_err_t spi_flash_init_chip_state(void);
  * @brief To initislize the MSPI pins
  */
 void esp_mspi_pin_init(void);
+
+/**
+ * @brief Reserve MSPI IOs
+ */
+void esp_mspi_pin_reserve(void);
 
 /**
  * @brief Get the number of the GPIO corresponding to the given MSPI io
@@ -113,6 +118,13 @@ void spi_flash_set_erasing_flag(bool status);
  * @return true if need reset, otherwise false.
  */
 bool spi_flash_brownout_need_reset(void);
+
+/**
+ * @brief Check whether esp-chip supports 32bit address properly
+ *
+ * @return ESP_OK for supported, ESP_ERR_NOT_SUPPORTED for not supported
+*/
+esp_err_t esp_mspi_32bit_address_flash_feature_check(void);
 
 #if CONFIG_SPI_FLASH_HPM_ON
 /**

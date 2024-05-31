@@ -276,10 +276,14 @@ typedef enum {  // TODO: [ESP32C5] IDF-8633 (inherit from C6)
 /**
  * @brief Type of MCPWM timer clock source
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
+typedef enum {
     MCPWM_TIMER_CLK_SRC_PLL160M = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the source clock */
     MCPWM_TIMER_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
+#if SOC_CLK_TREE_SUPPORTED
     MCPWM_TIMER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the default clock choice */
+#else
+    MCPWM_TIMER_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,      /*!< Select XTAL as the default clock choice */
+#endif
 } soc_periph_mcpwm_timer_clk_src_t;
 
 /**
@@ -290,10 +294,14 @@ typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
 /**
  * @brief Type of MCPWM capture clock source
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
+typedef enum {
     MCPWM_CAPTURE_CLK_SRC_PLL160M = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the source clock */
     MCPWM_CAPTURE_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
+#if SOC_CLK_TREE_SUPPORTED
     MCPWM_CAPTURE_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the default clock choice */
+#else
+    MCPWM_CAPTURE_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,      /*!< Select XTAL as the default clock choice */
+#endif
 } soc_periph_mcpwm_capture_clk_src_t;
 
 /**
@@ -304,10 +312,14 @@ typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
 /**
  * @brief Type of MCPWM carrier clock source
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
+typedef enum {
     MCPWM_CARRIER_CLK_SRC_PLL160M = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the source clock */
     MCPWM_CARRIER_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,         /*!< Select XTAL as the source clock */
+#if SOC_CLK_TREE_SUPPORTED
     MCPWM_CARRIER_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M, /*!< Select PLL_F160M as the default clock choice */
+#else
+    MCPWM_CARRIER_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,      /*!< Select XTAL as the default clock choice */
+#endif
 } soc_periph_mcpwm_carrier_clk_src_t;
 
 ///////////////////////////////////////////////////// I2S //////////////////////////////////////////////////////////////
@@ -315,15 +327,16 @@ typedef enum {  // TODO: [ESP32C5] IDF-8709 (inherit from C6)
 /**
  * @brief Array initializer for all supported clock sources of I2S
  */
-#define SOC_I2S_CLKS {SOC_MOD_CLK_PLL_F160M, SOC_MOD_CLK_XTAL, I2S_CLK_SRC_EXTERNAL}
+#define SOC_I2S_CLKS {SOC_MOD_CLK_XTAL, SOC_MOD_CLK_PLL_F160M, SOC_MOD_CLK_PLL_F240M, I2S_CLK_SRC_EXTERNAL}
 
 /**
  * @brief I2S clock source enum
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8713 (inherit from C6)
+typedef enum {
     I2S_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M,                /*!< Select PLL_F160M as the default source clock  */
-    I2S_CLK_SRC_PLL_160M = SOC_MOD_CLK_PLL_F160M,               /*!< Select PLL_F160M as the source clock */
     I2S_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,                        /*!< Select XTAL as the source clock */
+    I2S_CLK_SRC_PLL_240M = SOC_MOD_CLK_PLL_F240M,               /*!< Select PLL_F240M as the source clock */
+    I2S_CLK_SRC_PLL_160M = SOC_MOD_CLK_PLL_F160M,               /*!< Select PLL_F160M as the source clock */
     I2S_CLK_SRC_EXTERNAL = -1,                                  /*!< Select external clock as source clock */
 } soc_periph_i2s_clk_src_t;
 
@@ -364,16 +377,20 @@ typedef enum {  // TODO: [ESP32C5] IDF-8695 (inherit from C6)
 /**
  * @brief Array initializer for all supported clock sources of SPI
  */
-#define SOC_SPI_CLKS {SOC_MOD_CLK_PLL_F80M, SOC_MOD_CLK_XTAL, SOC_MOD_CLK_RC_FAST}
+#define SOC_SPI_CLKS {SOC_MOD_CLK_PLL_F160M, SOC_MOD_CLK_XTAL, SOC_MOD_CLK_RC_FAST}
 
 /**
  * @brief Type of SPI clock source.
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8698, IDF-8699 (inherit from C6)
-    SPI_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F80M,     /*!< Select PLL_80M as SPI source clock */
-    SPI_CLK_SRC_PLL_F80M = SOC_MOD_CLK_PLL_F80M,    /*!< Select PLL_80M as SPI source clock */
+typedef enum {
     SPI_CLK_SRC_XTAL = SOC_MOD_CLK_XTAL,            /*!< Select XTAL as SPI source clock */
+    SPI_CLK_SRC_PLL_F160M = SOC_MOD_CLK_PLL_F160M,  /*!< Select PLL_160M as SPI source clock */
     SPI_CLK_SRC_RC_FAST = SOC_MOD_CLK_RC_FAST,      /*!< Select RC_FAST as SPI source clock */
+#if SOC_CLK_TREE_SUPPORTED
+    SPI_CLK_SRC_DEFAULT = SOC_MOD_CLK_PLL_F160M,    /*!< Select PLL_80M as SPI source clock */
+#else
+    SPI_CLK_SRC_DEFAULT = SOC_MOD_CLK_XTAL,         /*!< Select PLL_80M as SPI source clock */
+#endif
 } soc_periph_spi_clk_src_t;
 
 //////////////////////////////////////////////////SDM//////////////////////////////////////////////////////////////
@@ -468,7 +485,7 @@ typedef enum {  // TODO: [ESP32C5] IDF-8650 (inherit from C6)
 /**
  * @brief Type of LEDC clock source, reserved for the legacy LEDC driver
  */
-typedef enum {  // TODO: [ESP32C5] IDF-8684 (inherit from C6)
+typedef enum {
     LEDC_AUTO_CLK = 0,                              /*!< LEDC source clock will be automatically selected based on the giving resolution and duty parameter when init the timer*/
     LEDC_USE_PLL_DIV_CLK = SOC_MOD_CLK_PLL_F80M,    /*!< Select PLL_F80M clock as the source clock */
     LEDC_USE_RC_FAST_CLK = SOC_MOD_CLK_RC_FAST,     /*!< Select RC_FAST as the source clock */

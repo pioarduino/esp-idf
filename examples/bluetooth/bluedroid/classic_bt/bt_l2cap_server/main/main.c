@@ -142,7 +142,6 @@ static void l2cap_read_handle(void * param)
             vTaskDelay(500 / portTICK_PERIOD_MS);
         } else {
             ESP_LOGI(L2CAP_TAG, "fd = %d data_len = %d", fd, size);
-            // esp_log_buffer_hex(L2CAP_TAG, l2cap_data, size);
             /* To avoid task watchdog */
             vTaskDelay(10 / portTICK_PERIOD_MS);
         }
@@ -270,7 +269,7 @@ static void esp_hdl_sdp_cb_evt(uint16_t event, void *p_param)
     case ESP_SDP_CREATE_RECORD_COMP_EVT:
         ESP_LOGI(SDP_TAG, "ESP_SDP_CREATE_RECORD_COMP_EVT: status:%d", sdp_param->create_record.status);
         if (sdp_param->create_record.status == ESP_SDP_SUCCESS) {
-            esp_bt_dev_set_device_name(EXAMPLE_DEVICE_NAME);
+            esp_bt_gap_set_device_name(EXAMPLE_DEVICE_NAME);
             esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
         }
         break;

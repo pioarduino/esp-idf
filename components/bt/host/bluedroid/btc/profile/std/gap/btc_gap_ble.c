@@ -1326,6 +1326,25 @@ static void btc_ble_vendor_hci_cmd_complete_callback(tBTA_VSC_CMPL *p_param)
     }
 }
 
+static void btc_ble_set_privacy_mode_callback(UINT8 status)
+{
+    esp_ble_gap_cb_param_t param;
+    bt_status_t ret;
+    btc_msg_t msg = {0};
+
+    msg.sig = BTC_SIG_API_CB;
+    msg.pid = BTC_PID_GAP_BLE;
+    msg.act = ESP_GAP_BLE_SET_PRIVACY_MODE_COMPLETE_EVT;
+
+    param.set_privacy_mode_cmpl.status = btc_btm_status_to_esp_status(status);
+
+    ret = btc_transfer_context(&msg, &param, sizeof(esp_ble_gap_cb_param_t), NULL, NULL);
+
+    if (ret != BT_STATUS_SUCCESS) {
+        BTC_TRACE_ERROR("%s btc_transfer_context failed\n", __func__);
+    }
+}
+
 void btc_get_whitelist_size(uint16_t *length)
 {
     BTM_BleGetWhiteListSize(length);
@@ -1504,6 +1523,13 @@ static void btc_ble_dtm_stop(tBTA_DTM_CMD_CMPL_CBACK *p_dtm_cmpl_cback)
     BTA_DmBleDtmStop(p_dtm_cmpl_cback);
 }
 
+static void btc_ble_set_privacy_mode(uint8_t addr_type,
+                                     BD_ADDR addr,
+                                     uint8_t privacy_mode,
+                                     tBTA_SET_PRIVACY_MODE_CMPL_CBACK *p_cback)
+{
+    BTA_DmBleSetPrivacyMode(addr_type, addr, privacy_mode, p_cback);
+}
 
 void btc_gap_ble_cb_handler(btc_msg_t *msg)
 {
@@ -1694,6 +1720,18 @@ void btc_gap_ble_arg_deep_copy(btc_msg_t *msg, void *p_dest, void *p_src)
         }
         break;
     }
+    case BTC_GAP_BLE_ACT_SET_DEV_NAME:{
+        btc_ble_gap_args_t *src = (btc_ble_gap_args_t *)p_src;
+        btc_ble_gap_args_t *dst = (btc_ble_gap_args_t *)p_dest;
+        dst->set_dev_name.device_name = (char *)osi_malloc((BTC_MAX_LOC_BD_NAME_LEN + 1) * sizeof(char));
+        if (dst->set_dev_name.device_name) {
+            BCM_STRNCPY_S(dst->set_dev_name.device_name, src->set_dev_name.device_name, BTC_MAX_LOC_BD_NAME_LEN);
+            dst->set_dev_name.device_name[BTC_MAX_LOC_BD_NAME_LEN] = '\0';
+        } else {
+            BTC_TRACE_ERROR("%s %d no mem\n",__func__, msg->act);
+        }
+        break;
+    }
     default:
         BTC_TRACE_ERROR("Unhandled deep copy %d\n", msg->act);
         break;
@@ -1822,6 +1860,14 @@ void btc_gap_ble_arg_deep_free(btc_msg_t *msg)
         }
         break;
     }
+    case BTC_GAP_BLE_ACT_SET_DEV_NAME:{
+        char *p_name = ((btc_ble_gap_args_t *)msg->arg)->set_dev_name.device_name;
+        if (p_name) {
+            osi_free((uint8_t *)p_name);
+        }
+        break;
+    }
+        break;
     default:
         BTC_TRACE_DEBUG("Unhandled deep free %d\n", msg->act);
         break;
@@ -1944,10 +1990,10 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
         break;
 #endif // #if (BLE_42_FEATURE_SUPPORT == TRUE)
     case BTC_GAP_BLE_ACT_SET_DEV_NAME:
-        BTA_DmSetDeviceName(arg->set_dev_name.device_name);
+        BTA_DmSetDeviceName(arg->set_dev_name.device_name, BT_DEVICE_TYPE_BLE);
         break;
     case BTC_GAP_BLE_ACT_GET_DEV_NAME:
-        BTA_DmGetDeviceName(btc_gap_ble_get_dev_name_callback);
+        BTA_DmGetDeviceName(btc_gap_ble_get_dev_name_callback, BT_DEVICE_TYPE_BLE);
         break;
 #if (BLE_42_FEATURE_SUPPORT == TRUE)
     case BTC_GAP_BLE_ACT_CFG_ADV_DATA_RAW:
@@ -2334,6 +2380,10 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
                                 arg->vendor_cmd_send.p_param_buf,
                                 btc_ble_vendor_hci_cmd_complete_callback);
         break;
+    case BTC_GAP_BLE_SET_PRIVACY_MODE:
+        btc_ble_set_privacy_mode(arg->set_privacy_mode.addr_type, arg->set_privacy_mode.addr,
+            arg->set_privacy_mode.privacy_mode, btc_ble_set_privacy_mode_callback);
+        break;
     default:
         break;
     }
@@ -2344,6 +2394,7 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
 //register connection parameter update callback
 void btc_gap_callback_init(void)
 {
+    BTM_BleRegiseterPktLengthChangeCallback(btc_set_pkt_length_callback);
     BTM_BleRegiseterConnParamCallback(btc_update_conn_param_callback);
 #if (BLE_50_FEATURE_SUPPORT == TRUE)
     BTM_BleGapRegisterCallback(btc_ble_5_gap_callback);

@@ -683,9 +683,11 @@ static void bta_dm_disable_timer_cback (TIMER_LIST_ENT *p_tle)
 *******************************************************************************/
 void bta_dm_set_dev_name (tBTA_DM_MSG *p_data)
 {
-    BTM_SetLocalDeviceName((char *)p_data->set_name.name);
+    BTM_SetLocalDeviceName((char *)p_data->set_name.name, p_data->set_name.name_type);
 #if CLASSIC_BT_INCLUDED
-    bta_dm_set_eir ((char *)p_data->set_name.name);
+    if (p_data->set_name.name_type & BT_DEVICE_TYPE_BREDR) {
+        bta_dm_set_eir ((char *)p_data->set_name.name);
+    }
 #endif /// CLASSIC_BT_INCLUDED
 }
 
@@ -704,7 +706,7 @@ void bta_dm_get_dev_name (tBTA_DM_MSG *p_data)
     tBTM_STATUS status;
     char *name = NULL;
 
-    status = BTM_ReadLocalDeviceName(&name);
+    status = BTM_ReadLocalDeviceName(&name, p_data->get_name.name_type);
     if (p_data->get_name.p_cback) {
         (*p_data->get_name.p_cback)(status, name);
     }
@@ -4168,7 +4170,7 @@ static void bta_dm_set_eir (char *local_name)
     if (p_bta_dm_eir_cfg->bta_dm_eir_included_name) {
         /* if local name is not provided, get it from controller */
         if ( local_name == NULL ) {
-            if ( BTM_ReadLocalDeviceName( &local_name ) != BTM_SUCCESS ) {
+            if ( BTM_ReadLocalDeviceName( &local_name, BT_DEVICE_TYPE_BREDR) != BTM_SUCCESS ) {
                 APPL_TRACE_ERROR("Fail to read local device name for EIR");
             }
         }
@@ -5834,6 +5836,13 @@ void bta_dm_ble_gap_add_dev_to_resolving_list(tBTA_DM_MSG *p_data)
                                   p_data->add_dev_to_resolving_list.addr_type,
                                   p_data->add_dev_to_resolving_list.irk,
                                   p_data->add_dev_to_resolving_list.p_add_dev_to_resolving_list_callback);
+}
+
+void bta_dm_ble_gap_set_privacy_mode(tBTA_DM_MSG *p_data)
+{
+    APPL_TRACE_API("%s, privacy_mode = %d", __func__, p_data->ble_set_privacy_mode.privacy_mode);
+    BTM_BleSetPrivacyMode(p_data->ble_set_privacy_mode.addr_type, p_data->ble_set_privacy_mode.addr,
+                        p_data->ble_set_privacy_mode.privacy_mode, p_data->ble_set_privacy_mode.p_cback);
 }
 
 #if (BLE_50_FEATURE_SUPPORT == TRUE)

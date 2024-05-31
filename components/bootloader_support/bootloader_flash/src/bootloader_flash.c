@@ -13,6 +13,9 @@
 #include "hal/efuse_ll.h"
 #include "hal/efuse_hal.h"
 
+#ifndef BOOTLOADER_BUILD
+#include "spi_flash_mmap.h"
+#endif
 #include "hal/spi_flash_ll.h"
 #include "rom/spi_flash.h"
 #if CONFIG_IDF_TARGET_ESP32
@@ -133,6 +136,8 @@ esp_err_t bootloader_flash_erase_range(uint32_t start_addr, uint32_t size)
 
 #if CONFIG_IDF_TARGET_ESP32S3
 #include "esp32s3/rom/opi_flash.h"
+#elif CONFIG_IDF_TARGET_ESP32P4
+#include "esp32p4/rom/opi_flash.h"
 #endif
 static const char *TAG = "bootloader_flash";
 

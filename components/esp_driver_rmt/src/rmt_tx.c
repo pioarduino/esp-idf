@@ -92,7 +92,8 @@ static esp_err_t rmt_tx_init_dma_link(rmt_tx_channel_t *tx_channel, const rmt_tx
     gdma_tx_event_callbacks_t cbs = {
         .on_trans_eof = rmt_dma_tx_eof_cb,
     };
-    gdma_register_tx_event_callbacks(tx_channel->base.dma_chan, &cbs, tx_channel);
+    // register the DMA callbacks may fail if the interrupt service can not be installed successfully
+    ESP_RETURN_ON_ERROR(gdma_register_tx_event_callbacks(tx_channel->base.dma_chan, &cbs, tx_channel), TAG, "register DMA callbacks failed");
     return ESP_OK;
 }
 #endif // SOC_RMT_SUPPORT_DMA
@@ -256,6 +257,10 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
     ESP_RETURN_ON_FALSE(config->flags.with_dma == 0, ESP_ERR_NOT_SUPPORTED, TAG, "DMA not supported");
 #endif
 
+#if !SOC_RMT_SUPPORT_SLEEP_RETENTION
+    ESP_RETURN_ON_FALSE(config->flags.backup_before_sleep == 0, ESP_ERR_NOT_SUPPORTED, TAG, "register back up is not supported");
+#endif // SOC_RMT_SUPPORT_SLEEP_RETENTION
+
     // malloc channel memory
     uint32_t mem_caps = RMT_MEM_ALLOC_CAPS;
     tx_channel = heap_caps_calloc(1, sizeof(rmt_tx_channel_t) + sizeof(rmt_tx_trans_desc_t) * config->trans_queue_depth, mem_caps);
@@ -290,6 +295,12 @@ esp_err_t rmt_new_tx_channel(const rmt_tx_channel_config_t *config, rmt_channel_
     rmt_hal_context_t *hal = &group->hal;
     int channel_id = tx_channel->base.channel_id;
     int group_id = group->group_id;
+
+#if RMT_USE_RETENTION_LINK
+    if (config->flags.backup_before_sleep != 0) {
+        rmt_create_retention_module(group);
+    }
+#endif // RMT_USE_RETENTION_LINK
 
     // reset channel, make sure the TX engine is not working, and events are cleared
     portENTER_CRITICAL(&group->spinlock);

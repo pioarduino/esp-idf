@@ -372,7 +372,7 @@ static esp_err_t esp_pm_sleep_configure(const void *vconfig)
     esp_err_t err = ESP_OK;
     const esp_pm_config_t* config = (const esp_pm_config_t*) vconfig;
 
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
+#if ESP_SLEEP_POWER_DOWN_CPU
     err = sleep_cpu_configure(config->light_sleep_enable);
     if (err != ESP_OK) {
         return err;
@@ -438,7 +438,7 @@ esp_err_t esp_pm_configure(const void* vconfig)
     /* Maximum SOC APB clock frequency is 40 MHz, maximum Modem (WiFi,
      * Bluetooth, etc..) APB clock frequency is 80 MHz */
     int apb_clk_freq = esp_clk_apb_freq() / MHZ;
-#if CONFIG_ESP_WIFI_ENABLED || CONFIG_BT_ENABLED || CONFIG_IEEE802154_ENABLED
+#if (CONFIG_ESP_WIFI_ENABLED || CONFIG_BT_ENABLED || CONFIG_IEEE802154_ENABLED) && SOC_PHY_SUPPORTED
     apb_clk_freq = MAX(apb_clk_freq, MODEM_REQUIRED_MIN_APB_CLK_FREQ / MHZ);
 #endif
     int apb_max_freq = MIN(max_freq_mhz, apb_clk_freq); /* CPU frequency in APB_MAX mode */

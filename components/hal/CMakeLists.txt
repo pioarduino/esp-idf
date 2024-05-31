@@ -5,9 +5,14 @@ set(includes "platform_port/include")
 
 # target specific include must be added before the generic one
 # because of the "include_next" directive used by the efuse_hal.h
-if(NOT ${target} STREQUAL "linux")
-    list(APPEND includes "${target}/include")
+list(APPEND includes "${target}/include")
+
+if(CONFIG_IDF_TARGET_ESP32C5_BETA3_VERSION)
+    list(APPEND includes "${target}/beta3/include")
+elseif(CONFIG_IDF_TARGET_ESP32C5_MP_VERSION)
+    list(APPEND includes "${target}/mp/include")
 endif()
+
 list(APPEND includes "include")
 
 if(CONFIG_SOC_MPU_SUPPORTED)
@@ -215,6 +220,10 @@ if(NOT BOOTLOADER_BUILD)
 
     if(CONFIG_SOC_JPEG_CODEC_SUPPORTED)
         list(APPEND srcs "jpeg_hal.c")
+    endif()
+
+    if(CONFIG_SOC_PPA_SUPPORTED)
+        list(APPEND srcs "ppa_hal.c")
     endif()
 
     if(CONFIG_SOC_GPSPI_SUPPORTED)

@@ -68,12 +68,15 @@ if(NOT BOOTLOADER_BUILD)
     endif()
 
     if(CONFIG_SOC_GDMA_SUPPORTED)
-        list(APPEND srcs "dma/gdma.c")
+        list(APPEND srcs "dma/gdma.c" "deprecated/gdma_legacy.c")
         if(CONFIG_SOC_GDMA_SUPPORT_SLEEP_RETENTION)
             list(APPEND srcs "dma/gdma_sleep_retention.c")
         endif()
         if(CONFIG_SOC_GDMA_SUPPORT_ETM)
             list(APPEND srcs "dma/gdma_etm.c")
+        endif()
+        if(CONFIG_SOC_GDMA_SUPPORT_CRC)
+            list(APPEND srcs "dma/gdma_crc.c")
         endif()
     endif()
 
@@ -185,7 +188,7 @@ idf_component_register(SRCS ${srcs}
                        PRIV_INCLUDE_DIRS port/include include/esp_private
                        REQUIRES ${requires}
                        PRIV_REQUIRES "${priv_requires}"
-                       LDFRAGMENTS linker.lf dma/linker.lf)
+                       LDFRAGMENTS linker.lf dma/linker.lf ldo/linker.lf)
 
 idf_build_get_property(target IDF_TARGET)
 add_subdirectory(port/${target})

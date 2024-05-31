@@ -27,6 +27,7 @@
 #if !CONFIG_IDF_TARGET_LINUX
 #include "esp_flash.h"
 #include "esp_flash_encrypt.h"
+#include "spi_flash_mmap.h"
 #endif
 #include "esp_log.h"
 #include "esp_rom_md5.h"
@@ -237,7 +238,8 @@ void esp_partition_unload_all(void)
     partition_list_item_t *it;
     partition_list_item_t *tmp;
     SLIST_FOREACH_SAFE(it, &s_partition_list, next, tmp) {
-        SLIST_REMOVE(&s_partition_list, it, partition_list_item_, next);
+        // Remove current head from the list and free it, new head is the next element
+        SLIST_REMOVE_HEAD(&s_partition_list, next);
         free(it);
     }
     _lock_release(&s_partition_list_lock);

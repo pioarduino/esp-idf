@@ -78,7 +78,7 @@ typedef struct {
  */
 typedef struct {
     int channel;     //!< UART channel number (count from zero)
-    int baud_rate;   //!< Comunication baud rate
+    int baud_rate;   //!< Communication baud rate
     int tx_gpio_num; //!< GPIO number for TX path, -1 means using default one
     int rx_gpio_num; //!< GPIO number for RX path, -1 means using default one
 } esp_console_dev_uart_config_t;
@@ -129,6 +129,12 @@ typedef struct {
 
 #define ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT() {}
 #endif // CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || (defined __DOXYGEN__ && SOC_USB_SERIAL_JTAG_SUPPORTED)
+
+typedef enum {
+    ESP_CONSOLE_HELP_VERBOSE_LEVEL_0       = 0,
+    ESP_CONSOLE_HELP_VERBOSE_LEVEL_1       = 1,
+    ESP_CONSOLE_HELP_VERBOSE_LEVEL_MAX_NUM = 2
+} esp_console_help_verbose_level_e;
 
 /**
  * @brief initialize console module
@@ -313,6 +319,18 @@ const char *esp_console_get_hint(const char *buf, int *color, int *bold);
  *      - ESP_ERR_INVALID_STATE, if esp_console_init wasn't called
  */
 esp_err_t esp_console_register_help_command(void);
+
+/**
+ * @brief Set the verbose level for 'help' command
+ *
+ * Set the verbose level for 'help' command. Higher verbose level shows more details.
+ * Valid verbose_level values are described in esp_console_help_verbose_level_e and must be lower than `ESP_CONSOLE_HELP_VERBOSE_LEVEL_MAX_NUM`.
+ *
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG, if invalid verbose level is provided
+ */
+esp_err_t esp_console_set_help_verbose_level(esp_console_help_verbose_level_e verbose_level);
 
 /******************************************************************************
  *              Console REPL

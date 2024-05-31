@@ -14,7 +14,7 @@
 #include "esp_check.h"
 #include "esp_sleep.h"
 #include "esp_log.h"
-#include "esp_crc.h"
+#include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
@@ -391,12 +391,12 @@ static IRAM_ATTR void cpu_domain_dev_regs_restore(cpu_domain_dev_sleep_frame_t *
 #if CONFIG_PM_CHECK_SLEEP_RETENTION_FRAME
 static IRAM_ATTR void update_retention_frame_crc(uint32_t *frame_ptr, uint32_t frame_check_size, uint32_t *frame_crc_ptr)
 {
-    *(frame_crc_ptr) = esp_crc32_le(0, (void *)frame_ptr, frame_check_size);
+    *(frame_crc_ptr) = esp_rom_crc32_le(0, (void *)frame_ptr, frame_check_size);
 }
 
 static IRAM_ATTR void validate_retention_frame_crc(uint32_t *frame_ptr, uint32_t frame_check_size, uint32_t *frame_crc_ptr)
 {
-    if(*(frame_crc_ptr) != esp_crc32_le(0, (void *)(frame_ptr), frame_check_size)){
+    if(*(frame_crc_ptr) != esp_rom_crc32_le(0, (void *)(frame_ptr), frame_check_size)){
         // resume uarts
         for (int i = 0; i < SOC_UART_NUM; ++i) {
             if (!uart_ll_is_enabled(i)) {
@@ -489,7 +489,7 @@ bool cpu_domain_pd_allowed(void)
 
 esp_err_t sleep_cpu_configure(bool light_sleep_enable)
 {
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
+#if ESP_SLEEP_POWER_DOWN_CPU
     if (light_sleep_enable) {
         ESP_RETURN_ON_ERROR(esp_sleep_cpu_retention_init(), TAG, "Failed to enable CPU power down during light sleep.");
     } else {

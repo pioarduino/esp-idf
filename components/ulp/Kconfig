@@ -34,7 +34,7 @@ menu "Ultra Low Power (ULP) Co-processor"
         default 4096 if !IDF_TARGET_ESP32
         range 32 8176 if IDF_TARGET_ESP32 || IDF_TARGET_ESP32S2 || IDF_TARGET_ESP32S3
         range 32 16352 if IDF_TARGET_ESP32C5 || IDF_TARGET_ESP32C6
-        range 32 32768 if IDF_TARGET_ESP32P4
+        range 32 31088 if IDF_TARGET_ESP32P4 # Some memory are reserved for ROM/RTC reserved
         help
             Bytes of memory to reserve for ULP Co-processor firmware & data.
             Data is reserved at the beginning of RTC slow memory.
@@ -91,5 +91,21 @@ menu "Ultra Low Power (ULP) Co-processor"
             from RAM code.
             Note: For LP ROM prints to work properly, make sure that the LP core boots
             from the LP ROM.
+
+    menu "ULP Debugging Options"
+        config ULP_PANIC_OUTPUT_ENABLE
+            depends on ULP_COPROC_TYPE_LP_CORE && SOC_ULP_LP_UART_SUPPORTED
+            bool
+            prompt "Enable panic handler which outputs over LP UART"
+            default "y" if IDF_TARGET_ESP32P4
+            help
+                Set this option to enable panic handler functionality. If this option is
+                enabled then the LP Core will output a panic dump over LP UART,
+                similar to what the main core does. Output depends on LP UART already being
+                initialized and configured.
+                Disabling this option will reduce the LP core binary size by not
+                linking in panic handler functionality.
+
+    endmenu
 
 endmenu  # Ultra Low Power (ULP) Co-processor

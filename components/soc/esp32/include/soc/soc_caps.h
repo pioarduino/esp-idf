@@ -104,6 +104,7 @@
 #define SOC_LIGHT_SLEEP_SUPPORTED   1
 #define SOC_DEEP_SLEEP_SUPPORTED    1
 #define SOC_LP_PERIPH_SHARE_INTERRUPT   1   // LP peripherals sharing the same interrupt source
+#define SOC_PM_SUPPORTED            1
 
 #if SOC_CAPS_ECO_VER < 200
 #define SOC_DPORT_WORKAROUND                   1
@@ -190,6 +191,7 @@
 
 // The Clock Out signal is binding to the pin's IO_MUX function
 #define SOC_GPIO_CLOCKOUT_BY_IO_MUX    (1)
+#define SOC_GPIO_CLOCKOUT_CHANNEL_NUM  (3)
 
 /*-------------------------- I2C CAPS ----------------------------------------*/
 // ESP32 has 2 I2C

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,6 +29,7 @@
 #include "bootloader_flash_config.h"
 #include "bootloader_mem.h"
 #include "esp_private/regi2c_ctrl.h"
+#include "soc/chip_revision.h"
 #include "soc/regi2c_lp_bias.h"
 #include "soc/regi2c_bias.h"
 #include "bootloader_console.h"
@@ -40,11 +41,13 @@
 #include "hal/cache_hal.h"
 #include "hal/clk_tree_ll.h"
 #include "hal/lpwdt_ll.h"
+#include "hal/spimem_flash_ll.h"
 #include "soc/lp_wdt_reg.h"
 #include "hal/efuse_hal.h"
 #include "soc/regi2c_syspll.h"
 #include "soc/regi2c_cpll.h"
 #include "soc/regi2c_bias.h"
+#include "esp_private/periph_ctrl.h"
 
 static const char *TAG = "boot.esp32p4";
 
@@ -89,17 +92,24 @@ static void bootloader_super_wdt_auto_feed(void)
 
 static inline void bootloader_hardware_init(void)
 {
+    int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused));
     // regi2c is enabled by default on ESP32P4, do nothing
-
-    // On ESP32P4 ECO0, the default (power on reset) CPLL and SPLL frequencies are very high, lower them to avoid bias may not be enough in bootloader
-    // And we are fixing SPLL to be 480MHz at all runtime
-    // Suppose to fix the issue on ECO1, will check when chip comes back
-    // TODO: IDF-8939
-    REGI2C_WRITE_MASK(I2C_CPLL, I2C_CPLL_OC_DIV_7_0, 6); // lower default cpu_pll freq to 400M
-    REGI2C_WRITE_MASK(I2C_SYSPLL, I2C_SYSPLL_OC_DIV_7_0, 8); // lower default sys_pll freq to 480M
-    esp_rom_delay_us(100);
+    unsigned chip_version = efuse_hal_chip_revision();
+    if (!ESP_CHIP_REV_ABOVE(chip_version, 1)) {
+        // On ESP32P4 ECO0, the default (power on reset) CPLL and SPLL frequencies are very high, lower them to avoid bias may not be enough in bootloader
+        // And we are fixing SPLL to be 480MHz after app is up
+        REGI2C_WRITE_MASK(I2C_CPLL, I2C_CPLL_OC_DIV_7_0, 6); // lower default cpu_pll freq to 400M
+        REGI2C_WRITE_MASK(I2C_SYSPLL, I2C_SYSPLL_OC_DIV_7_0, 8); // lower default sys_pll freq to 480M
+        esp_rom_delay_us(100);
+    }
     REGI2C_WRITE_MASK(I2C_BIAS, I2C_BIAS_DREG_1P1, 10);
     REGI2C_WRITE_MASK(I2C_BIAS, I2C_BIAS_DREG_1P1_PVT, 10);
+
+    // IDF-10019 TODO: This is temporarily for ESP32P4-ECO0, please remove it when eco0 is not widly used.
+    if (likely(ESP_CHIP_REV_ABOVE(chip_version, 1))) {
+        spimem_flash_ll_select_clk_source(0, FLASH_CLK_SRC_SPLL);
+        spimem_ctrlr_ll_set_core_clock(0, 6);
+    }
 }
 
 static inline void bootloader_ana_reset_config(void)
@@ -170,7 +180,7 @@ esp_err_t bootloader_init(void)
     }
 #endif // !CONFIG_APP_BUILD_TYPE_RAM
 
-    // check whether a WDT reset happend
+    // check whether a WDT reset happened
     bootloader_check_wdt_reset();
     // config WDT
     bootloader_config_wdt();

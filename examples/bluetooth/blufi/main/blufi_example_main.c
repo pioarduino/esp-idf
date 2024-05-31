@@ -246,7 +246,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
     case WIFI_EVENT_AP_STADISCONNECTED: {
         wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        BLUFI_INFO("station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
+        BLUFI_INFO("station "MACSTR" leave, AID=%d, reason=%d", MAC2STR(event->mac), event->aid, event->reason);
         break;
     }
 
@@ -427,7 +427,7 @@ static void example_event_callback(esp_blufi_cb_event_t event, esp_blufi_cb_para
     }
     case ESP_BLUFI_EVENT_RECV_CUSTOM_DATA:
         BLUFI_INFO("Recv Custom Data %" PRIu32 "\n", param->custom_data.data_len);
-        esp_log_buffer_hex("Custom Data", param->custom_data.data, param->custom_data.data_len);
+        ESP_LOG_BUFFER_HEX("Custom Data", param->custom_data.data, param->custom_data.data_len);
         break;
 	case ESP_BLUFI_EVENT_RECV_USERNAME:
         /* Not handle currently */

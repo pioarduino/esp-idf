@@ -56,7 +56,7 @@
   variables:
     IDF_TOOLCHAIN: clang
     TEST_BUILD_OPTS_EXTRA: ""
-    TEST_DIR: tools/test_apps/system/cxx_pthread_bluetooth
+    TEST_DIR: tools/test_apps/system/clang_build_test
   script:
     # CI specific options start from "--parallel-count xxx". could ignore when running locally
     - run_cmd python tools/ci/ci_build_apps.py $TEST_DIR -v
@@ -143,7 +143,7 @@ build_clang_test_apps_esp32s3:
     # For RISCV clang generates '.linker-options' sections of type 'llvm_linker_options' in asm files.
     # See (https://llvm.org/docs/Extensions.html#linker-options-section-linker-options).
     # Binutils gas ignores them with warning.
-    # TODO: LLVM-112, Use integrated assembler.
+    # TODO: LLVM-333, Use integrated assembler.
     TEST_BUILD_OPTS_EXTRA: "--ignore-warning-str 'Warning: unrecognized section type'"
 
 build_clang_test_apps_esp32c3:
@@ -164,10 +164,29 @@ build_clang_test_apps_esp32c6:
   extends:
     - .build_clang_test_apps_riscv
     - .rules:build
-  # TODO: c6 builds fail in master due to missing headers
-  allow_failure: true
   variables:
     IDF_TARGET: esp32c6
+
+build_clang_test_apps_esp32c5:
+  extends:
+    - .build_clang_test_apps_riscv
+    - .rules:build
+  variables:
+    IDF_TARGET: esp32c5
+
+build_clang_test_apps_esp32h2:
+  extends:
+    - .build_clang_test_apps_riscv
+    - .rules:build
+  variables:
+    IDF_TARGET: esp32h2
+
+build_clang_test_apps_esp32p4:
+  extends:
+    - .build_clang_test_apps_riscv
+    - .rules:build
+  variables:
+    IDF_TARGET: esp32p4
 
 ######################
 # Build System Tests #
@@ -194,8 +213,12 @@ build_clang_test_apps_esp32c6:
     - ${IDF_PATH}/tools/ci/test_configure_ci_environment.sh
     - cd ${IDF_PATH}/tools/test_build_system
     - python ${IDF_PATH}/tools/ci/get_known_failure_cases_file.py
-    - pytest --parallel-count ${CI_NODE_TOTAL:-1} --parallel-index ${CI_NODE_INDEX:-1}
-      --work-dir ${CI_PROJECT_DIR}/test_build_system --junitxml=${CI_PROJECT_DIR}/XUNIT_RESULT.xml
+    - pytest
+      --cleanup-idf-copy
+      --parallel-count ${CI_NODE_TOTAL:-1}
+      --parallel-index ${CI_NODE_INDEX:-1}
+      --work-dir ${CI_PROJECT_DIR}/test_build_system
+      --junitxml ${CI_PROJECT_DIR}/XUNIT_RESULT.xml
       --ignore-result-files ${KNOWN_FAILURE_CASES_FILE_NAME}
 
 pytest_build_system:
@@ -206,11 +229,14 @@ pytest_build_system_macos:
   extends:
     - .test_build_system_template
     - .before_script:build:macos
+    - .after_script:build:macos:upload-when-fail
     - .rules:build:macos
   tags:
     - macos_shell
   parallel: 3
-  allow_failure: true  # IDFCI-2107
+  variables:
+    PYENV_VERSION: "3.8"
+    CI_CCACHE_DISABLE: "1"  # ccache: error: Read-only file system
 
 build_docker:
   extends:
@@ -257,7 +283,6 @@ generate_build_child_pipeline:
   dependencies: # set dependencies to null to avoid missing artifacts issue
   needs:
     - pipeline_variables
-    - check_test_cases_env_markers_and_required_runners
   artifacts:
     paths:
       - build_child_pipeline.yml

@@ -47,18 +47,6 @@ def test_compile_commands_json_updated_by_reconfigure(idf_py: IdfPyFunc) -> None
 
 
 @pytest.mark.usefixtures('test_app_copy')
-def test_of_test_app_copy(idf_py: IdfPyFunc) -> None:
-    p = Path('main/idf_component.yml')
-    p.write_text('syntax_error\n')
-    try:
-        with (pytest.raises(subprocess.CalledProcessError)) as exc_info:
-            idf_py('reconfigure')
-        assert 'ERROR: Unknown format of the manifest file:' in exc_info.value.stderr
-    finally:
-        p.unlink()
-
-
-@pytest.mark.usefixtures('test_app_copy')
 def test_hints_no_color_output_when_noninteractive(idf_py: IdfPyFunc) -> None:
     """Check that idf.py hints don't include color escape codes in non-interactive builds"""
 
@@ -245,18 +233,26 @@ def test_create_project(idf_py: IdfPyFunc, idf_copy: Path) -> None:
 
 @pytest.mark.skipif(sys.platform == 'darwin', reason='macos runner is a shell executor, it would break the file system')
 def test_create_project_with_idf_readonly(idf_copy: Path) -> None:
-    def change_to_readonly(src: Path) -> None:
+    def change_file_permissions(src: Path, write_permission: bool) -> None:
+        dir_permission = 0o777 if write_permission else 0o555  # all or read & execute
+        file_permission = 0o777 if write_permission else 0o444  # all or readonly or all
         for root, dirs, files in os.walk(src):
             for name in dirs:
-                os.chmod(os.path.join(root, name), 0o555)  # read & execute
+                os.chmod(os.path.join(root, name), dir_permission)
             for name in files:
                 path = os.path.join(root, name)
                 if '/bin/' in path:
-                    continue  # skip excutables
-                os.chmod(os.path.join(root, name), 0o444)  # readonly
+                    continue  # skip executables
+                os.chmod(os.path.join(root, name), file_permission)
     logging.info('Check that command for creating new project will success if the IDF itself is readonly.')
-    change_to_readonly(idf_copy)
-    run_idf_py('create-project', '--path', str(idf_copy / 'example_proj'), 'temp_test_project')
+    change_file_permissions(idf_copy, write_permission=False)
+    try:
+        run_idf_py('create-project', '--path', str(idf_copy / 'example_proj'), 'temp_test_project')
+    except Exception:
+        raise
+    else:
+        change_file_permissions(idf_copy, write_permission=True)
+        shutil.rmtree(idf_copy)
 
 
 @pytest.mark.usefixtures('test_app_copy')
@@ -308,3 +304,13 @@ def test_save_defconfig_check(idf_py: IdfPyFunc, test_app_copy: Path) -> None:
         'Missing CONFIG_IDF_TARGET="esp32c3" in sdkconfig.defaults'
     assert file_contains(test_app_copy / 'sdkconfig.defaults', 'CONFIG_PARTITION_TABLE_OFFSET=0x8001'), \
         'Missing CONFIG_PARTITION_TABLE_OFFSET=0x8001 in sdkconfig.defaults'
+
+
+def test_merge_bin_cmd(idf_py: IdfPyFunc, test_app_copy: Path) -> None:
+    logging.info('Test if merge-bin command works correctly')
+    idf_py('merge-bin')
+    assert (test_app_copy / 'build' / 'merged-binary.bin').is_file()
+    idf_py('merge-bin', '--output', 'merged-binary-2.bin')
+    assert (test_app_copy / 'build' / 'merged-binary-2.bin').is_file()
+    idf_py('merge-bin', '--format', 'hex')
+    assert (test_app_copy / 'build' / 'merged-binary.hex').is_file()

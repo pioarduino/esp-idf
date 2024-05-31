@@ -16,6 +16,7 @@
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_timer_private.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_private/rtc_clk.h"
 #include "esp_private/sleep_event.h"
 #include "esp_private/system_internal.h"
 #include "esp_log.h"
@@ -27,6 +28,16 @@
 #include "soc/soc_caps.h"
 #include "driver/rtc_io.h"
 #include "hal/rtc_io_hal.h"
+#include "hal/clk_tree_hal.h"
+
+#if SOC_SLEEP_SYSTIMER_STALL_WORKAROUND
+#include "hal/systimer_ll.h"
+#endif
+
+#if SOC_SLEEP_TGWDT_STOP_WORKAROUND
+#include "hal/mwdt_ll.h"
+#include "hal/timer_ll.h"
+#endif
 
 #if SOC_PM_SUPPORT_PMU_MODEM_STATE
 #include "esp_private/pm_impl.h"
@@ -487,6 +498,52 @@ static void IRAM_ATTR resume_cache(void) {
     }
 }
 
+#if SOC_SLEEP_TGWDT_STOP_WORKAROUND
+static uint32_t s_stopped_tgwdt_bmap = 0;
+#endif
+
+// Must be called from critical sections.
+static void IRAM_ATTR suspend_timers(uint32_t pd_flags) {
+    if (!(pd_flags & RTC_SLEEP_PD_XTAL)) {
+#if SOC_SLEEP_TGWDT_STOP_WORKAROUND
+        /* If timegroup implemented task watchdog or interrupt watchdog is running, we have to stop it. */
+        for (uint32_t tg_num = 0; tg_num < SOC_TIMER_GROUPS; ++tg_num) {
+            if (mwdt_ll_check_if_enabled(TIMER_LL_GET_HW(tg_num))) {
+                mwdt_ll_write_protect_disable(TIMER_LL_GET_HW(tg_num));
+                mwdt_ll_disable(TIMER_LL_GET_HW(tg_num));
+                mwdt_ll_write_protect_enable(TIMER_LL_GET_HW(tg_num));
+                s_stopped_tgwdt_bmap |= BIT(tg_num);
+            }
+        }
+#endif
+#if SOC_SLEEP_SYSTIMER_STALL_WORKAROUND
+        for (uint32_t counter_id = 0; counter_id < SOC_SYSTIMER_COUNTER_NUM; ++counter_id) {
+            systimer_ll_enable_counter(&SYSTIMER, counter_id, false);
+        }
+#endif
+    }
+}
+
+// Must be called from critical sections.
+static void IRAM_ATTR resume_timers(uint32_t pd_flags) {
+    if (!(pd_flags & RTC_SLEEP_PD_XTAL)) {
+#if SOC_SLEEP_SYSTIMER_STALL_WORKAROUND
+        for (uint32_t counter_id = 0; counter_id < SOC_SYSTIMER_COUNTER_NUM; ++counter_id) {
+            systimer_ll_enable_counter(&SYSTIMER, counter_id, true);
+        }
+#endif
+#if SOC_SLEEP_TGWDT_STOP_WORKAROUND
+        for (uint32_t tg_num = 0; tg_num < SOC_TIMER_GROUPS; ++tg_num) {
+            if (s_stopped_tgwdt_bmap & BIT(tg_num)) {
+                mwdt_ll_write_protect_disable(TIMER_LL_GET_HW(tg_num));
+                mwdt_ll_enable(TIMER_LL_GET_HW(tg_num));
+                mwdt_ll_write_protect_enable(TIMER_LL_GET_HW(tg_num));
+            }
+        }
+#endif
+    }
+}
+
 // [refactor-todo] provide target logic for body of uart functions below
 static void IRAM_ATTR flush_uarts(void)
 {
@@ -627,8 +684,19 @@ FORCE_INLINE_ATTR void misc_modules_sleep_prepare(bool deep_sleep)
 /**
  * These save-restore workaround should be moved to lower layer
  */
-FORCE_INLINE_ATTR void misc_modules_wake_prepare(void)
+FORCE_INLINE_ATTR void misc_modules_wake_prepare(uint32_t pd_flags)
 {
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
+    if (pd_flags & PMU_SLEEP_PD_TOP) {
+        // There is no driver to manage the flashboot watchdog, and it is definitely be in off state when
+        // the system is running, after waking up from pd_top sleep, shut it down by software here.
+        wdt_hal_context_t mwdt_ctx = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
+        wdt_hal_write_protect_disable(&mwdt_ctx);
+        wdt_hal_set_flashboot_en(&mwdt_ctx, false);
+        wdt_hal_write_protect_enable(&mwdt_ctx);
+    }
+#endif
+
 #if SOC_USB_SERIAL_JTAG_SUPPORTED && !SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP
     sleep_console_usj_pad_restore();
 #endif
@@ -868,22 +936,17 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
         }
     }
 
-#if CONFIG_ESP_SLEEP_SYSTIMER_STALL_WORKAROUND
-    if (!(pd_flags & RTC_SLEEP_PD_XTAL)) {
-        rtc_sleep_systimer_enable(false);
-    }
-#endif
 
     if (should_skip_sleep) {
         result = ESP_ERR_SLEEP_REJECT;
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && !CONFIG_FREERTOS_UNICORE && SOC_PM_CPU_RETENTION_BY_SW
+#if ESP_SLEEP_POWER_DOWN_CPU && !CONFIG_FREERTOS_UNICORE && SOC_PM_CPU_RETENTION_BY_SW
         esp_sleep_cpu_skip_retention();
 #endif
     } else {
 #if CONFIG_ESP_SLEEP_DEBUG
-    if (s_sleep_ctx != NULL) {
-        s_sleep_ctx->wakeup_triggers = s_config.wakeup_triggers;
-    }
+        if (s_sleep_ctx != NULL) {
+            s_sleep_ctx->wakeup_triggers = s_config.wakeup_triggers;
+        }
 #endif
         if (deep_sleep) {
 #if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
@@ -911,6 +974,7 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
             result = rtc_deep_sleep_start(s_config.wakeup_triggers, reject_triggers);
 #endif
         } else {
+            suspend_timers(pd_flags);
             /* Cache Suspend 1: will wait cache idle in cache suspend */
             suspend_cache();
             /* On esp32c6, only the lp_aon pad hold function can only hold the GPIO state in the active mode.
@@ -924,6 +988,13 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
 #endif
 #endif
 
+#if SOC_CLK_MPLL_SUPPORTED
+            uint32_t mpll_freq_mhz = rtc_clk_mpll_get_freq();
+            if (mpll_freq_mhz) {
+                rtc_clk_mpll_disable();
+            }
+#endif
+
 #if SOC_DCDC_SUPPORTED
             uint64_t ldo_increased_us = rtc_time_slowclk_to_us(rtc_time_get() - s_config.rtc_ticks_at_ldo_prepare, s_config.rtc_clk_cal_period);
             if (ldo_increased_us < LDO_POWER_TAKEOVER_PREPARATION_TIME_US) {
@@ -933,14 +1004,14 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
 #endif
 
 #if SOC_PMU_SUPPORTED
-#if SOC_PM_CPU_RETENTION_BY_SW && CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
+#if SOC_PM_CPU_RETENTION_BY_SW && ESP_SLEEP_POWER_DOWN_CPU
             esp_sleep_execute_event_callbacks(SLEEP_EVENT_HW_GOTO_SLEEP, (void *)0);
             if (pd_flags & (PMU_SLEEP_PD_CPU | PMU_SLEEP_PD_TOP)) {
                 result = esp_sleep_cpu_retention(pmu_sleep_start, s_config.wakeup_triggers, reject_triggers, config.power.hp_sys.dig_power.mem_dslp, deep_sleep);
             } else
 #endif
             {
-#if !CONFIG_FREERTOS_UNICORE && CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && SOC_PM_CPU_RETENTION_BY_SW
+#if !CONFIG_FREERTOS_UNICORE && ESP_SLEEP_POWER_DOWN_CPU && SOC_PM_CPU_RETENTION_BY_SW
                 // Skip smp retention if CPU power domain power-down is not allowed
                 esp_sleep_cpu_skip_retention();
 #endif
@@ -949,6 +1020,13 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
             esp_sleep_execute_event_callbacks(SLEEP_EVENT_HW_EXIT_SLEEP, (void *)0);
 #else
             result = call_rtc_sleep_start(reject_triggers, config.lslp_mem_inf_fpu, deep_sleep);
+#endif
+
+#if SOC_CLK_MPLL_SUPPORTED
+            if (mpll_freq_mhz) {
+                rtc_clk_mpll_enable();
+                rtc_clk_mpll_configure(clk_hal_xtal_get_freq_mhz(), mpll_freq_mhz);
+            }
 #endif
 
             /* Unhold the SPI CS pin */
@@ -961,13 +1039,8 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
 #endif
             /* Cache Resume 1: Resume cache for continue running*/
             resume_cache();
+            resume_timers(pd_flags);
         }
-
-#if CONFIG_ESP_SLEEP_SYSTIMER_STALL_WORKAROUND
-            if (!(pd_flags & RTC_SLEEP_PD_XTAL)) {
-                rtc_sleep_systimer_enable(true);
-            }
-#endif
     }
 #if CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION
     if (pd_flags & RTC_SLEEP_PD_VDDSDIO) {
@@ -995,7 +1068,7 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
             sleep_retention_do_system_retention(false);
         }
 #endif
-        misc_modules_wake_prepare();
+        misc_modules_wake_prepare(pd_flags);
     }
 
 #if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
@@ -1240,12 +1313,12 @@ esp_err_t esp_light_sleep_start(void)
 #endif
 
 #if !CONFIG_FREERTOS_UNICORE
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && SOC_PM_CPU_RETENTION_BY_SW
+#if ESP_SLEEP_POWER_DOWN_CPU && SOC_PM_CPU_RETENTION_BY_SW
     sleep_smp_cpu_sleep_prepare();
 #else
     esp_ipc_isr_stall_other_cpu();
-    esp_ipc_isr_stall_pause();
 #endif
+    esp_ipc_isr_stall_pause();
 #endif
 
 #if CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION && CONFIG_PM_SLP_IRAM_OPT
@@ -1358,7 +1431,7 @@ esp_err_t esp_light_sleep_start(void)
         // Enter sleep, then wait for flash to be ready on wakeup
         err = esp_light_sleep_inner(pd_flags, flash_enable_time_us);
     }
-#if !CONFIG_FREERTOS_UNICORE && CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && SOC_PM_CPU_RETENTION_BY_SW
+#if !CONFIG_FREERTOS_UNICORE && ESP_SLEEP_POWER_DOWN_CPU && SOC_PM_CPU_RETENTION_BY_SW
         if (err != ESP_OK) {
             esp_sleep_cpu_skip_retention();
         }
@@ -1395,10 +1468,10 @@ esp_err_t esp_light_sleep_start(void)
 #endif
 
 #if !CONFIG_FREERTOS_UNICORE
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && SOC_PM_CPU_RETENTION_BY_SW
+    esp_ipc_isr_stall_resume();
+#if ESP_SLEEP_POWER_DOWN_CPU && SOC_PM_CPU_RETENTION_BY_SW
     sleep_smp_cpu_wakeup_prepare();
 #else
-    esp_ipc_isr_stall_resume();
     esp_ipc_isr_release_other_cpu();
 #endif
 #endif
@@ -1408,7 +1481,6 @@ esp_err_t esp_light_sleep_start(void)
         wdt_hal_disable(&rtc_wdt_ctx);
         wdt_hal_write_protect_enable(&rtc_wdt_ctx);
     }
-    portEXIT_CRITICAL(&s_config.lock);
 
 #if CONFIG_ESP_TASK_WDT_USE_ESP_TIMER
     /* Restart the Task Watchdog timer as it was stopped before sleeping. */
@@ -1425,6 +1497,8 @@ esp_err_t esp_light_sleep_start(void)
         s_sleep_ctx->sleep_request_result = err;
     }
 #endif
+
+    portEXIT_CRITICAL(&s_config.lock);
     return err;
 }
 
@@ -2046,7 +2120,7 @@ esp_err_t esp_sleep_pd_config(esp_sleep_pd_domain_t domain, esp_sleep_pd_option_
 #if SOC_PM_SUPPORT_TOP_PD
 FORCE_INLINE_ATTR bool top_domain_pd_allowed(void) {
     bool top_pd_allowed = true;
-#if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP
+#if ESP_SLEEP_POWER_DOWN_CPU
     top_pd_allowed &= cpu_domain_pd_allowed();
 #else
     top_pd_allowed = false;
@@ -2162,7 +2236,7 @@ static uint32_t get_power_down_flags(void)
     }
 #endif
 
-#if SOC_PM_SUPPORT_CPU_PD
+#if SOC_PM_SUPPORT_CPU_PD && ESP_SLEEP_POWER_DOWN_CPU
     if ((s_config.domain[ESP_PD_DOMAIN_CPU].pd_option != ESP_PD_OPTION_ON) && cpu_domain_pd_allowed()) {
         pd_flags |= RTC_SLEEP_PD_CPU;
     }

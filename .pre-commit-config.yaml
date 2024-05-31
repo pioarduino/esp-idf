@@ -103,10 +103,10 @@ repos:
         name: Check type annotations in python files
         entry: tools/ci/check_type_comments.py
         additional_dependencies:
-          - 'mypy==0.940'
-          - 'mypy-extensions==0.4.3'
-          - 'types-setuptools==57.4.14'
-          - 'types-PyYAML==0.1.9'
+          - 'mypy'
+          - 'mypy-extensions'
+          - 'types-setuptools'
+          - 'types-PyYAML'
           - 'types-requests'
         exclude: >
           (?x)^(
@@ -203,7 +203,7 @@ repos:
       - id: check-copyright
         args: ['--ignore', 'tools/ci/check_copyright_ignore.txt', '--config', 'tools/ci/check_copyright_config.yaml']
   - repo: https://github.com/espressif/conventional-precommit-linter
-    rev: v1.6.0
+    rev: v1.7.0
     hooks:
       - id: conventional-precommit-linter
         stages: [commit-msg]

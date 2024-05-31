@@ -42,6 +42,7 @@
 #include "esp_private/esp_clk.h"
 
 #include "driver/gpio.h"
+#include "esp_private/gpio.h"
 #include "driver/i2s_common.h"
 #include "i2s_private.h"
 
@@ -696,6 +697,7 @@ static void IRAM_ATTR i2s_dma_tx_callback(void *arg)
  */
 esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag)
 {
+    esp_err_t ret = ESP_OK;
     i2s_port_t port_id = handle->controller->id;
     ESP_RETURN_ON_FALSE((port_id >= 0) && (port_id < SOC_I2S_NUM), ESP_ERR_INVALID_ARG, TAG, "invalid handle");
 #if SOC_GDMA_SUPPORTED
@@ -703,14 +705,22 @@ esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag)
     gdma_trigger_t trig = {.periph = GDMA_TRIG_PERIPH_I2S};
 
     switch (port_id) {
+#if SOC_I2S_NUM > 2
+    case I2S_NUM_2:
+        trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S2;
+        break;
+#endif
 #if SOC_I2S_NUM > 1
     case I2S_NUM_1:
         trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S1;
         break;
 #endif
-    default:
+    case I2S_NUM_0:
         trig.instance_id = SOC_GDMA_TRIG_PERIPH_I2S0;
         break;
+    default:
+        ESP_LOGE(TAG, "Unsupported I2S port number");
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     /* Set GDMA config */
@@ -719,18 +729,18 @@ esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag)
         dma_cfg.direction = GDMA_CHANNEL_DIRECTION_TX;
         /* Register a new GDMA tx channel */
         ESP_RETURN_ON_ERROR(gdma_new_channel(&dma_cfg, &handle->dma.dma_chan), TAG, "Register tx dma channel error");
-        ESP_RETURN_ON_ERROR(gdma_connect(handle->dma.dma_chan, trig), TAG, "Connect tx dma channel error");
+        ESP_GOTO_ON_ERROR(gdma_connect(handle->dma.dma_chan, trig), err1, TAG, "Connect tx dma channel error");
         gdma_tx_event_callbacks_t cb = {.on_trans_eof = i2s_dma_tx_callback};
         /* Set callback function for GDMA, the interrupt is triggered by GDMA, then the GDMA ISR will call the  callback function */
-        gdma_register_tx_event_callbacks(handle->dma.dma_chan, &cb, handle);
+        ESP_GOTO_ON_ERROR(gdma_register_tx_event_callbacks(handle->dma.dma_chan, &cb, handle), err2, TAG, "Register tx callback failed");
     } else {
         dma_cfg.direction = GDMA_CHANNEL_DIRECTION_RX;
         /* Register a new GDMA rx channel */
         ESP_RETURN_ON_ERROR(gdma_new_channel(&dma_cfg, &handle->dma.dma_chan), TAG, "Register rx dma channel error");
-        ESP_RETURN_ON_ERROR(gdma_connect(handle->dma.dma_chan, trig), TAG, "Connect rx dma channel error");
+        ESP_GOTO_ON_ERROR(gdma_connect(handle->dma.dma_chan, trig), err1, TAG, "Connect rx dma channel error");
         gdma_rx_event_callbacks_t cb = {.on_recv_eof = i2s_dma_rx_callback};
         /* Set callback function for GDMA, the interrupt is triggered by GDMA, then the GDMA ISR will call the  callback function */
-        gdma_register_rx_event_callbacks(handle->dma.dma_chan, &cb, handle);
+        ESP_GOTO_ON_ERROR(gdma_register_rx_event_callbacks(handle->dma.dma_chan, &cb, handle), err2, TAG, "Register rx callback failed");
     }
 #else
     intr_flag |= handle->intr_prio_flags;
@@ -747,7 +757,15 @@ esp_err_t i2s_init_dma_intr(i2s_chan_handle_t handle, int intr_flag)
     /* Start DMA */
     i2s_ll_enable_dma(handle->controller->hal.dev, true);
 #endif // SOC_GDMA_SUPPORTED
-    return ESP_OK;
+    return ret;
+#if SOC_GDMA_SUPPORTED
+err2:
+    gdma_disconnect(handle->dma.dma_chan);
+err1:
+    gdma_del_channel(handle->dma.dma_chan);
+    handle->dma.dma_chan = NULL;
+    return ret;
+#endif
 }
 
 static uint64_t s_i2s_get_pair_chan_gpio_mask(i2s_chan_handle_t handle)
@@ -789,7 +807,7 @@ void i2s_gpio_check_and_set(i2s_chan_handle_t handle, int gpio, uint32_t signal_
 {
     /* Ignore the pin if pin = I2S_GPIO_UNUSED */
     if (gpio != (int)I2S_GPIO_UNUSED) {
-        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio], PIN_FUNC_GPIO);
+        gpio_func_sel(gpio, PIN_FUNC_GPIO);
         if (is_input) {
             /* Set direction, for some GPIOs, the input function are not enabled as default */
             gpio_set_direction(gpio, GPIO_MODE_INPUT);
@@ -806,7 +824,7 @@ void i2s_gpio_loopback_set(i2s_chan_handle_t handle, int gpio, uint32_t out_sig_
 {
     if (gpio != (int)I2S_GPIO_UNUSED) {
         i2s_output_gpio_reserve(handle,  gpio);
-        gpio_hal_iomux_func_sel(GPIO_PIN_MUX_REG[gpio], PIN_FUNC_GPIO);
+        gpio_func_sel(gpio, PIN_FUNC_GPIO);
         gpio_set_direction(gpio, GPIO_MODE_INPUT_OUTPUT);
         esp_rom_gpio_connect_out_signal(gpio, out_sig_idx, 0, 0);
         esp_rom_gpio_connect_in_signal(gpio, in_sig_idx, 0);

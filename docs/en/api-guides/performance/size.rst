@@ -382,6 +382,7 @@ The following configuration options reduces the final binary size of almost any 
 
     - Set :ref:`CONFIG_COMPILER_OPTIMIZATION` to ``Optimize for size (-Os)``. In some cases, ``Optimize for performance (-O2)`` will also reduce the binary size compared to the default. Note that if your code contains C or C++ Undefined Behavior then increasing the compiler optimization level may expose bugs that otherwise do not happen.
     - Reduce the compiled-in log output by lowering the app :ref:`CONFIG_LOG_DEFAULT_LEVEL`. If the :ref:`CONFIG_LOG_MAXIMUM_LEVEL` is changed from the default then this setting controls the binary size instead. Reducing compiled-in logging reduces the number of strings in the binary, and also the code size of the calls to logging functions.
+    - If your application doesn't require dynamic log level changes and you do not need to control logs per module using tags, consider disabling :ref:`CONFIG_LOG_DYNAMIC_LEVEL_CONTROL` and changing :ref:`CONFIG_LOG_TAG_LEVEL_IMPL`. It reduces IRAM usage by approximately 260 bytes, DRAM usage by approximately 264 bytes, and Flash usage by approximately 1K bytes compared to the default option, it also speeds up logging.
     - Set the :ref:`CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL` to ``Silent``. This avoids compiling in a dedicated assertion string and source file name for each assert that may fail. It is still possible to find the failed assert in the code by looking at the memory address where the assertion failed.
     - Besides the :ref:`CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL`, you can disable or silent the assertion for the HAL component separately by setting :ref:`CONFIG_HAL_DEFAULT_ASSERTION_LEVEL`. It is to notice that ESP-IDF lowers the HAL assertion level in bootloader to be silent even if :ref:`CONFIG_HAL_DEFAULT_ASSERTION_LEVEL` is set to full-assertion level. This is to reduce the bootloader size.
     - Setting :ref:`CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT` removes specific error messages for particular internal ESP-IDF error check macros. This may make it harder to debug some error conditions by reading the log output.
@@ -505,9 +506,9 @@ These include:
 - :ref:`CONFIG_MBEDTLS_ECP_C` (Alternatively: Leave this option enabled but disable some of the elliptic curves listed in the sub-menu.)
 - :ref:`CONFIG_MBEDTLS_ECP_NIST_OPTIM`
 - :ref:`CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM`
-- Change :ref:`CONFIG_MBEDTLS_TLS_MODE` if both server & client functionalities are not needed
-- Consider disabling some cipher suites listed in the ``TLS Key Exchange Methods`` sub-menu (i.e., :ref:`CONFIG_MBEDTLS_KEY_EXCHANGE_RSA`)
-- Consider disabling :ref:`CONFIG_MBEDTLS_ERROR_STRINGS` if the application is pulling in mbedTLS error strings because of :cpp:func:`mbedtls_strerror` usage
+- Change :ref:`CONFIG_MBEDTLS_TLS_MODE` if both server & client functionalities are not needed.
+- Consider disabling some cipher suites listed in the ``TLS Key Exchange Methods`` sub-menu (i.e., :ref:`CONFIG_MBEDTLS_KEY_EXCHANGE_RSA`).
+- Consider disabling :ref:`CONFIG_MBEDTLS_ERROR_STRINGS` if the application is already pulling in mbedTLS error strings through using :cpp:func:`mbedtls_strerror`.
 
 The help text for each option has some more information for reference.
 

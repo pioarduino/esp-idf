@@ -44,9 +44,15 @@ examples/system/deep_sleep_wake_stub:
       reason: target(s) is not supported yet  # TODO: [ESP32C5] IDF-8638
 
 examples/system/efuse:
+  enable:
+    - if: INCLUDE_DEFAULT == 1 or IDF_TARGET == "linux"
   disable:
-    - if: IDF_TARGET != "esp32" and (NIGHTLY_RUN != "1" or IDF_TARGET == "linux")
-      reason: no target specific functionality, testing on a single target is sufficient
+    - if: IDF_TARGET not in ["esp32", "linux"] and NIGHTLY_RUN != "1"
+    - if: IDF_TARGET == "linux" and CONFIG_NAME == "virt_flash_enc"
+    - if: IDF_TARGET == "linux" and CONFIG_NAME == "virt_flash_enc_release"
+    - if: IDF_TARGET == "linux" and CONFIG_NAME == "virt_sb_v2_and_fe"
+    - if: IDF_TARGET == "linux" and CONFIG_NAME == "virt_secure_boot_v2"
+      reason: Security features are not yet supported for Linux.
   depends_components:
     - efuse
     - bootloader_support
@@ -79,10 +85,6 @@ examples/system/freertos:
     - freertos
 
 examples/system/gcov:
-  disable:
-    - if: IDF_TARGET == "esp32c5"
-      temporary: true
-      reason: not supported yet #TODO: IDF-8717
   disable_test:
     - if: IDF_TARGET != "esp32"
       temporary: true
@@ -146,8 +148,7 @@ examples/system/ota/advanced_https_ota:
     - esp_wifi
     - esp_phy
     - bt
-  depends_filepatterns:
-    - examples/common_components/protocol_examples_common/**/*
+    - protocol_examples_common
 
 examples/system/ota/native_ota_example:
   disable:
@@ -164,8 +165,7 @@ examples/system/ota/native_ota_example:
     - esp_eth
     - esp_driver_gpio
     - bootloader_support
-  depends_filepatterns:
-    - examples/common_components/protocol_examples_common/**/*
+    - protocol_examples_common
 
 examples/system/ota/otatool:
   disable:
@@ -189,8 +189,7 @@ examples/system/ota/pre_encrypted_ota:
     - esp_eth
     - mbedtls
     - bootloader_support
-  depends_filepatterns:
-    - examples/common_components/protocol_examples_common/**/*
+    - protocol_examples_common
 
 examples/system/ota/simple_ota_example:
   disable:
@@ -238,9 +237,6 @@ examples/system/select:
 examples/system/sysview_tracing:
   disable:
     - if: SOC_GPTIMER_SUPPORTED != 1
-    - if: IDF_TARGET in ["esp32p4"]
-      temporary: true
-      reason: not supported on esp32p4
   disable_test:
     - if: IDF_TARGET != "esp32"
       temporary: true
@@ -249,9 +245,6 @@ examples/system/sysview_tracing:
 examples/system/sysview_tracing_heap_log:
   disable:
     - if: SOC_GPTIMER_SUPPORTED != 1
-    - if: IDF_TARGET in ["esp32p4"]
-      temporary: true
-      reason: not supported on esp32p4
   disable_test:
     - if: IDF_TARGET != "esp32"
       temporary: true
@@ -267,10 +260,12 @@ examples/system/task_watchdog:
 examples/system/ulp/lp_core/gpio:
   enable:
     - if: SOC_LP_CORE_SUPPORTED == 1
-  disable:
-    - if: IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: target esp32p4 is not supported yet, TODO IDF-7536
+  depends_components:
+    - ulp
+
+examples/system/ulp/lp_core/interrupt:
+  enable:
+    - if: SOC_LP_CORE_SUPPORTED == 1
   depends_components:
     - ulp
 
@@ -287,18 +282,12 @@ examples/system/ulp/lp_core/lp_i2c:
 examples/system/ulp/lp_core/lp_uart/lp_uart_echo:
   disable:
     - if: SOC_ULP_LP_UART_SUPPORTED != 1
-    - if: IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: target esp32p4 is not supported yet TODO IDF-9407
   depends_components:
     - ulp
 
 examples/system/ulp/lp_core/lp_uart/lp_uart_print:
   disable:
     - if: SOC_ULP_LP_UART_SUPPORTED != 1
-    - if: IDF_TARGET == "esp32p4"
-      temporary: true
-      reason: target esp32p4 is not supported yet TODO IDF-9407
   depends_components:
     - ulp
 

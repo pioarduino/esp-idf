@@ -11,6 +11,7 @@
 #include "esp_rom_caps.h"
 #include "lp_core_test_app.h"
 #include "lp_core_test_app_counter.h"
+#include "lp_core_test_app_isr.h"
 
 #if SOC_LP_TIMER_SUPPORTED
 #include "lp_core_test_app_set_timer_wakeup.h"
@@ -26,6 +27,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "hal/lp_core_ll.h"
+#include "hal/rtc_io_ll.h"
+#include "driver/rtc_io.h"
+
 extern const uint8_t lp_core_main_bin_start[] asm("_binary_lp_core_test_app_bin_start");
 extern const uint8_t lp_core_main_bin_end[]   asm("_binary_lp_core_test_app_bin_end");
 
@@ -38,6 +43,9 @@ extern const uint8_t lp_core_main_set_timer_wakeup_bin_end[]   asm("_binary_lp_c
 extern const uint8_t lp_core_main_gpio_bin_start[] asm("_binary_lp_core_test_app_gpio_bin_start");
 extern const uint8_t lp_core_main_gpio_bin_end[]   asm("_binary_lp_core_test_app_gpio_bin_end");
 
+extern const uint8_t lp_core_main_isr_bin_start[] asm("_binary_lp_core_test_app_isr_bin_start");
+extern const uint8_t lp_core_main_isr_bin_end[]   asm("_binary_lp_core_test_app_isr_bin_end");
+
 static void load_and_start_lp_core_firmware(ulp_lp_core_cfg_t* cfg, const uint8_t* firmware_start, const uint8_t* firmware_end)
 {
     TEST_ASSERT(ulp_lp_core_load_binary(firmware_start,
@@ -45,6 +53,12 @@ static void load_and_start_lp_core_firmware(ulp_lp_core_cfg_t* cfg, const uint8_
 
     TEST_ASSERT(ulp_lp_core_run(cfg) == ESP_OK);
 
+}
+
+static void clear_test_cmds(void)
+{
+    ulp_main_cpu_command = LP_CORE_NO_COMMAND;
+    ulp_command_resp = LP_CORE_NO_COMMAND;
 }
 
 TEST_CASE("LP core and main CPU are able to exchange data", "[lp_core]")
@@ -76,9 +90,7 @@ TEST_CASE("LP core and main CPU are able to exchange data", "[lp_core]")
     printf("data out: 0x%" PRIx32 ", expected: 0x%" PRIx32 " \n", ulp_test_data_out, test_data);
     TEST_ASSERT(test_data == ulp_test_data_out);
 
-    /* Clear test data */
-    ulp_main_cpu_command = LP_CORE_NO_COMMAND;
-    ulp_command_resp = LP_CORE_NO_COMMAND;
+    clear_test_cmds();
 }
 
 TEST_CASE("Test LP core delay", "[lp_core]")
@@ -113,15 +125,13 @@ TEST_CASE("Test LP core delay", "[lp_core]")
     printf("Waited for %" PRIi64 "us, expected: %" PRIi32 "us\n", diff, delay_period_us);
     TEST_ASSERT_INT_WITHIN(delta_us, delay_period_us, diff);
 
-    /* Clear test data */
-    ulp_main_cpu_command = LP_CORE_NO_COMMAND;
-    ulp_command_resp = LP_CORE_NO_COMMAND;
+    clear_test_cmds();
 }
 
 #define LP_TIMER_TEST_DURATION_S        (5)
 #define LP_TIMER_TEST_SLEEP_DURATION_US (20000)
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32P4, ESP32C5)
+#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C5)
 
 static void do_ulp_wakeup_deepsleep(lp_core_test_commands_t ulp_cmd)
 {
@@ -177,6 +187,10 @@ static void do_ulp_wakeup_with_lp_timer_deepsleep(void)
     ulp_lp_core_cfg_t cfg = {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_LP_TIMER,
         .lp_timer_sleep_duration_us = LP_TIMER_TEST_SLEEP_DURATION_US,
+#if ESP_ROM_HAS_LP_ROM
+        /* ROM Boot takes quite a bit longer, which skews the numbers of wake-ups. skip rom boot to keep the calculation simple */
+        .skip_lp_rom_boot = true,
+#endif
     };
 
     load_and_start_lp_core_firmware(&cfg, lp_core_main_counter_bin_start, lp_core_main_counter_bin_end);
@@ -206,13 +220,15 @@ static void check_reset_reason_and_sleep_duration(void)
     printf("CPU slept for %"PRIi64" ms, expected it to sleep approx %"PRIi64" ms\n", sleep_duration, expected_sleep_duration_ms);
     /* Rough estimate, as CPU spends quite some time waking up, but will test if lp core is waking up way too often etc */
     TEST_ASSERT_INT_WITHIN_MESSAGE(1000, expected_sleep_duration_ms, sleep_duration, "LP Core did not wake up the expected number of times");
+
+    clear_test_cmds();
 }
 
 TEST_CASE_MULTIPLE_STAGES("LP Timer can wakeup lp core periodically during deep sleep", "[ulp]",
                           do_ulp_wakeup_with_lp_timer_deepsleep,
                           check_reset_reason_and_sleep_duration);
 
-#endif //#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32P4, ESP32C5)
+#endif //#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C5)
 
 TEST_CASE("LP Timer can wakeup lp core periodically", "[lp_core]")
 {
@@ -321,3 +337,49 @@ TEST_CASE("LP core gpio tests", "[ulp]")
 }
 
 #endif //SOC_LP_TIMER_SUPPORTED
+
+#define ISR_TEST_ITERATIONS 100
+#define IO_TEST_PIN 0
+#include "lp_core_uart.h"
+
+TEST_CASE("LP core ISR tests", "[ulp]")
+{
+    lp_core_uart_cfg_t ucfg = LP_CORE_UART_DEFAULT_CONFIG();
+
+    ESP_ERROR_CHECK(lp_core_uart_init(&ucfg));
+
+    /* Load ULP firmware and start the coprocessor */
+    ulp_lp_core_cfg_t cfg = {
+        .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
+    };
+
+    load_and_start_lp_core_firmware(&cfg, lp_core_main_isr_bin_start, lp_core_main_isr_bin_end);
+
+    while (!ulp_isr_test_started) {
+    }
+
+    for (int i = 0; i < ISR_TEST_ITERATIONS; i++) {
+        lp_core_ll_hp_wake_lp();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    printf("ULP PMU ISR triggered %"PRIu32" times\n", ulp_pmu_isr_counter);
+    TEST_ASSERT_EQUAL(ISR_TEST_ITERATIONS, ulp_pmu_isr_counter);
+
+    /* Test LP IO interrupt */
+    rtc_gpio_init(IO_TEST_PIN);
+    rtc_gpio_set_direction(IO_TEST_PIN, RTC_GPIO_MODE_INPUT_ONLY);
+    TEST_ASSERT_EQUAL(0, ulp_io_isr_counter);
+
+    for (int i = 0; i < ISR_TEST_ITERATIONS; i++) {
+#if CONFIG_IDF_TARGET_ESP32C6
+        LP_IO.status_w1ts.val = 0x00000001; // Set GPIO 0 intr status to high
+#else
+        LP_GPIO.status_w1ts.val = 0x00000001; // Set GPIO 0 intr status to high
+#endif
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    printf("ULP LP IO ISR triggered %"PRIu32" times\n", ulp_io_isr_counter);
+    TEST_ASSERT_EQUAL(ISR_TEST_ITERATIONS, ulp_io_isr_counter);
+}

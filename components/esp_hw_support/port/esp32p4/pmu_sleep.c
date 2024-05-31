@@ -12,10 +12,13 @@
 #include "esp_err.h"
 #include "esp_attr.h"
 #include "esp_private/regi2c_ctrl.h"
+#include "esp32p4/rom/cache.h"
+#include "soc/chip_revision.h"
 #include "soc/soc.h"
 #include "soc/regi2c_syspll.h"
 #include "soc/regi2c_cpll.h"
 #include "soc/rtc.h"
+#include "soc/cache_reg.h"
 #include "soc/pau_reg.h"
 #include "soc/pmu_reg.h"
 #include "soc/pmu_struct.h"
@@ -27,6 +30,7 @@
 #include "pmu_param.h"
 #include "esp_rom_sys.h"
 #include "esp_rom_uart.h"
+#include "hal/efuse_hal.h"
 
 #define HP(state)   (PMU_MODE_HP_ ## state)
 #define LP(state)   (PMU_MODE_LP_ ## state)
@@ -159,6 +163,10 @@ const pmu_sleep_config_t* pmu_sleep_config_default(
         config->digital = digital_default;
 
         pmu_sleep_analog_config_t analog_default = PMU_SLEEP_ANALOG_LSLP_CONFIG_DEFAULT(pd_flags);
+#if CONFIG_SPIRAM
+        analog_default.hp_sys.analog.pd_cur = 1;
+        analog_default.lp_sys[PMU_MODE_LP_SLEEP].analog.pd_cur = 1;
+#endif
         config->analog = analog_default;
     }
     return config;
@@ -239,31 +247,18 @@ void pmu_sleep_init(const pmu_sleep_config_t *config, bool dslp)
     }
     pmu_sleep_analog_init(PMU_instance(), &config->analog, dslp);
     pmu_sleep_param_init(PMU_instance(), &config->param, dslp);
-
-    // When light sleep (PD_TOP), the PAU will power down. so need use LP_SYS_BACKUP_DMA_CFG2_REG to store recover link address.
-    if (!dslp && PMU.hp_sys[PMU_MODE_HP_SLEEP].dig_power.top_pd_en) {
-        if (PMU.hp_sys[PMU_MODE_HP_SLEEP].backup.hp_active2sleep_backup_en ||
-            PMU.hp_sys[PMU_MODE_HP_ACTIVE].backup.hp_sleep2active_backup_en) {
-            uint32_t link_sel = PMU.hp_sys[PMU_MODE_HP_SLEEP].backup.hp_active2sleep_backup_mode & 0x3;
-            uint32_t link_addr = REG_READ(PAU_REGDMA_LINK_0_ADDR_REG + link_sel * 4);
-            lp_sys_ll_set_pau_link_addr(link_addr);
-            pmu_sleep_enable_regdma_backup();
-        }
-    } else {
-        pmu_sleep_disable_regdma_backup();
-    }
 }
 
 void pmu_sleep_increase_ldo_volt(void) {
     REG_SET_FIELD(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_ACTIVE_HP_REGULATOR_DBIAS, 30);
     REG_SET_BIT(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_ACTIVE_HP_REGULATOR_XPD);
+    // Decrease the DCDC voltage to reduce the voltage difference between the DCDC and the LDO to avoid overshooting the DCDC voltage during wake-up.
+    REG_SET_FIELD(PMU_HP_ACTIVE_BIAS_REG, PMU_HP_ACTIVE_DCM_VSET, 24);
 }
 
 void pmu_sleep_shutdown_dcdc(void) {
     SET_PERI_REG_MASK(LP_SYSTEM_REG_SYS_CTRL_REG, LP_SYSTEM_REG_LP_FIB_DCDC_SWITCH); //0: enable, 1: disable
     REG_SET_BIT(PMU_DCM_CTRL_REG, PMU_DCDC_OFF_REQ);
-    // Decrease the DCDC voltage to reduce the voltage difference between the DCDC and the LDO to avoid overshooting the DCDC voltage during wake-up.
-    REG_SET_FIELD(PMU_HP_ACTIVE_BIAS_REG, PMU_HP_ACTIVE_DCM_VSET, 24);
     // Decrease hp_ldo voltage.
     REG_SET_FIELD(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_ACTIVE_HP_REGULATOR_DBIAS, 24);
 }
@@ -279,6 +274,11 @@ void pmu_sleep_shutdown_ldo(void) {
     CLEAR_PERI_REG_MASK(PMU_HP_ACTIVE_HP_REGULATOR0_REG, PMU_HP_ACTIVE_HP_REGULATOR_XPD);
 }
 
+FORCE_INLINE_ATTR void sleep_writeback_l1_dcache(void) {
+    Cache_WriteBack_All(CACHE_MAP_L1_DCACHE);
+    while (!REG_GET_BIT(CACHE_SYNC_CTRL_REG, CACHE_SYNC_DONE));
+}
+
 TCM_IRAM_ATTR uint32_t pmu_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt, uint32_t lslp_mem_inf_fpu, bool dslp)
 {
     lp_aon_hal_inform_wakeup_type(dslp);
@@ -290,6 +290,8 @@ TCM_IRAM_ATTR uint32_t pmu_sleep_start(uint32_t wakeup_opt, uint32_t reject_opt,
     pmu_ll_hp_clear_wakeup_intr_status(PMU_instance()->hal->dev);
     pmu_ll_hp_clear_reject_intr_status(PMU_instance()->hal->dev);
     pmu_ll_hp_clear_reject_cause(PMU_instance()->hal->dev);
+
+    sleep_writeback_l1_dcache();
 
     /* Start entry into sleep mode */
     pmu_ll_hp_set_sleep_enable(PMU_instance()->hal->dev);
@@ -313,8 +315,11 @@ TCM_IRAM_ATTR bool pmu_sleep_finish(void)
     }
     pmu_sleep_shutdown_ldo();
 
-    REGI2C_WRITE_MASK(I2C_CPLL, I2C_CPLL_OC_DIV_7_0, 6); // lower default cpu_pll freq to 400M
-    REGI2C_WRITE_MASK(I2C_SYSPLL, I2C_SYSPLL_OC_DIV_7_0, 8); // lower default sys_pll freq to 480M
+    unsigned chip_version = efuse_hal_chip_revision();
+    if (!ESP_CHIP_REV_ABOVE(chip_version, 1)) {
+        REGI2C_WRITE_MASK(I2C_CPLL, I2C_CPLL_OC_DIV_7_0, 6); // lower default cpu_pll freq to 400M
+        REGI2C_WRITE_MASK(I2C_SYSPLL, I2C_SYSPLL_OC_DIV_7_0, 8); // lower default sys_pll freq to 480M
+    }
     return pmu_ll_hp_is_sleep_reject(PMU_instance()->hal->dev);
 }
 

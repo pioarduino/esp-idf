@@ -251,6 +251,10 @@ config SOC_LP_PERIPH_SHARE_INTERRUPT
     bool
     default y
 
+config SOC_PM_SUPPORTED
+    bool
+    default y
+
 config SOC_XTAL_SUPPORT_40M
     bool
     default y
@@ -474,6 +478,10 @@ config SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK
 config SOC_GPIO_CLOCKOUT_BY_IO_MUX
     bool
     default y
+
+config SOC_GPIO_CLOCKOUT_CHANNEL_NUM
+    int
+    default 3
 
 config SOC_DEDIC_GPIO_OUT_CHANNELS_NUM
     int
@@ -1308,6 +1316,10 @@ config SOC_MEMSPI_TIMING_TUNING_BY_MSPI_DELAY
     default y
 
 config SOC_MEMSPI_CORE_CLK_SHARED_WITH_PSRAM
+    bool
+    default y
+
+config SOC_SPI_MEM_SUPPORT_CACHE_32BIT_ADDR_MAP
     bool
     default y
 

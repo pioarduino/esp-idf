@@ -455,6 +455,34 @@ void btm_ble_set_rpa_timeout_complete(UINT8 *p, UINT16 evt_len)
 }
 
 /*******************************************************************************
+**
+** Function         btm_ble_set_privacy_mode_complete
+**
+** Description      This function is called when the LE Set Privacy Mode command completes.
+**
+** Parameters       p: Pointer to the command complete event data.
+**                  evt_len: Length of the event data.
+**
+** Returns          void
+**
+*******************************************************************************/
+void btm_ble_set_privacy_mode_complete(UINT8 *p, UINT16 evt_len)
+{
+    UINT8 status;
+
+    // Extract the status of the command completion from the event data
+    STREAM_TO_UINT8(status, p);
+
+    BTM_TRACE_DEBUG("%s status = 0x%x", __func__, status);
+
+    tBTM_SET_PRIVACY_MODE_CMPL_CBACK *p_cb = btm_cb.devcb.p_set_privacy_mode_cmpl_cb;
+
+    if (p_cb) {
+        (*p_cb)(status);
+    }
+}
+
+/*******************************************************************************
                 VSC that implement controller based privacy
 ********************************************************************************/
 /*******************************************************************************
@@ -1118,6 +1146,9 @@ void btm_ble_add_default_entry_to_resolving_list(void)
      */
     BD_ADDR peer_addr = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
     BT_OCTET16 peer_irk = {0x0};
+
+    // Remove the existing entry in resolving list When resetting the device identity
+    btsnd_hcic_ble_rm_device_resolving_list(BLE_ADDR_PUBLIC, peer_addr);
 
     btsnd_hcic_ble_add_device_resolving_list (BLE_ADDR_PUBLIC, peer_addr, peer_irk, btm_cb.devcb.id_keys.irk);
 }

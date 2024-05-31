@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -112,7 +112,7 @@ esp_err_t esp_netif_attach(esp_netif_t *esp_netif, esp_netif_iodriver_handle dri
  * to TCP/IP stack. Similarly esp_netif_transmit is called from the TCP/IP stack whenever
  * a packet ought to output to the communication media.
  *
- * @note These IO functions are registerd (installed) automatically for default interfaces
+ * @note These IO functions are registered (installed) automatically for default interfaces
  * (interfaces with the keys such as WIFI_STA_DEF, WIFI_AP_DEF, ETH_DEF). Custom interface
  * has to register these IO functions when creating interface using @ref esp_netif_new
  *
@@ -137,6 +137,33 @@ esp_err_t esp_netif_attach(esp_netif_t *esp_netif, esp_netif_iodriver_handle dri
  *         - ESP_OK
  */
 esp_err_t esp_netif_receive(esp_netif_t *esp_netif, void *buffer, size_t len, void *eb);
+
+/**
+ * @brief Enables transmit/receive event reporting for a network interface.
+ *
+ * These functions enables transmit and receive events reporting for a given esp-netif instance.
+ * Event reporting can be used to track data transfer activity and trigger application-specific actions.
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ *
+ * @return
+ *         - ESP_OK: Successfully enabled event reporting
+ *         - ESP_FAIL: Event reporting not configured
+ */
+esp_err_t esp_netif_tx_rx_event_enable(esp_netif_t *esp_netif);
+
+/**
+ * @brief Disables transmit/receive event reporting for a network interface.
+ *
+ * These functions disables transmit and receive events reporting for a given esp-netif instance.
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ *
+ * @return
+ *         - ESP_OK: Successfully disabled event reporting
+ *         - ESP_FAIL: Event reporting not configured
+ */
+esp_err_t esp_netif_tx_rx_event_disable(esp_netif_t *esp_netif);
 
 /**
  * @}
@@ -567,6 +594,23 @@ esp_err_t esp_netif_napt_disable(esp_netif_t *esp_netif);
 /**
  * @brief  Set or Get DHCP server option
  *
+ * @note Please note that not all combinations of identifiers and options are supported.
+ * Get operations:
+ *  * IP_ADDRESS_LEASE_TIME
+ *  * ESP_NETIF_SUBNET_MASK/REQUESTED_IP_ADDRESS (both options do the same, they reflect dhcps_lease_t)
+ *  * ROUTER_SOLICITATION_ADDRESS
+ *  * DOMAIN_NAME_SERVER
+ * Set operations:
+ *  * IP_ADDRESS_LEASE_TIME
+ *  * ESP_NETIF_SUBNET_MASK -- set operation is allowed only if the configured mask corresponds to the settings,
+ *                             if not, please use esp_netif_set_ip_info() to prevent misconfiguration of DHCPS.
+ *  * REQUESTED_IP_ADDRESS -- if the address pool is enabled, a sanity check for start/end addresses is performed
+ *                             before setting.
+ *  * ROUTER_SOLICITATION_ADDRESS
+ *  * DOMAIN_NAME_SERVER
+ *  * ESP_NETIF_CAPTIVEPORTAL_URI -- set operation copies the pointer to the URI, so it is owned by the application
+ *                                    and needs to be maintained valid throughout the entire DHCP Server lifetime.
+ *
  * @param[in]  esp_netif Handle to esp-netif instance
  * @param[in] opt_op ESP_NETIF_OP_SET to set an option, ESP_NETIF_OP_GET to get an option.
  * @param[in] opt_id Option index to get or set, must be one of the supported enum values.
@@ -585,6 +629,16 @@ esp_netif_dhcps_option(esp_netif_t *esp_netif, esp_netif_dhcp_option_mode_t opt_
 
 /**
  * @brief  Set or Get DHCP client option
+ *
+ * @note Please note that not all combinations of identifiers and options are supported.
+ * Get operations:
+ *  * ESP_NETIF_IP_REQUEST_RETRY_TIME
+ *  * ESP_NETIF_VENDOR_SPECIFIC_INFO -- only available if ESP_DHCP_DISABLE_VENDOR_CLASS_IDENTIFIER=n
+ * Set operations:
+ *  * ESP_NETIF_IP_REQUEST_RETRY_TIME
+ *  * ESP_NETIF_VENDOR_SPECIFIC_INFO -- only available if ESP_DHCP_DISABLE_VENDOR_CLASS_IDENTIFIER=n
+ *                                      lwip layer creates its own copy of the supplied identifier.
+ *                                      (the internal copy could be feed by calling dhcp_free_vendor_class_identifier())
  *
  * @param[in]  esp_netif Handle to esp-netif instance
  * @param[in] opt_op ESP_NETIF_OP_SET to set an option, ESP_NETIF_OP_GET to get an option.
@@ -898,7 +952,7 @@ esp_err_t esp_netif_str_to_ip4(const char *src, esp_ip4_addr_t *dst);
 
 /**
  * @brief Converts Ascii internet IPv6 address into esp_ip4_addr_t
- * Zeros in the IP address can be stripped or completely ommited: "2001:db8:85a3:0:0:0:2:1" or "2001:db8::2:1")
+ * Zeros in the IP address can be stripped or completely omitted: "2001:db8:85a3:0:0:0:2:1" or "2001:db8::2:1")
  *
  * @param[in] src IPv6 address in ascii representation (e.g. ""2001:0db8:85a3:0000:0000:0000:0002:0001")
  * @param[out] dst Address of the target esp_ip6_addr_t structure to receive converted address
@@ -972,7 +1026,7 @@ const char *esp_netif_get_desc(esp_netif_t *esp_netif);
  *
  * @param[in]  esp_netif Handle to esp-netif instance
  *
- * @return Integer representing the instance's route-prio, or -1 if invalid paramters
+ * @return Integer representing the instance's route-prio, or -1 if invalid parameters
  */
 int esp_netif_get_route_prio(esp_netif_t *esp_netif);
 

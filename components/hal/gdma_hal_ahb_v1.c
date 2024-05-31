@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -91,25 +91,27 @@ void gdma_ahb_hal_enable_burst(gdma_hal_context_t *hal, int chan_id, gdma_channe
     }
 }
 
-#if SOC_AHB_GDMA_SUPPORT_PSRAM
-void gdma_ahb_hal_set_ext_mem_align(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint8_t align)
+#if GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
+void gdma_ahb_hal_set_burst_size(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, uint32_t burst_sz)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
-        gdma_ll_rx_set_ext_mem_block_size(hal->dev, chan_id, align);
+        gdma_ll_rx_set_burst_size(hal->dev, chan_id, burst_sz);
     } else {
-        gdma_ll_tx_set_ext_mem_block_size(hal->dev, chan_id, align);
+        gdma_ll_tx_set_burst_size(hal->dev, chan_id, burst_sz);
     }
 }
-#endif
+#endif // GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
 
-void gdma_ahb_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back)
+void gdma_ahb_hal_set_strategy(gdma_hal_context_t *hal, int chan_id, gdma_channel_direction_t dir, bool en_owner_check, bool en_desc_write_back, bool eof_till_popped)
 {
     if (dir == GDMA_CHANNEL_DIRECTION_RX) {
         gdma_ll_rx_enable_owner_check(hal->dev, chan_id, en_owner_check);
         // RX direction always has the descriptor write-back feature enabled
+        // RX direction don't need config eof_mode
     } else {
         gdma_ll_tx_enable_owner_check(hal->dev, chan_id, en_owner_check);
         gdma_ll_tx_enable_auto_write_back(hal->dev, chan_id, en_desc_write_back);
+        gdma_ll_tx_set_eof_mode(hal->dev, chan_id, eof_till_popped);
     }
 }
 
@@ -193,8 +195,8 @@ void gdma_ahb_hal_init(gdma_hal_context_t *hal, const gdma_hal_config_t *config)
 #if SOC_GDMA_SUPPORT_ETM
     hal->enable_etm_task = gdma_ahb_hal_enable_etm_task;
 #endif
-#if SOC_AHB_GDMA_SUPPORT_PSRAM
-    hal->set_ext_mem_align = gdma_ahb_hal_set_ext_mem_align;
-#endif // SOC_AHB_GDMA_SUPPORT_PSRAM
+#if GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
+    hal->set_burst_size = gdma_ahb_hal_set_burst_size;
+#endif // GDMA_LL_AHB_BURST_SIZE_ADJUSTABLE
     hal->priv_data = &gdma_ahb_hal_priv_data;
 }

@@ -23,7 +23,7 @@
 #define SOC_GDMA_SUPPORTED              1
 #define SOC_AHB_GDMA_SUPPORTED          1
 #define SOC_GPTIMER_SUPPORTED           1
-// #define SOC_PCNT_SUPPORTED              1  // TODO: [ESP32C5] IDF-8683
+#define SOC_PCNT_SUPPORTED              1
 // #define SOC_MCPWM_SUPPORTED             1  // TODO: [ESP32C5] IDF-8709
 // #define SOC_TWAI_SUPPORTED              1  // TODO: [ESP32C5] IDF-8691
 // #define SOC_ETM_SUPPORTED               1  // TODO: [ESP32C5] IDF-8693
@@ -51,8 +51,8 @@
 #define SOC_MPI_SUPPORTED               1
 #define SOC_SHA_SUPPORTED               1
 #define SOC_RSA_SUPPORTED               1
-// #define SOC_HMAC_SUPPORTED              1  // TODO: [ESP32C5] IDF-8616
-// #define SOC_DIG_SIGN_SUPPORTED          1  // TODO: [ESP32C5] IDF-8619
+#define SOC_HMAC_SUPPORTED              1
+#define SOC_DIG_SIGN_SUPPORTED          1
 #define SOC_ECC_SUPPORTED               1
 #define SOC_ECC_EXTENDED_MODES_SUPPORTED   1
 #define SOC_FLASH_ENC_SUPPORTED         1     // TODO: [ESP32C5] IDF-8622
@@ -81,6 +81,7 @@
 #define SOC_MODEM_CLOCK_SUPPORTED       1     // TODO: [ESP32C5] IDF-8845 need check, it is opened because pll has been used on beta3
 #define SOC_BT_SUPPORTED                1
 #define SOC_PHY_SUPPORTED               1
+#define SOC_PM_SUPPORTED                1
 
 /*-------------------------- XTAL CAPS ---------------------------------------*/
 #define SOC_XTAL_SUPPORT_40M            1
@@ -163,14 +164,14 @@
 
 /*-------------------------- DIGITAL SIGNATURE CAPS ----------------------------------------*/
 /** The maximum length of a Digital Signature in bits. */
-// #define SOC_DS_SIGNATURE_MAX_BIT_LEN (3072)
+#define SOC_DS_SIGNATURE_MAX_BIT_LEN (3072)
 
 /** Initialization vector (IV) length for the RSA key parameter message digest (MD) in bytes. */
-// #define SOC_DS_KEY_PARAM_MD_IV_LENGTH (16)
+#define SOC_DS_KEY_PARAM_MD_IV_LENGTH (16)
 
 /** Maximum wait time for DS parameter decryption key. If overdue, then key error.
     See TRM DS chapter for more details */
-// #define SOC_DS_KEY_CHECK_MAX_WAIT_US (1100)
+#define SOC_DS_KEY_CHECK_MAX_WAIT_US (1100)
 
 /*-------------------------- GDMA CAPS -------------------------------------*/
 #define SOC_AHB_GDMA_VERSION                1U
@@ -193,8 +194,6 @@
 
 // GPIO peripheral has the ETM extension
 // #define SOC_GPIO_SUPPORT_ETM          1
-#define SOC_GPIO_ETM_EVENTS_PER_GROUP 8
-#define SOC_GPIO_ETM_TASKS_PER_GROUP  8
 
 // Target has the full LP IO subsystem
 // On ESP32-C5, Digital IOs have their own registers to control pullup/down capability, independent of LP registers.
@@ -220,6 +219,7 @@
 
 // The Clock Out signal is route to the pin by GPIO matrix
 // #define SOC_GPIO_CLOCKOUT_BY_GPIO_MATRIX    (1)
+#define SOC_GPIO_CLOCKOUT_CHANNEL_NUM           (3)
 
 /*-------------------------- RTCIO CAPS --------------------------------------*/
 #define SOC_RTCIO_PIN_COUNT                 0UL
@@ -299,11 +299,12 @@
 // #define SOC_MPU_REGION_WO_SUPPORTED               0
 
 /*-------------------------- PCNT CAPS ---------------------------------------*/
-// #define SOC_PCNT_GROUPS                       1U
-// #define SOC_PCNT_UNITS_PER_GROUP              4
-// #define SOC_PCNT_CHANNELS_PER_UNIT            2
-// #define SOC_PCNT_THRES_POINT_PER_UNIT         2
-// #define SOC_PCNT_SUPPORT_RUNTIME_THRES_UPDATE 1
+#define SOC_PCNT_GROUPS                       1U
+#define SOC_PCNT_UNITS_PER_GROUP              4
+#define SOC_PCNT_CHANNELS_PER_UNIT            2
+#define SOC_PCNT_THRES_POINT_PER_UNIT         2
+#define SOC_PCNT_SUPPORT_RUNTIME_THRES_UPDATE 1
+#define SOC_PCNT_SUPPORT_CLEAR_SIGNAL         1
 
 /*--------------------------- RMT CAPS ---------------------------------------*/
 #define SOC_RMT_GROUPS                        1U /*!< One RMT group */
@@ -444,6 +445,7 @@
 // #define SOC_TIMER_GROUP_SUPPORT_RC_FAST   (1)
 #define SOC_TIMER_GROUP_TOTAL_TIMERS      (2)
 // #define SOC_TIMER_SUPPORT_ETM             (1)
+// #define SOC_TIMER_SUPPORT_SLEEP_RETENTION (1)
 
 /*--------------------------- WATCHDOG CAPS ---------------------------------------*/
 // #define SOC_MWDT_SUPPORT_XTAL              (1)
@@ -462,7 +464,7 @@
 // #define SOC_EFUSE_DIS_DIRECT_BOOT 1
 // #define SOC_EFUSE_SOFT_DIS_JTAG 1
 // #define SOC_EFUSE_DIS_ICACHE 1
-// #define SOC_EFUSE_BLOCK9_KEY_PURPOSE_QUIRK 1  // XTS-AES key purpose not supported for this block
+#define SOC_EFUSE_ECDSA_KEY 1
 
 /*-------------------------- Secure Boot CAPS----------------------------*/
 // #define SOC_SECURE_BOOT_V2_RSA              1

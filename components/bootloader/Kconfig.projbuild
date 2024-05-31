@@ -38,34 +38,7 @@ menu "Bootloader config"
 
     endchoice
 
-    choice BOOTLOADER_LOG_LEVEL
-        bool "Bootloader log verbosity"
-        default BOOTLOADER_LOG_LEVEL_INFO
-        help
-            Specify how much output to see in bootloader logs.
-
-        config BOOTLOADER_LOG_LEVEL_NONE
-            bool "No output"
-        config BOOTLOADER_LOG_LEVEL_ERROR
-            bool "Error"
-        config BOOTLOADER_LOG_LEVEL_WARN
-            bool "Warning"
-        config BOOTLOADER_LOG_LEVEL_INFO
-            bool "Info"
-        config BOOTLOADER_LOG_LEVEL_DEBUG
-            bool "Debug"
-        config BOOTLOADER_LOG_LEVEL_VERBOSE
-            bool "Verbose"
-    endchoice
-
-    config BOOTLOADER_LOG_LEVEL
-        int
-        default 0 if BOOTLOADER_LOG_LEVEL_NONE
-        default 1 if BOOTLOADER_LOG_LEVEL_ERROR
-        default 2 if BOOTLOADER_LOG_LEVEL_WARN
-        default 3 if BOOTLOADER_LOG_LEVEL_INFO
-        default 4 if BOOTLOADER_LOG_LEVEL_DEBUG
-        default 5 if BOOTLOADER_LOG_LEVEL_VERBOSE
+    orsource "Kconfig.log"
 
     menu "Serial Flash Configurations"
         config BOOTLOADER_SPI_CUSTOM_WP_PIN
@@ -127,9 +100,15 @@ menu "Bootloader config"
             help
                 This is a helper config for 32bits address flash. Invisible for users.
 
+        config BOOTLOADER_FLASH_NEEDS_32BIT_ADDR_QUAD_FLASH
+            bool
+            default y if BOOTLOADER_FLASH_NEEDS_32BIT_FEAT && SOC_SPI_MEM_SUPPORT_CACHE_32BIT_ADDR_MAP
+            help
+                This is a helper config for 32bits address quad flash. Invisible for users.
+
         config BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
             bool "Enable cache access to 32-bit-address (over 16MB) range of SPI Flash (READ DOCS FIRST)"
-            depends on BOOTLOADER_FLASH_NEEDS_32BIT_FEAT && IDF_TARGET_ESP32S3 && IDF_EXPERIMENTAL_FEATURES
+            depends on BOOTLOADER_FLASH_NEEDS_32BIT_ADDR_QUAD_FLASH && IDF_EXPERIMENTAL_FEATURES
             default n
             help
                 Enabling this option allows the CPU to access 32-bit-address flash beyond 16M range.

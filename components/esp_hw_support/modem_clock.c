@@ -363,6 +363,7 @@ void modem_clock_select_lp_clock_source(periph_module_t module, modem_clock_lpcl
 
 #if SOC_BT_SUPPORTED
     case PERIPH_BT_MODULE:
+    {
 #if CONFIG_IDF_TARGET_ESP32H2
         bool rc_clk_en = true;
         bool selected = (src == MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL) ||
@@ -396,6 +397,7 @@ void modem_clock_select_lp_clock_source(periph_module_t module, modem_clock_lpcl
         }
 #endif
         break;
+    }
 #endif // SOC_BT_SUPPORTED
 
     case PERIPH_COEX_MODULE:
@@ -454,7 +456,7 @@ void modem_clock_deselect_lp_clock_source(periph_module_t module)
                 pmu_sleep_enable_hp_sleep_sysclk(false);
             }
             modem_clock_hal_enable_wifipwr_clock(MODEM_CLOCK_instance()->hal, false);
-            modem_clock_domain_clk_gate_enable(MODEM_CLOCK_DOMAIN_WIFI, PMU_HP_ICG_MODEM_CODE_SLEEP);
+            modem_clock_domain_clk_gate_enable(MODEM_CLOCK_DOMAIN_WIFIPWR, PMU_HP_ICG_MODEM_CODE_SLEEP);
         }
 #endif
         break;
