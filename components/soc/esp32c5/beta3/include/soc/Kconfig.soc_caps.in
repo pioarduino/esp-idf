@@ -111,6 +111,10 @@ config SOC_FLASH_ENC_SUPPORTED
     bool
     default y
 
+config SOC_SECURE_BOOT_SUPPORTED
+    bool
+    default y
+
 config SOC_PMU_SUPPORTED
     bool
     default y
@@ -140,6 +144,10 @@ config SOC_LP_CORE_SUPPORTED
     default y
 
 config SOC_SPI_FLASH_SUPPORTED
+    bool
+    default y
+
+config SOC_ECDSA_SUPPORTED
     bool
     default y
 
@@ -503,6 +511,10 @@ config SOC_SHA_SUPPORT_SHA256
     bool
     default y
 
+config SOC_ECDSA_SUPPORT_EXPORT_PUBKEY
+    bool
+    default y
+
 config SOC_SPI_PERIPH_NUM
     int
     default 2
@@ -623,9 +635,25 @@ config SOC_EFUSE_ECDSA_KEY
     bool
     default y
 
+config SOC_SECURE_BOOT_V2_RSA
+    bool
+    default y
+
+config SOC_SECURE_BOOT_V2_ECC
+    bool
+    default y
+
 config SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS
     int
     default 3
+
+config SOC_EFUSE_REVOKE_BOOT_KEY_DIGESTS
+    bool
+    default y
+
+config SOC_SUPPORT_SECURE_BOOT_REVOKE_KEY
+    bool
+    default y
 
 config SOC_FLASH_ENCRYPTED_XTS_AES_BLOCK_MAX
     int
@@ -680,6 +708,10 @@ config SOC_UART_HAS_LP_UART
     default y
 
 config SOC_UART_SUPPORT_FSM_TX_WAIT_SEND
+    bool
+    default y
+
+config SOC_UART_SUPPORT_SLEEP_RETENTION
     bool
     default y
 
