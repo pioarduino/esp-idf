@@ -373,8 +373,8 @@ void modem_clock_select_lp_clock_source(periph_module_t module, modem_clock_lpcl
         modem_clock_hal_enable_ble_rtc_timer_clock(MODEM_CLOCK_instance()->hal, true);
 #if CONFIG_IDF_TARGET_ESP32H2
         if (!rc_clk_en) {
-            extern void esp_ble_rtc_ticks_delay(uint32_t ticks);
-            esp_ble_rtc_ticks_delay(2);
+            extern void r_esp_ble_rtc_ticks_delay(uint32_t ticks);
+            r_esp_ble_rtc_ticks_delay(2);
             clk_ll_rc32k_disable();
         }
 #endif // CONFIG_IDF_TARGET_ESP32H2
@@ -382,9 +382,9 @@ void modem_clock_select_lp_clock_source(periph_module_t module, modem_clock_lpcl
         if (efuse_hal_chip_revision() != 0) {
             if (src == MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL) {
                 pmu_sleep_enable_hp_sleep_sysclk(true);
+                modem_clock_hal_enable_wifipwr_clock(MODEM_CLOCK_instance()->hal, true);
+                modem_clock_domain_clk_gate_disable(MODEM_CLOCK_DOMAIN_WIFIPWR, PMU_HP_ICG_MODEM_CODE_SLEEP);
             }
-            modem_clock_hal_enable_wifipwr_clock(MODEM_CLOCK_instance()->hal, true);
-            modem_clock_domain_clk_gate_disable(MODEM_CLOCK_DOMAIN_WIFIPWR, PMU_HP_ICG_MODEM_CODE_SLEEP);
         }
 #endif
         break;
@@ -444,9 +444,9 @@ void modem_clock_deselect_lp_clock_source(periph_module_t module)
         if (efuse_hal_chip_revision() != 0) {
             if (last_src == MODEM_CLOCK_LPCLK_SRC_MAIN_XTAL) {
                 pmu_sleep_enable_hp_sleep_sysclk(false);
+                modem_clock_hal_enable_wifipwr_clock(MODEM_CLOCK_instance()->hal, false);
+                modem_clock_domain_clk_gate_enable(MODEM_CLOCK_DOMAIN_WIFIPWR, PMU_HP_ICG_MODEM_CODE_SLEEP);
             }
-            modem_clock_hal_enable_wifipwr_clock(MODEM_CLOCK_instance()->hal, false);
-            modem_clock_domain_clk_gate_enable(MODEM_CLOCK_DOMAIN_WIFIPWR, PMU_HP_ICG_MODEM_CODE_SLEEP);
         }
 #endif
         break;
