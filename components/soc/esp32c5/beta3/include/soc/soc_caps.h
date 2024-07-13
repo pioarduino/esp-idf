@@ -81,6 +81,7 @@
 #define SOC_MODEM_CLOCK_SUPPORTED       1     // TODO: [ESP32C5] IDF-8845 need check, it is opened because pll has been used on beta3
 #define SOC_BT_SUPPORTED                1
 #define SOC_PHY_SUPPORTED               1
+#define SOC_PM_SUPPORTED                1
 
 /*-------------------------- XTAL CAPS ---------------------------------------*/
 #define SOC_XTAL_SUPPORT_40M            1
@@ -443,6 +444,7 @@
 // #define SOC_TIMER_GROUP_SUPPORT_RC_FAST   (1)
 #define SOC_TIMER_GROUP_TOTAL_TIMERS      (2)
 // #define SOC_TIMER_SUPPORT_ETM             (1)
+// #define SOC_TIMER_SUPPORT_SLEEP_RETENTION (1)
 
 /*--------------------------- WATCHDOG CAPS ---------------------------------------*/
 // #define SOC_MWDT_SUPPORT_XTAL              (1)
@@ -461,7 +463,7 @@
 // #define SOC_EFUSE_DIS_DIRECT_BOOT 1
 // #define SOC_EFUSE_SOFT_DIS_JTAG 1
 // #define SOC_EFUSE_DIS_ICACHE 1
-// #define SOC_EFUSE_BLOCK9_KEY_PURPOSE_QUIRK 1  // XTS-AES key purpose not supported for this block
+#define SOC_EFUSE_ECDSA_KEY 1
 
 /*-------------------------- Secure Boot CAPS----------------------------*/
 // #define SOC_SECURE_BOOT_V2_RSA              1

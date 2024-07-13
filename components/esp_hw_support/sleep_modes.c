@@ -15,10 +15,10 @@
 #include "esp_sleep.h"
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_timer_private.h"
-#include "esp_private/periph_ctrl.h"
 #include "esp_private/rtc_clk.h"
 #include "esp_private/sleep_event.h"
 #include "esp_private/system_internal.h"
+#include "esp_private/io_mux.h"
 #include "esp_log.h"
 #include "esp_newlib.h"
 #include "esp_timer.h"
@@ -117,16 +117,6 @@
 
 #if SOC_PM_RETENTION_SW_TRIGGER_REGDMA
 #include "esp_private/sleep_retention.h"
-#endif
-
-#if SOC_LP_IO_CLOCK_IS_INDEPENDENT && !SOC_RTCIO_RCC_IS_INDEPENDENT
-// For `rtcio_hal_function_select` using, clock reg option is inlined in it,
-// so remove the declaration check of __DECLARE_RCC_RC_ATOMIC_ENV
-#define RTCIO_RCC_ATOMIC()                              \
-    for (int i = 1; i ? (periph_rcc_enter(), 1) : 0;    \
-         periph_rcc_exit(), i--)
-#else
-#define RTCIO_RCC_ATOMIC()
 #endif
 
 // If light sleep time is less than that, don't power down flash
@@ -673,7 +663,7 @@ FORCE_INLINE_ATTR void misc_modules_sleep_prepare(bool deep_sleep)
 #endif
     }
 
-#if !CONFIG_IDF_TARGET_ESP32P4 // TODO: IDF-6496
+#if !CONFIG_IDF_TARGET_ESP32P4
     // TODO: IDF-7370
     if (!(deep_sleep && s_adc_tsen_enabled)){
         sar_periph_ctrl_power_disable();
@@ -684,16 +674,23 @@ FORCE_INLINE_ATTR void misc_modules_sleep_prepare(bool deep_sleep)
 /**
  * These save-restore workaround should be moved to lower layer
  */
-FORCE_INLINE_ATTR void misc_modules_wake_prepare(void)
+FORCE_INLINE_ATTR void misc_modules_wake_prepare(uint32_t pd_flags)
 {
+#if CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP
+    if (pd_flags & PMU_SLEEP_PD_TOP) {
+        // There is no driver to manage the flashboot watchdog, and it is definitely be in off state when
+        // the system is running, after waking up from pd_top sleep, shut it down by software here.
+        wdt_hal_context_t mwdt_ctx = {.inst = WDT_MWDT0, .mwdt_dev = &TIMERG0};
+        wdt_hal_write_protect_disable(&mwdt_ctx);
+        wdt_hal_set_flashboot_en(&mwdt_ctx, false);
+        wdt_hal_write_protect_enable(&mwdt_ctx);
+    }
+#endif
+
 #if SOC_USB_SERIAL_JTAG_SUPPORTED && !SOC_USB_SERIAL_JTAG_SUPPORT_LIGHT_SLEEP
     sleep_console_usj_pad_restore();
 #endif
-
-#if !CONFIG_IDF_TARGET_ESP32P4 // TODO: IDF-6496
     sar_periph_ctrl_power_enable();
-#endif
-
 #if CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP && SOC_PM_CPU_RETENTION_BY_RTCCNTL
     sleep_disable_cpu_retention();
 #endif
@@ -899,8 +896,15 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
 #if SOC_PMU_SUPPORTED
 
 #if SOC_DCDC_SUPPORTED
-    s_config.rtc_ticks_at_ldo_prepare = rtc_time_get();
-    pmu_sleep_increase_ldo_volt();
+#if CONFIG_ESP_SLEEP_KEEP_DCDC_ALWAYS_ON
+    if (!deep_sleep) {
+        // Keep DCDC always on during light sleep, no need to adjust LDO voltage.
+    } else
+#endif
+    {
+        s_config.rtc_ticks_at_ldo_prepare = rtc_time_get();
+        pmu_sleep_increase_ldo_volt();
+    }
 #endif
 
     pmu_sleep_config_t config;
@@ -985,11 +989,18 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
 #endif
 
 #if SOC_DCDC_SUPPORTED
-            uint64_t ldo_increased_us = rtc_time_slowclk_to_us(rtc_time_get() - s_config.rtc_ticks_at_ldo_prepare, s_config.rtc_clk_cal_period);
-            if (ldo_increased_us < LDO_POWER_TAKEOVER_PREPARATION_TIME_US) {
-                esp_rom_delay_us(LDO_POWER_TAKEOVER_PREPARATION_TIME_US - ldo_increased_us);
+#if CONFIG_ESP_SLEEP_KEEP_DCDC_ALWAYS_ON
+            if (!deep_sleep) {
+                // Keep DCDC always on during light sleep, no need to adjust LDO voltage.
+            } else
+#endif
+            {
+                uint64_t ldo_increased_us = rtc_time_slowclk_to_us(rtc_time_get() - s_config.rtc_ticks_at_ldo_prepare, s_config.rtc_clk_cal_period);
+                if (ldo_increased_us < LDO_POWER_TAKEOVER_PREPARATION_TIME_US) {
+                    esp_rom_delay_us(LDO_POWER_TAKEOVER_PREPARATION_TIME_US - ldo_increased_us);
+                }
+                pmu_sleep_shutdown_dcdc();
             }
-            pmu_sleep_shutdown_dcdc();
 #endif
 
 #if SOC_PMU_SUPPORTED
@@ -1057,7 +1068,7 @@ static esp_err_t IRAM_ATTR esp_sleep_start(uint32_t pd_flags, esp_sleep_mode_t m
             sleep_retention_do_system_retention(false);
         }
 #endif
-        misc_modules_wake_prepare();
+        misc_modules_wake_prepare(pd_flags);
     }
 
 #if SOC_SPI_MEM_SUPPORT_TIMING_TUNING
@@ -1687,10 +1698,11 @@ esp_err_t esp_sleep_enable_ext0_wakeup(gpio_num_t gpio_num, int level)
 static void ext0_wakeup_prepare(void)
 {
     int rtc_gpio_num = s_config.ext0_rtc_gpio_num;
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT
+    io_mux_enable_lp_io_clock(rtc_gpio_num, true);
+#endif
     rtcio_hal_ext0_set_wakeup_pin(rtc_gpio_num, s_config.ext0_trigger_level);
-    RTCIO_RCC_ATOMIC() {
-        rtcio_hal_function_select(rtc_gpio_num, RTCIO_LL_FUNC_RTC);
-    }
+    rtcio_hal_function_select(rtc_gpio_num, RTCIO_LL_FUNC_RTC);
     rtcio_hal_input_enable(rtc_gpio_num);
 }
 
@@ -1819,11 +1831,12 @@ static void ext1_wakeup_prepare(void)
         if ((rtc_gpio_mask & BIT(rtc_pin)) == 0) {
             continue;
         }
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT
+        io_mux_enable_lp_io_clock(rtc_pin, true);
+#endif
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         // Route pad to RTC
-        RTCIO_RCC_ATOMIC() {
-            rtcio_hal_function_select(rtc_pin, RTCIO_LL_FUNC_RTC);
-        }
+        rtcio_hal_function_select(rtc_pin, RTCIO_LL_FUNC_RTC);
         // set input enable in sleep mode
         rtcio_hal_input_enable(rtc_pin);
 #if SOC_PM_SUPPORT_RTC_PERIPH_PD
@@ -1838,9 +1851,7 @@ static void ext1_wakeup_prepare(void)
         * a pathway to EXT1. */
 
         // Route pad to DIGITAL
-        RTCIO_RCC_ATOMIC() {
-            rtcio_hal_function_select(rtc_pin, RTCIO_LL_FUNC_DIGITAL);
-        }
+        rtcio_hal_function_select(rtc_pin, RTCIO_LL_FUNC_DIGITAL);
         // set input enable
         gpio_ll_input_enable(&GPIO, gpio);
         // hold rtc_pin to use it during sleep state

@@ -237,6 +237,9 @@ tBTM_SET_RPA_TIMEOUT_CMPL_CBACK  *p_ble_set_rpa_timeout_cmpl_cb; /* Callback fun
                                                 ble set rpa timeout is completed   */
 
 tBTM_ADD_DEV_TO_RESOLVING_LIST_CMPL_CBACK *p_add_dev_to_resolving_list_cmpl_cb;
+
+tBTM_SET_PRIVACY_MODE_CMPL_CBACK *p_set_privacy_mode_cmpl_cb;
+
 tBTM_CMPL_CB        *p_le_test_cmd_cmpl_cb;   /* Callback function to be called when
                                                   LE test mode command has been sent successfully */
 
@@ -970,9 +973,11 @@ typedef struct {
 typedef struct{
   //connection parameters update callback
   tBTM_UPDATE_CONN_PARAM_CBACK *update_conn_param_cb;
+  // setting packet data length callback
+  tBTM_SET_PKT_DATA_LENGTH_CBACK *set_pkt_data_length_cb;
 }tBTM_CallbackFunc;
 
-extern tBTM_CallbackFunc conn_param_update_cb;
+extern tBTM_CallbackFunc conn_callback_func;
 /* security action for L2CAP COC channels */
 #define BTM_SEC_OK                1
 #define BTM_SEC_ENCRYPT           2    /* encrypt the link with current key */

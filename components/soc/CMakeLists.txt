@@ -39,6 +39,10 @@ if(CONFIG_SOC_DEDICATED_GPIO_SUPPORTED)
     list(APPEND srcs "${target_folder}/dedic_gpio_periph.c")
 endif()
 
+if(CONFIG_SOC_EMAC_SUPPORTED)
+    list(APPEND srcs "${target_folder}/emac_periph.c")
+endif()
+
 if(CONFIG_SOC_GDMA_SUPPORTED)
     list(APPEND srcs "${target_folder}/gdma_periph.c")
 endif()
@@ -150,6 +154,10 @@ endif()
 
 if(CONFIG_SOC_PAU_SUPPORTED)
     list(APPEND srcs "${target_folder}/system_retention_periph.c")
+endif()
+
+if(CONFIG_SOC_LCDCAM_CAM_SUPPORTED)
+    list(APPEND srcs "${target_folder}/cam_periph.c")
 endif()
 
 idf_component_register(SRCS ${srcs}

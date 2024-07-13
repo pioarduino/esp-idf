@@ -70,7 +70,7 @@ static tBTM_BLE_VSC_CB *cmn_ble_gap_vsc_cb_ptr;
 static tBTM_BLE_CTRL_FEATURES_CBACK    *p_ctrl_le_feature_rd_cmpl_cback = NULL;
 #endif
 
-tBTM_CallbackFunc conn_param_update_cb;
+tBTM_CallbackFunc conn_callback_func;
 /*******************************************************************************
 **  Local functions
 *******************************************************************************/
@@ -309,7 +309,21 @@ void btm_ble_sem_free(void)
 *******************************************************************************/
 void BTM_BleRegiseterConnParamCallback(tBTM_UPDATE_CONN_PARAM_CBACK *update_conn_param_cb)
 {
-    conn_param_update_cb.update_conn_param_cb = update_conn_param_cb;
+    conn_callback_func.update_conn_param_cb = update_conn_param_cb;
+}
+
+/*******************************************************************************
+**
+** Function         BTM_BleRegiseterPktLengthChangeCallback
+**
+** Description      Registers a callback function for packet length changes.
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTM_BleRegiseterPktLengthChangeCallback(tBTM_SET_PKT_DATA_LENGTH_CBACK *ptk_len_chane_cb)
+{
+    conn_callback_func.set_pkt_data_length_cb = ptk_len_chane_cb;
 }
 
 /*******************************************************************************
@@ -4724,6 +4738,17 @@ BOOLEAN BTM_BleAddDevToResolvingList(BD_ADDR addr,
         return FALSE;
     }
     btm_cb.devcb.p_add_dev_to_resolving_list_cmpl_cb = p_add_dev_to_resolving_list_callback;
+    return TRUE;
+}
+
+BOOLEAN BTM_BleSetPrivacyMode(UINT8 addr_type, BD_ADDR bd_addr, UINT8 privacy_mode, tBTM_SET_PRIVACY_MODE_CMPL_CBACK *p_callback)
+{
+    if (btsnd_hcic_ble_set_privacy_mode(addr_type, bd_addr, privacy_mode) != TRUE) {
+        BTM_TRACE_ERROR("LE SetPrivacyMode Mode=%d: error", privacy_mode);
+        return FALSE;
+    }
+
+    btm_cb.devcb.p_set_privacy_mode_cmpl_cb = p_callback;
     return TRUE;
 }
 

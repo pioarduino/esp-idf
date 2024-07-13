@@ -24,6 +24,24 @@ typedef int                         isp_clk_src_t;     ///< Default type
 #endif
 
 /**
+ * @brief ISP coordinate type
+ *
+ */
+typedef struct {
+    uint32_t    x;      ///< X coordinate of the point
+    uint32_t    y;      ///< Y coordinate of the point
+} isp_coordinate_t;
+
+/**
+ * @brief ISP window type
+ *
+ */
+typedef struct {
+    isp_coordinate_t top_left;       ///< The top left point coordinate
+    isp_coordinate_t btm_right;      ///< The bottom right point coordinate
+} isp_window_t;
+
+/**
  * @brief ISP Input Source
  */
 typedef enum {
@@ -46,6 +64,15 @@ typedef enum {
 } isp_color_t;
 
 /*---------------------------------------------------------------
+                      DVP
+---------------------------------------------------------------*/
+#if SOC_ISP_DVP_DATA_WIDTH_MAX
+#define ISP_DVP_DATA_SIG_NUM   SOC_ISP_DVP_DATA_WIDTH_MAX // The ISP DVP data signal number
+#else
+#define ISP_DVP_DATA_SIG_NUM   0
+#endif
+
+/*---------------------------------------------------------------
                       AF
 ---------------------------------------------------------------*/
 #if SOC_ISP_AF_WINDOW_NUMS
@@ -55,22 +82,31 @@ typedef enum {
 #endif
 
 /**
- * @brief ISP AF window
- */
-typedef struct {
-    uint32_t top_left_x;        ///< Top left x axis value
-    uint32_t top_left_y;        ///< Top left y axis value
-    uint32_t bottom_right_x;    ///< Bottom right x axis value
-    uint32_t bottom_right_y;    ///< Bottom right y axis value
-} isp_af_window_t;
-
-/**
  * @brief ISP AF result
  */
 typedef struct {
     int definition[ISP_AF_WINDOW_NUM];    ///< Definition, it refers how clear and sharp an image is
     int luminance[ISP_AF_WINDOW_NUM];     ///< Luminance, it refers how luminant an image is
 } isp_af_result_t;
+
+/*---------------------------------------------------------------
+                      BF
+---------------------------------------------------------------*/
+#if SOC_ISP_BF_SUPPORTED
+#define ISP_BF_TEMPLATE_X_NUMS    SOC_ISP_BF_TEMPLATE_X_NUMS    // BF template x field nums
+#define ISP_BF_TEMPLATE_Y_NUMS    SOC_ISP_BF_TEMPLATE_Y_NUMS    // BF template y field nums
+#else
+#define ISP_BF_TEMPLATE_X_NUMS    0
+#define ISP_BF_TEMPLATE_Y_NUMS    0
+#endif
+
+/**
+ * @brief ISP BF edge padding mode
+ */
+typedef enum {
+    ISP_BF_EDGE_PADDING_MODE_SRND_DATA,      ///< Fill BF edge padding data with surrounding pixel data
+    ISP_BF_EDGE_PADDING_MODE_CUSTOM_DATA,    ///< Fill BF edge padding data with custom pixel data
+} isp_bf_edge_padding_mode_t;
 
 #ifdef __cplusplus
 }

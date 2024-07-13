@@ -7,6 +7,12 @@ set(includes "platform_port/include")
 # because of the "include_next" directive used by the efuse_hal.h
 if(NOT ${target} STREQUAL "linux")
     list(APPEND includes "${target}/include")
+
+    if(CONFIG_IDF_TARGET_ESP32C5_BETA3_VERSION)
+        list(APPEND includes "${target}/beta3/include")
+    elseif(CONFIG_IDF_TARGET_ESP32C5_MP_VERSION)
+        list(APPEND includes "${target}/mp/include")
+    endif()
 endif()
 list(APPEND includes "include")
 
@@ -217,6 +223,10 @@ if(NOT BOOTLOADER_BUILD)
         list(APPEND srcs "jpeg_hal.c")
     endif()
 
+    if(CONFIG_SOC_PPA_SUPPORTED)
+        list(APPEND srcs "ppa_hal.c")
+    endif()
+
     if(CONFIG_SOC_GPSPI_SUPPORTED)
         list(APPEND srcs
             "spi_hal.c"
@@ -254,6 +264,10 @@ if(NOT BOOTLOADER_BUILD)
     if(CONFIG_SOC_DIG_SIGN_SUPPORTED AND NOT CONFIG_IDF_TARGET_ESP32S2)
         # For ESP32-S2 we do not have DS HAL layer implementation yet
         list(APPEND srcs "ds_hal.c")
+    endif()
+
+    if(CONFIG_SOC_LCDCAM_CAM_SUPPORTED)
+        list(APPEND srcs "cam_hal.c")
     endif()
 
     if(CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED)

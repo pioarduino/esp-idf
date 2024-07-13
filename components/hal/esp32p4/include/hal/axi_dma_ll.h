@@ -125,7 +125,7 @@ static inline void axi_dma_ll_rx_enable_owner_check(axi_dma_dev_t *dev, uint32_t
 }
 
 /**
- * @brief Enable DMA RX channel burst reading data, disabled by default
+ * @brief Enable DMA RX channel burst reading data, always enabled
  */
 static inline void axi_dma_ll_rx_enable_data_burst(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
@@ -137,6 +137,16 @@ static inline void axi_dma_ll_rx_enable_data_burst(axi_dma_dev_t *dev, uint32_t 
 static inline void axi_dma_ll_rx_enable_descriptor_burst(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
     dev->in[channel].conf.in_conf0.indscr_burst_en_chn = enable;
+}
+
+/**
+ * @brief Set the RX channel burst size
+ */
+static inline void axi_dma_ll_rx_set_burst_size(axi_dma_dev_t *dev, uint32_t channel, uint32_t sz)
+{
+    HAL_ASSERT(sz >= 8 && sz <= 128);
+    int ctz = __builtin_ctz(sz);
+    dev->in[channel].conf.in_conf0.in_burst_size_sel_chn = ctz - 3;
 }
 
 /**
@@ -273,6 +283,14 @@ static inline void axi_dma_ll_rx_enable_etm_task(axi_dma_dev_t *dev, uint32_t ch
     dev->in[channel].conf.in_conf0.in_etm_en_chn = enable;
 }
 
+/**
+ * @brief Whether to enable access to ecc or aes memory
+ */
+static inline void axi_dma_ll_rx_enable_ext_mem_ecc_aes_access(axi_dma_dev_t *dev, uint32_t channel, bool enable)
+{
+    dev->in[channel].conf.in_conf0.in_ecc_aes_en_chn = enable;
+}
+
 ///////////////////////////////////// TX /////////////////////////////////////////
 /**
  * @brief Get DMA TX channel interrupt status word
@@ -325,7 +343,7 @@ static inline void axi_dma_ll_tx_enable_owner_check(axi_dma_dev_t *dev, uint32_t
 }
 
 /**
- * @brief Enable DMA TX channel burst sending data, disabled by default
+ * @brief Enable DMA TX channel burst sending data, always enabled
  */
 static inline void axi_dma_ll_tx_enable_data_burst(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
@@ -337,6 +355,16 @@ static inline void axi_dma_ll_tx_enable_data_burst(axi_dma_dev_t *dev, uint32_t 
 static inline void axi_dma_ll_tx_enable_descriptor_burst(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
     dev->out[channel].conf.out_conf0.outdscr_burst_en_chn = enable;
+}
+
+/**
+ * @brief Set the TX channel burst size
+ */
+static inline void axi_dma_ll_tx_set_burst_size(axi_dma_dev_t *dev, uint32_t channel, uint32_t sz)
+{
+    HAL_ASSERT(sz >= 8 && sz <= 128);
+    int ctz = __builtin_ctz(sz);
+    dev->out[channel].conf.out_conf0.out_burst_size_sel_chn = ctz - 3;
 }
 
 /**
@@ -469,6 +497,14 @@ static inline void axi_dma_ll_tx_disconnect_from_periph(axi_dma_dev_t *dev, uint
 static inline void axi_dma_ll_tx_enable_etm_task(axi_dma_dev_t *dev, uint32_t channel, bool enable)
 {
     dev->out[channel].conf.out_conf0.out_etm_en_chn = enable;
+}
+
+/**
+ * @brief Whether to enable access to ecc or aes memory
+ */
+static inline void axi_dma_ll_tx_enable_ext_mem_ecc_aes_access(axi_dma_dev_t *dev, uint32_t channel, bool enable)
+{
+    dev->out[channel].conf.out_conf0.out_ecc_aes_en_chn = enable;
 }
 
 ///////////////////////////////////// CRC-TX /////////////////////////////////////////
