@@ -8,7 +8,6 @@
 #include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_check.h"
-#include "esp_dma_utils.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_intr_alloc.h"
@@ -323,13 +322,7 @@ static inline void dma_desc_append(crypto_dma_desc_t **head, crypto_dma_desc_t *
 
 static inline void *aes_dma_calloc(size_t num, size_t size, uint32_t caps, size_t *actual_size)
 {
-    void *ptr = NULL;
-    esp_dma_mem_info_t dma_mem_info = {
-        .extra_heap_caps = caps,
-        .dma_alignment_bytes = DMA_DESC_MEM_ALIGN_SIZE,
-    };
-    esp_dma_capable_calloc(num, size, &dma_mem_info, &ptr, actual_size);
-    return ptr;
+    return heap_caps_aligned_calloc(DMA_DESC_MEM_ALIGN_SIZE, num, size, caps | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
 }
 
 static inline esp_err_t dma_desc_link(crypto_dma_desc_t *dmadesc, size_t crypto_dma_desc_num, size_t cache_line_size)
@@ -622,7 +615,8 @@ int esp_aes_process_dma(esp_aes_context *ctx, const unsigned char *input, unsign
     }
 
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
-    if (esp_cache_msync(output_desc, ALIGN_UP(output_dma_desc_num * sizeof(crypto_dma_desc_t), output_cache_line_size), ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
+    size_t output_desc_cache_line_size = get_cache_line_size(output_desc);
+    if (esp_cache_msync(output_desc, ALIGN_UP(output_dma_desc_num * sizeof(crypto_dma_desc_t), output_desc_cache_line_size), ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
         ESP_LOGE(TAG, "Output DMA descriptor cache sync M2C failed");
         ret = -1;
         goto cleanup;
@@ -841,7 +835,8 @@ int esp_aes_process_dma_gcm(esp_aes_context *ctx, const unsigned char *input, un
     }
 
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
-    if (esp_cache_msync(output_desc, ALIGN_UP(output_dma_desc_num * sizeof(crypto_dma_desc_t), output_cache_line_size), ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
+    size_t output_desc_cache_line_size = get_cache_line_size(output_desc);
+    if (esp_cache_msync(output_desc, ALIGN_UP(output_dma_desc_num * sizeof(crypto_dma_desc_t), output_desc_cache_line_size), ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
         ESP_LOGE(TAG, "Output DMA descriptor cache sync M2C failed");
         ret = -1;
         goto cleanup;

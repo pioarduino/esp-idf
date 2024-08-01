@@ -207,6 +207,10 @@ config SOC_BOD_SUPPORTED
     bool
     default y
 
+config SOC_APM_SUPPORTED
+    bool
+    default y
+
 config SOC_PMU_SUPPORTED
     bool
     default y
@@ -239,6 +243,10 @@ config SOC_LP_I2C_SUPPORTED
     bool
     default y
 
+config SOC_LP_SPI_SUPPORTED
+    bool
+    default y
+
 config SOC_SPIRAM_SUPPORTED
     bool
     default y
@@ -264,6 +272,10 @@ config SOC_WDT_SUPPORTED
     default y
 
 config SOC_SPI_FLASH_SUPPORTED
+    bool
+    default y
+
+config SOC_TOUCH_SENSOR_SUPPORTED
     bool
     default y
 
@@ -1251,6 +1263,14 @@ config SOC_SPI_MAX_PRE_DIVIDER
     int
     default 16
 
+config SOC_LP_SPI_PERIPH_NUM
+    bool
+    default y
+
+config SOC_LP_SPI_MAXIMUM_BUFFER_SIZE
+    int
+    default 64
+
 config SOC_SPI_MEM_SUPPORT_AUTO_WAIT_IDLE
     bool
     default y
@@ -1379,6 +1399,18 @@ config SOC_TOUCH_SENSOR_NUM
     int
     default 14
 
+config SOC_TOUCH_SUPPORT_SLEEP_WAKEUP
+    bool
+    default y
+
+config SOC_TOUCH_SUPPORT_WATERPROOF
+    bool
+    default y
+
+config SOC_TOUCH_SUPPORT_PROX_SENSING
+    bool
+    default y
+
 config SOC_TOUCH_PROXIMITY_CHANNEL_NUM
     int
     default 3
@@ -1387,7 +1419,11 @@ config SOC_TOUCH_PROXIMITY_MEAS_DONE_SUPPORTED
     bool
     default y
 
-config SOC_TOUCH_SAMPLER_NUM
+config SOC_TOUCH_SUPPORT_FREQ_HOP
+    bool
+    default y
+
+config SOC_TOUCH_SAMPLE_CFG_NUM
     int
     default 3
 
@@ -1548,6 +1584,10 @@ config SOC_PM_EXT1_WAKEUP_BY_PMU
     default y
 
 config SOC_PM_SUPPORT_WIFI_WAKEUP
+    bool
+    default y
+
+config SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP
     bool
     default y
 
