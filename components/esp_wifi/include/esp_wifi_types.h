@@ -293,6 +293,8 @@ typedef struct {
     uint8_t ssid_hidden;        /**< Broadcast SSID or not, default 0, broadcast the SSID */
     uint8_t max_connection;     /**< Max number of stations allowed to connect in */
     uint16_t beacon_interval;   /**< Beacon interval which should be multiples of 100. Unit: TU(time unit, 1 TU = 1024 us). Range: 100 ~ 60000. Default value: 100 */
+    uint8_t csa_count;          /**< Channel Switch Announcement Count. Notify the station that the channel will switch after the csa_count beacon intervals. Default value: 3 */
+    uint8_t dtim_period;        /**< Dtim period of soft-AP. Default value: 2 */
     wifi_cipher_type_t pairwise_cipher;   /**< Pairwise cipher of SoftAP, group cipher will be derived using this. Cipher values are valid starting from WIFI_CIPHER_TYPE_TKIP, enum values before that will be considered as invalid and default cipher suites(TKIP+CCMP) will be used. Valid cipher suites in softAP mode are WIFI_CIPHER_TYPE_TKIP, WIFI_CIPHER_TYPE_CCMP and WIFI_CIPHER_TYPE_TKIP_CCMP. */
     bool ftm_responder;         /**< Enable FTM Responder mode */
     wifi_pmf_config_t pmf_cfg;  /**< Configuration for Protected Management Frame */
@@ -953,6 +955,7 @@ typedef struct {
 typedef enum {
     WPS_FAIL_REASON_NORMAL = 0,     /**< WPS normal fail reason */
     WPS_FAIL_REASON_RECV_M2D,       /**< WPS receive M2D frame */
+    WPS_FAIL_REASON_RECV_DEAUTH,    /**< Recv deauth from AP while wps handshake */
     WPS_FAIL_REASON_MAX
 } wifi_event_sta_wps_fail_reason_t;
 
