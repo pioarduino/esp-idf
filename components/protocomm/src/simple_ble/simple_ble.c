@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -48,12 +48,24 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
     switch (event) {
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
         adv_config_done &= (~adv_config_flag);
+
+        if (g_ble_cfg_p->ble_addr) {
+            esp_ble_gap_set_rand_addr(g_ble_cfg_p->ble_addr);
+            g_ble_cfg_p->adv_params.own_addr_type = BLE_ADDR_TYPE_RANDOM;
+        }
+
         if (adv_config_done == 0) {
             esp_ble_gap_start_advertising(&g_ble_cfg_p->adv_params);
         }
         break;
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
         adv_config_done &= (~scan_rsp_config_flag);
+
+        if (g_ble_cfg_p->ble_addr) {
+            esp_ble_gap_set_rand_addr(g_ble_cfg_p->ble_addr);
+            g_ble_cfg_p->adv_params.own_addr_type = BLE_ADDR_TYPE_RANDOM;
+        }
+
         if (adv_config_done == 0) {
             esp_ble_gap_start_advertising(&g_ble_cfg_p->adv_params);
         }
@@ -186,7 +198,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
 simple_ble_cfg_t *simple_ble_init(void)
 {
-    simple_ble_cfg_t *ble_cfg_p = (simple_ble_cfg_t *) malloc(sizeof(simple_ble_cfg_t));
+    simple_ble_cfg_t *ble_cfg_p = (simple_ble_cfg_t *) calloc(1, sizeof(simple_ble_cfg_t));
     if (ble_cfg_p == NULL) {
         ESP_LOGE(TAG, "No memory for simple_ble_cfg_t");
         return NULL;
