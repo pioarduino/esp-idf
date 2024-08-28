@@ -715,6 +715,11 @@ esp_err_t esp_netif_dhcps_get_clients_by_mac(esp_netif_t *esp_netif, int num, es
  *   and is designed to be set via this API.
  *   If DHCP client is disabled, all DNS server types can be set via this API only.
  *
+ *   Note that LWIP stores DNS server information globally, not per interface, so the first parameter is unused
+ *   in the default LWIP configuration.
+ *   If CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=1 this API sets internal DNS server information per
+ *   netif. It's also possible to set the global DNS server info by supplying esp_netif=NULL
+ *
  *   If DHCP server is enabled, the Main DNS Server setting is used by the DHCP server to provide a DNS Server option
  *   to DHCP clients (Wi-Fi stations).
  *   - The default Main DNS server is typically the IP of the DHCP server itself.
@@ -739,6 +744,11 @@ esp_err_t esp_netif_set_dns_info(esp_netif_t *esp_netif, esp_netif_dns_type_t ty
  *
  * This may be result of a previous call to esp_netif_set_dns_info(). If the interface's DHCP client is enabled,
  * the Main or Backup DNS Server may be set by the current DHCP lease.
+ *
+ * Note that LWIP stores DNS server information globally, not per interface, so the first parameter is unused
+ * in the default LWIP configuration.
+ * If CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=1 this API returns internally saved DNS server information per
+ * netif. It's also possible to ask for the global DNS server info by supplying esp_netif=NULL
  *
  * @param[in]  esp_netif Handle to esp-netif instance
  * @param[in]  type Type of DNS Server to get: ESP_NETIF_DNS_MAIN, ESP_NETIF_DNS_BACKUP, ESP_NETIF_DNS_FALLBACK
@@ -821,6 +831,35 @@ esp_err_t esp_netif_get_ip6_global(esp_netif_t *esp_netif, esp_ip6_addr_t *if_ip
  *      number of returned IPv6 addresses
  */
 int esp_netif_get_all_ip6(esp_netif_t *esp_netif, esp_ip6_addr_t if_ip6[]);
+
+/**
+ * @brief  Cause the TCP/IP stack to add an IPv6 address to the interface
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param[in]  addr      The address to be added
+ * @param[in]  preferred The preferred status of the address
+ *
+ * @return
+ *         - ESP_OK
+ *         - ESP_ERR_ESP_NETIF_INVALID_PARAMS
+ *         - ESP_ERR_ESP_NETIF_IP6_ADDR_FAILED
+ *         - ESP_ERR_NO_MEM
+ */
+esp_err_t esp_netif_add_ip6_address(esp_netif_t *esp_netif, const esp_ip6_addr_t addr, bool preferred);
+
+/**
+ * @brief  Cause the TCP/IP stack to remove an IPv6 address from the interface
+ *
+ * @param[in]  esp_netif Handle to esp-netif instance
+ * @param[in]  addr      The address to be removed
+ *
+ * @return
+ *         - ESP_OK
+ *         - ESP_ERR_ESP_NETIF_INVALID_PARAMS
+ *         - ESP_ERR_ESP_NETIF_IP6_ADDR_FAILED
+ *         - ESP_ERR_NO_MEM
+ */
+esp_err_t esp_netif_remove_ip6_address(esp_netif_t *esp_netif, const esp_ip6_addr_t *addr);
 #endif
 
 /**
