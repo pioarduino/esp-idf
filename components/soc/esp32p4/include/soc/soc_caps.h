@@ -28,8 +28,10 @@
 #define SOC_DMA2D_SUPPORTED             1
 #define SOC_GPTIMER_SUPPORTED           1
 #define SOC_PCNT_SUPPORTED              1
-// #define SOC_LCDCAM_SUPPORTED            1 // TODO: IDF-7465
+#define SOC_LCDCAM_SUPPORTED            1
 #define SOC_LCDCAM_CAM_SUPPORTED        1
+#define SOC_LCDCAM_I80_LCD_SUPPORTED    1 // support the Intel 8080 bus driver based on the LCD_CAM peripheral
+// #define SOC_LCDCAM_RGB_LCD_SUPPORTED    1 // TODO: IDF-7465
 #define SOC_MIPI_CSI_SUPPORTED          1
 #define SOC_MIPI_DSI_SUPPORTED          1
 #define SOC_MCPWM_SUPPORTED             1
@@ -117,7 +119,7 @@
 #define SOC_ADC_DIG_SUPPORTED_UNIT(UNIT)        1    //Digital controller supported ADC unit
 #define SOC_ADC_DMA_SUPPORTED                   1
 #define SOC_ADC_PERIPH_NUM                      (2)
-#define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         ((PERIPH_NUM==0)? 6: 8)
+#define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         ((PERIPH_NUM==0)? 8: 6)
 #define SOC_ADC_MAX_CHANNEL_NUM                 (8)
 #define SOC_ADC_ATTEN_NUM                       (4)
 
@@ -384,14 +386,13 @@
 #define SOC_RMT_SUPPORT_DMA                   1  /*!< RMT peripheral can connect to DMA channel */
 
 /*-------------------------- LCD CAPS ----------------------------------------*/
-/* I80 bus and RGB timing generator can't work at the same time */
-// #define SOC_LCD_I80_SUPPORTED           (1)  /*!< Intel 8080 LCD is supported */ // TODO: IDF-7465
-// #define SOC_LCD_RGB_SUPPORTED           (1)  /*!< RGB LCD is supported */        // TODO: IDF-7465
-#define SOC_LCD_I80_BUSES               (1U) /*!< Has one LCD Intel 8080 bus */
-#define SOC_LCD_RGB_PANELS              (1U) /*!< Support one RGB LCD panel */
-#define SOC_LCD_I80_BUS_WIDTH           (24) /*!< Intel 8080 bus width */
-#define SOC_LCD_RGB_DATA_WIDTH          (24) /*!< Number of LCD data lines */
-#define SOC_LCD_SUPPORT_RGB_YUV_CONV    (1)  /*!< Support color format conversion between RGB and YUV */
+/* I80 bus and RGB timing generator can't work at the same time in the LCD_CAM peripheral */
+#define SOC_LCD_I80_SUPPORTED              1  /*!< support intel 8080 driver */
+#define SOC_LCDCAM_I80_NUM_BUSES           1U /*!< LCD_CAM peripheral provides one LCD Intel 8080 bus */
+#define SOC_LCDCAM_I80_BUS_WIDTH           24 /*!< Intel 8080 bus max data width */
+#define SOC_LCDCAM_RGB_NUM_PANELS          1U /*!< Support one RGB LCD panel */
+// #define SOC_LCD_RGB_DATA_WIDTH          24 /*!< Number of LCD data lines */
+// #define SOC_LCD_SUPPORT_RGB_YUV_CONV    1  /*!< Support color format conversion between RGB and YUV */
 
 /*-------------------------- MCPWM CAPS --------------------------------------*/
 #define SOC_MCPWM_GROUPS                     (2U)   ///< 2 MCPWM groups on the chip (i.e., the number of independent MCPWM peripherals)
@@ -552,6 +553,7 @@
 
 /*--------------------------- WATCHDOG CAPS ---------------------------------------*/
 #define SOC_MWDT_SUPPORT_XTAL              (1)
+#define SOC_MWDT_SUPPORT_SLEEP_RETENTION   (1)
 
 /*-------------------------- TOUCH SENSOR CAPS -------------------------------*/
 #define SOC_TOUCH_SENSOR_VERSION                    (3)     /*!< Hardware version of touch sensor */
