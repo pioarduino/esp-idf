@@ -288,6 +288,9 @@ if(CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN OR CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY)
 
     if(CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY)
         target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=mbedtls_ecdsa_verify")
+        target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=mbedtls_ecdsa_verify_restartable")
+        target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=mbedtls_ecdsa_read_signature")
+        target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=mbedtls_ecdsa_read_signature_restartable")
     endif()
 endif()
 
@@ -339,7 +342,20 @@ if(CONFIG_ESP_TLS_USE_DS_PERIPHERAL)
     set_property(TARGET mbedcrypto APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 6)
 endif()
 
-# Link esp-cryptoauthlib to mbedtls
+# Additional optional dependencies for the mbedcrypto library
+function(mbedcrypto_optional_deps component_name)
+    idf_build_get_property(components BUILD_COMPONENTS)
+    if(${component_name} IN_LIST components)
+        idf_component_get_property(lib_name ${component_name} COMPONENT_LIB)
+        target_link_libraries(mbedcrypto PRIVATE ${lib_name})
+    endif()
+endfunction()
+
+if(CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN_CONSTANT_TIME_CM)
+    mbedcrypto_optional_deps(esp_timer idf::esp_timer)
+endif()
+
+# Link esp-cryptoauthlib to mbedcrypto
 if(CONFIG_ATCA_MBEDTLS_ECDSA)
-    idf_component_optional_requires(PRIVATE espressif__esp-cryptoauthlib esp-cryptoauthlib)
+    mbedcrypto_optional_deps(espressif__esp-cryptoauthlib esp-cryptoauthlib)
 endif()
