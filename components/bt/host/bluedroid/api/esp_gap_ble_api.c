@@ -493,13 +493,17 @@ uint8_t *esp_ble_resolve_adv_data_by_type( uint8_t *adv_data, uint16_t adv_data_
 
     if (((type < ESP_BLE_AD_TYPE_FLAG) || (type > ESP_BLE_AD_TYPE_128SERVICE_DATA)) &&
             (type != ESP_BLE_AD_MANUFACTURER_SPECIFIC_TYPE)) {
-        LOG_ERROR("the eir type not define, type = %x\n", type);
+        LOG_ERROR("The advertising data type is not defined, type = %x", type);
         *length = 0;
         return NULL;
     }
 
-    if (adv_data == NULL || adv_data_len == 0) {
-        LOG_ERROR("Invalid advertising data.\n");
+    if (adv_data_len == 0) {
+        *length = 0;
+        return NULL;
+    }
+    if (adv_data == NULL) {
+        LOG_ERROR("Invalid advertising data.");
         *length = 0;
         return NULL;
     }
@@ -1021,6 +1025,23 @@ esp_err_t esp_ble_gap_set_privacy_mode(esp_ble_addr_type_t addr_type, esp_bd_add
     arg.set_privacy_mode.addr_type = addr_type;
     memcpy(arg.set_privacy_mode.addr, addr, sizeof(esp_bd_addr_t));
     arg.set_privacy_mode.privacy_mode = mode;
+
+    return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_gap_args_t), NULL, NULL)
+            == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);
+}
+
+esp_err_t esp_ble_gap_set_csa_support(uint8_t csa_select)
+{
+    btc_msg_t msg;
+    btc_ble_gap_args_t arg;
+
+    ESP_BLUEDROID_STATUS_CHECK(ESP_BLUEDROID_STATUS_ENABLED);
+
+    msg.sig = BTC_SIG_API_CALL;
+    msg.pid = BTC_PID_GAP_BLE;
+    msg.act = BTC_GAP_BLE_SET_CSA_SUPPORT;
+
+    arg.set_csa_support.csa_select = csa_select;
 
     return (btc_transfer_context(&msg, &arg, sizeof(btc_ble_gap_args_t), NULL, NULL)
             == BT_STATUS_SUCCESS ? ESP_OK : ESP_FAIL);

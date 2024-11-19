@@ -18,10 +18,6 @@ To optimize both the firmware binary size and the memory usage, it is necessary 
 
 Using the :ref:`idf.py` sub-commands ``size``, ``size-components``, and ``size-files`` provides a summary of memory used by the project:
 
-.. note::
-
-    It is possible to add ``-DOUTPUT_FORMAT=csv`` or ``-DOUTPUT_FORMAT=json`` to get the output in CSV or JSON format.
-
 Size Summary ``idf.py size``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -495,6 +491,7 @@ These include:
 - :ref:`CONFIG_MBEDTLS_HAVE_TIME`
 - :ref:`CONFIG_MBEDTLS_ECDSA_DETERMINISTIC`
 - :ref:`CONFIG_MBEDTLS_SHA512_C`
+- :ref:`CONFIG_MBEDTLS_SHA3_C`
 - :ref:`CONFIG_MBEDTLS_CLIENT_SSL_SESSION_TICKETS`
 - :ref:`CONFIG_MBEDTLS_SERVER_SSL_SESSION_TICKETS`
 - :ref:`CONFIG_MBEDTLS_SSL_CONTEXT_SERIALIZATION`
