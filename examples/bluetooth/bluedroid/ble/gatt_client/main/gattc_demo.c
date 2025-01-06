@@ -363,6 +363,8 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
 
             if (adv_name != NULL) {
                 if (strlen(remote_device_name) == adv_name_len && strncmp((char *)adv_name, remote_device_name, adv_name_len) == 0) {
+                    // Note: If there are multiple devices with the same device name, the device may connect to an unintended one.
+                    // It is recommended to change the default device name to ensure it is unique.
                     ESP_LOGI(GATTC_TAG, "Device found %s", remote_device_name);
                     if (connect == false) {
                         connect = true;
@@ -514,5 +516,24 @@ void app_main(void)
     if (local_mtu_ret){
         ESP_LOGE(GATTC_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
+
+
+    /*
+    * This code is intended for debugging and prints all HCI data.
+    * To enable it, turn on the "BT_HCI_LOG_DEBUG_EN" configuration option.
+    * The output HCI data can be parsed using the script:
+    * esp-idf/tools/bt/bt_hci_to_btsnoop.py.
+    * For detailed instructions, refer to esp-idf/tools/bt/README.md.
+    */
+
+    /*
+    while (1) {
+        extern void bt_hci_log_hci_data_show(void);
+        extern void bt_hci_log_hci_adv_show(void);
+        bt_hci_log_hci_data_show();
+        bt_hci_log_hci_adv_show();
+        vTaskDelay(1000 / portNUM_PROCESSORS);
+    }
+    */
 
 }
