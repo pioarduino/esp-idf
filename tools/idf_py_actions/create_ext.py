@@ -1,9 +1,9 @@
-# SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+# SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import os
 import re
 import sys
-from shutil import copy
+from shutil import copyfile
 from shutil import copytree
 from typing import Dict
 
@@ -16,7 +16,7 @@ def get_type(action: str) -> str:
 
 
 def replace_in_file(filename: str, pattern: str, replacement: str) -> None:
-    with open(filename, 'r+') as f:
+    with open(filename, 'r+', encoding='utf-8') as f:
         content = f.read()
         overwritten_content = re.sub(pattern, replacement, content, flags=re.M)
         f.seek(0)
@@ -42,7 +42,8 @@ def create_project(target_path: str, name: str) -> None:
     copytree(
         os.path.join(os.environ['IDF_PATH'], 'tools', 'templates', 'sample_project'),
         target_path,
-        copy_function=copy,
+        # 'copyfile' ensures only data are copied, without any metadata (file permissions)
+        copy_function=copyfile,
         dirs_exist_ok=True,
     )
     main_folder = os.path.join(target_path, 'main')
@@ -55,7 +56,8 @@ def create_component(target_path: str, name: str) -> None:
     copytree(
         os.path.join(os.environ['IDF_PATH'], 'tools', 'templates', 'sample_component'),
         target_path,
-        copy_function=copy,
+        # 'copyfile' ensures only data are copied, without any metadata (file permissions)
+        copy_function=copyfile,
         dirs_exist_ok=True,
     )
     os.rename(os.path.join(target_path, 'main.c'), os.path.join(target_path, '.'.join((name, 'c'))))

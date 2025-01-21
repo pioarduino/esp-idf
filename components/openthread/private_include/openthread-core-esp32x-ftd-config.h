@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -371,6 +371,16 @@
 
 #if CONFIG_OPENTHREAD_BORDER_ROUTER
 /**
+ * @def OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
+ *
+ * Define to 1 to enable Border Agent support.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
+#define OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE 1
+#endif
+
+/**
  * @def OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
  *
  * Define to 1 to enable Border Agent ID support.
@@ -451,16 +461,6 @@
 #define OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE 1
 #endif
 
-/**
- * @def OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
- *
- * Define to 1 to enable Border Agent support.
- *
- */
-#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
-#define OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE 1
-#endif
-
 #if !CONFIG_OPENTHREAD_RADIO_NATIVE
 /**
  * @def OPENTHREAD_SPINEL_CONFIG_COMPATIBILITY_ERROR_CALLBACK_ENABLE
@@ -492,6 +492,17 @@
  */
 #ifndef OPENTHREAD_POSIX_CONFIG_RCP_TIME_SYNC_INTERVAL
 #define OPENTHREAD_POSIX_CONFIG_RCP_TIME_SYNC_INTERVAL (60 * 1000 * 1000)
+#endif
+
+#if !CONFIG_IEEE802154_TEST && (CONFIG_ESP_COEX_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE)
+/**
+ * @def OPENTHREAD_SPINEL_CONFIG_VENDOR_HOOK_ENABLE
+ *
+ * Enables compilation of vendor specific code for Spinel
+ */
+#ifndef OPENTHREAD_SPINEL_CONFIG_VENDOR_HOOK_ENABLE
+#define OPENTHREAD_SPINEL_CONFIG_VENDOR_HOOK_ENABLE 1
+#endif
 #endif
 #endif // !CONFIG_OPENTHREAD_RADIO_NATIVE
 

@@ -493,15 +493,15 @@ void app_main(void)
         ESP_LOGE(GATTC_TAG, "%s enable bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
-
-    //register the  callback function to the gap module
+    // Note: Avoid performing time-consuming operations within callback functions.
+    // Register the callback function to the gap module
     ret = esp_ble_gap_register_callback(esp_gap_cb);
     if (ret){
         ESP_LOGE(GATTC_TAG, "%s gap register failed, error code = %x", __func__, ret);
         return;
     }
 
-    //register the callback function to the gattc module
+    // Register the callback function to the gattc module
     ret = esp_ble_gattc_register_callback(esp_gattc_cb);
     if(ret){
         ESP_LOGE(GATTC_TAG, "%s gattc register failed, error code = %x", __func__, ret);
@@ -516,5 +516,24 @@ void app_main(void)
     if (local_mtu_ret){
         ESP_LOGE(GATTC_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
+
+
+    /*
+    * This code is intended for debugging and prints all HCI data.
+    * To enable it, turn on the "BT_HCI_LOG_DEBUG_EN" configuration option.
+    * The output HCI data can be parsed using the script:
+    * esp-idf/tools/bt/bt_hci_to_btsnoop.py.
+    * For detailed instructions, refer to esp-idf/tools/bt/README.md.
+    */
+
+    /*
+    while (1) {
+        extern void bt_hci_log_hci_data_show(void);
+        extern void bt_hci_log_hci_adv_show(void);
+        bt_hci_log_hci_data_show();
+        bt_hci_log_hci_adv_show();
+        vTaskDelay(1000 / portNUM_PROCESSORS);
+    }
+    */
 
 }
