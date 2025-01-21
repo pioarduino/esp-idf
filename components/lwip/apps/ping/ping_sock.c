@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <sys/time.h>
+#include <net/if.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/opt.h"
@@ -24,6 +25,35 @@
 #include "esp_log.h"
 #include "ping/ping_sock.h"
 #include "esp_check.h"
+
+#ifndef CONFIG_LWIP_NETIF_API
+
+#include "lwip/priv/tcpip_priv.h"
+// If POSIX NETIF_API not enabled, we need to supply the implementation of if_indextoname()
+// using tcpip_callback()
+
+struct tcpip_netif_name {
+    struct tcpip_api_call_data call;
+    u8_t ifindex;
+    char *ifname;
+    err_t err;
+};
+
+static void do_netif_index_to_name(void *ctx)
+{
+    struct tcpip_netif_name *params = ctx;
+    params->err = netif_index_to_name(params->ifindex, params->ifname) ? ERR_OK : ERR_IF;
+}
+
+char *if_indextoname(unsigned int ifindex, char *ifname)
+{
+    struct tcpip_netif_name params = { .ifindex = ifindex, .ifname = ifname };
+    if (tcpip_callback(do_netif_index_to_name, &params) != ERR_OK || params.err != ERR_OK) {
+        return NULL;
+    }
+    return ifname;
+}
+#endif  // CONFIG_LWIP_NETIF_API == 0
 
 const static char *TAG = "ping_sock";
 
@@ -133,7 +163,8 @@ static int esp_ping_receive(esp_ping_t *ep)
             if (IP_IS_V6_VAL(recv_addr)) {      // Currently we process IPv6
                 struct ip6_hdr *iphdr = (struct ip6_hdr *)buf;
                 struct icmp6_echo_hdr *iecho6 = (struct icmp6_echo_hdr *)(buf + sizeof(struct ip6_hdr)); // IPv6 head length is 40
-                if ((iecho6->id == ep->packet_hdr->id) && (iecho6->seqno == ep->packet_hdr->seqno)) {
+                if ((iecho6->type == ICMP6_TYPE_EREP) // only check the ICMPv6 echo reply types
+                    && (iecho6->id == ep->packet_hdr->id) && (iecho6->seqno == ep->packet_hdr->seqno)) {
                     ip_addr_copy(ep->recv_addr, recv_addr);
                     ep->received++;
                     ep->recv_len = IP6H_PLEN(iphdr) - sizeof(struct icmp6_echo_hdr); //The data portion of ICMPv6
@@ -266,7 +297,7 @@ esp_err_t esp_ping_new_session(const esp_ping_config_t *config, const esp_ping_c
     /* set if index */
     if(config->interface) {
         struct ifreq iface;
-        if(netif_index_to_name(config->interface, iface.ifr_name) == NULL) {
+        if (if_indextoname(config->interface, iface.ifr_name) == NULL) {
             ESP_LOGE(TAG, "fail to find interface name with netif index %" PRIu32, config->interface);
             goto err;
         }
