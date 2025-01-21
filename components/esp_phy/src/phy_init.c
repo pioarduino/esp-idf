@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -315,6 +315,8 @@ void esp_phy_enable(esp_phy_modem_t modem)
                 } else {
                     phy_wakeup_init();
                 }
+            } else {
+                phy_wakeup_from_modem_state_extra_init();
             }
 #else
             phy_wakeup_init();
@@ -338,10 +340,10 @@ void esp_phy_enable(esp_phy_modem_t modem)
         phy_track_pll_init();
 #endif
 
-    if (phy_ant_need_update()) {
-        phy_ant_update();
-        phy_ant_clr_update_flag();
-    }
+        if (phy_ant_need_update()) {
+            phy_ant_update();
+            phy_ant_clr_update_flag();
+        }
 
     }
     phy_set_modem_flag(modem);
@@ -931,7 +933,7 @@ void esp_phy_load_cal_and_init(void)
     memcpy(cal_data->mac, sta_mac, 6);
     esp_err_t ret = register_chipv7_phy(init_data, cal_data, calibration_mode);
     if (ret == ESP_CAL_DATA_CHECK_FAIL) {
-        ESP_LOGW(TAG, "saving new calibration data because of checksum failure, mode(%d)", calibration_mode);
+        ESP_LOGI(TAG, "Saving new calibration data due to checksum failure or outdated calibration data, mode(%d)", calibration_mode);
     }
 
     if ((calibration_mode != PHY_RF_CAL_NONE) && ((err != ESP_OK) || (ret == ESP_CAL_DATA_CHECK_FAIL))) {

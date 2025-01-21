@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2020-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,6 +12,7 @@
 #include "esp_phy_init.h"
 #include "esp_ieee802154_ack.h"
 #include "esp_ieee802154_dev.h"
+#include "esp_ieee802154_event.h"
 #include "esp_ieee802154_frame.h"
 #include "esp_ieee802154_pib.h"
 #include "esp_ieee802154_sec.h"
@@ -20,6 +21,15 @@
 #include "esp_coex_i154.h"
 #include "hal/ieee802154_ll.h"
 #include "hal/ieee802154_common_ll.h"
+
+esp_err_t esp_ieee802154_event_callback_list_register(esp_ieee802154_event_cb_list_t cb_list)
+{
+    return ieee802154_event_callback_list_register(cb_list);
+}
+esp_err_t esp_ieee802154_event_callback_list_unregister(void)
+{
+    return ieee802154_event_callback_list_unregister();
+}
 
 esp_err_t esp_ieee802154_enable(void)
 {
@@ -471,3 +481,15 @@ void esp_ieee802154_record_print(void)
     ieee802154_record_print();
 }
 #endif // CONFIG_IEEE802154_RECORD
+
+#if !CONFIG_IEEE802154_TEST && (CONFIG_ESP_COEX_SW_COEXIST_ENABLE || CONFIG_EXTERNAL_COEX_ENABLE)
+void esp_ieee802154_set_coex_config(esp_ieee802154_coex_config_t config)
+{
+    ieee802154_set_coex_config(config);
+}
+
+esp_ieee802154_coex_config_t esp_ieee802154_get_coex_config(void)
+{
+    return ieee802154_get_coex_config();
+}
+#endif
