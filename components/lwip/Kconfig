@@ -668,8 +668,8 @@ menu "LWIP"
             int "The maximum number of pbufs queued on OOSEQ per pcb"
             depends on LWIP_TCP_QUEUE_OOSEQ
             range 0 12
-            default 4 if !SPIRAM_TRY_ALLOCATE_WIFI_LWIP
-            default 0 if SPIRAM_TRY_ALLOCATE_WIFI_LWIP
+            default 4 if !(SPIRAM_TRY_ALLOCATE_WIFI_LWIP && !SPIRAM_IGNORE_NOTFOUND)
+            default 0 if (SPIRAM_TRY_ALLOCATE_WIFI_LWIP && !SPIRAM_IGNORE_NOTFOUND)
             help
                 If LWIP_TCP_OOSEQ_MAX_PBUFS = 0, TCP will not control the number of OOSEQ pbufs.
 
@@ -725,7 +725,7 @@ menu "LWIP"
 
         config LWIP_WND_SCALE
             bool "Support TCP window scale"
-            depends on SPIRAM_TRY_ALLOCATE_WIFI_LWIP
+            depends on (SPIRAM_TRY_ALLOCATE_WIFI_LWIP && !SPIRAM_IGNORE_NOTFOUND)
             default n
             help
                 Enable this feature to support TCP window scaling.
@@ -1192,6 +1192,21 @@ menu "LWIP"
             config LWIP_HOOK_NETCONN_EXT_RESOLVE_DEFAULT
                 bool "Default (weak) implementation"
             config LWIP_HOOK_NETCONN_EXT_RESOLVE_CUSTOM
+                bool "Custom implementation"
+
+        endchoice
+
+        choice LWIP_HOOK_DNS_EXTERNAL_RESOLVE
+            prompt "DNS external resolve Hook"
+            default LWIP_HOOK_DNS_EXT_RESOLVE_NONE
+            help
+                Enables custom DNS resolve hook.
+                Setting this to "custom" provides hook's declaration
+                only and expects the application to implement it.
+
+            config LWIP_HOOK_DNS_EXT_RESOLVE_NONE
+                bool "No hook declared"
+            config LWIP_HOOK_DNS_EXT_RESOLVE_CUSTOM
                 bool "Custom implementation"
 
         endchoice
