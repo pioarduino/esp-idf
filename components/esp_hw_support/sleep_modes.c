@@ -13,6 +13,7 @@
 #include "esp_rom_caps.h"
 #include "esp_memory_utils.h"
 #include "esp_sleep.h"
+#include "esp_private/esp_clk_tree_common.h"
 #include "esp_private/esp_sleep_internal.h"
 #include "esp_private/esp_timer_private.h"
 #include "esp_private/rtc_clk.h"
@@ -1620,6 +1621,10 @@ esp_err_t esp_sleep_enable_ulp_wakeup(void)
 
 esp_err_t esp_sleep_enable_timer_wakeup(uint64_t time_in_us)
 {
+    if (time_in_us > ((BIT64(SOC_LP_TIMER_BIT_WIDTH_LO + SOC_LP_TIMER_BIT_WIDTH_HI) - 1) / esp_clk_tree_lp_slow_get_freq_hz(ESP_CLK_TREE_SRC_FREQ_PRECISION_APPROX)) * MHZ ) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     s_config.wakeup_triggers |= RTC_TIMER_TRIG_EN;
     s_config.sleep_duration = time_in_us;
     return ESP_OK;
@@ -1751,7 +1756,9 @@ static void ext0_wakeup_prepare(void)
 {
     int rtc_gpio_num = s_config.ext0_rtc_gpio_num;
 #if SOC_LP_IO_CLOCK_IS_INDEPENDENT
-    io_mux_enable_lp_io_clock(rtc_gpio_num, true);
+    // To suppress build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
+    int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused));
+    rtcio_ll_enable_io_clock(true);
 #endif
     rtcio_hal_ext0_set_wakeup_pin(rtc_gpio_num, s_config.ext0_trigger_level);
     rtcio_hal_function_select(rtc_gpio_num, RTCIO_LL_FUNC_RTC);
@@ -1884,7 +1891,9 @@ static void ext1_wakeup_prepare(void)
             continue;
         }
 #if SOC_LP_IO_CLOCK_IS_INDEPENDENT
-        io_mux_enable_lp_io_clock(rtc_pin, true);
+        // To suppress build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
+        int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused));
+        rtcio_ll_enable_io_clock(true);
 #endif
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
         // Route pad to RTC
@@ -1958,6 +1967,11 @@ static void gpio_deep_sleep_wakeup_prepare(void)
         if ((s_config.gpio_wakeup_mask & BIT64(gpio_idx)) == 0) {
             continue;
         }
+#if SOC_LP_IO_CLOCK_IS_INDEPENDENT
+        // To suppress build errors about spinlock's __DECLARE_RCC_ATOMIC_ENV
+        int __DECLARE_RCC_ATOMIC_ENV __attribute__ ((unused));
+        rtcio_ll_enable_io_clock(true);
+#endif
 #if CONFIG_ESP_SLEEP_GPIO_ENABLE_INTERNAL_RESISTORS
         if (s_config.gpio_trigger_mode & BIT(gpio_idx)) {
             ESP_ERROR_CHECK(gpio_pullup_dis(gpio_idx));

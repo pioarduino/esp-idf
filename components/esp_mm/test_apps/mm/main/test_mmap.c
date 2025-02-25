@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,3 +50,46 @@ TEST_CASE("Can dump mapped block stats", "[mmu]")
     TEST_ESP_OK(esp_mmu_unmap(ptr1));
     TEST_ESP_OK(esp_mmu_unmap(ptr2));
 }
+
+TEST_CASE("Can find paddr caps by any paddr offset", "[mmu]")
+{
+    const esp_partition_t *part = s_get_partition();
+    ESP_LOGI(TAG, "found partition '%s' at offset 0x%"PRIx32" with size 0x%"PRIx32, part->label, part->address, part->size);
+
+    void *ptr0 = NULL;
+    TEST_ESP_OK(esp_mmu_map(part->address, TEST_BLOCK_SIZE, MMU_TARGET_FLASH0, MMU_MEM_CAP_READ, 0, &ptr0));
+
+    mmu_mem_caps_t caps = 0;
+    TEST_ESP_OK(esp_mmu_paddr_find_caps(part->address, &caps));
+    ESP_LOGI(TAG, "caps: 0x%x", caps);
+    TEST_ASSERT(caps == MMU_MEM_CAP_READ);
+
+    TEST_ESP_OK(esp_mmu_paddr_find_caps(part->address + 0x100, &caps));
+    ESP_LOGI(TAG, "caps: 0x%x", caps);
+    TEST_ASSERT(caps == MMU_MEM_CAP_READ);
+
+    TEST_ESP_OK(esp_mmu_unmap(ptr0));
+}
+
+#if CONFIG_SPIRAM
+#if !CONFIG_IDF_TARGET_ESP32  //ESP32 doesn't support using `esp_mmu_map` to map to PSRAM
+TEST_CASE("Can find paddr when mapping to psram", "[mmu]")
+{
+    esp_paddr_t paddr = 0;
+    mmu_target_t target = MMU_TARGET_FLASH0;
+
+    void *vaddr = NULL;
+    esp_err_t err = ESP_FAIL;
+
+    vaddr = heap_caps_malloc(10, MALLOC_CAP_SPIRAM);
+    err = esp_mmu_vaddr_to_paddr(vaddr, &paddr, &target);
+    if (err == ESP_OK) {
+        ESP_LOGI("MMU", "Virtual Address: %p, Physical Address: 0x%lx, Target: %d", vaddr, paddr, target);
+    } else {
+        ESP_LOGE("MMU", "Failed to convert virtual address to physical address: %s", esp_err_to_name(err));
+    }
+
+    TEST_ASSERT(target == MMU_TARGET_PSRAM0);
+}
+#endif  //#if !CONFIG_IDF_TARGET_ESP32
+#endif  //#if CONFIG_SPIRAM

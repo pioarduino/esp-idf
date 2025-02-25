@@ -32,6 +32,7 @@ extern "C" {
 #define REGDMA_MODEMLPCON_LINK(_pri)        ((0x03 << 8) | _pri)
 #define REGDMA_PAU_LINK(_pri)               ((0x04 << 8) | _pri)
 
+#define REGDMA_CACHE_LINK(_pri)             ((0x0c << 8) | _pri)
 #define REGDMA_INTMTX_LINK(_pri)            ((0x0d << 8) | _pri)
 #define REGDMA_HPSYS_LINK(_pri)             ((0x0e << 8) | _pri)
 #define REGDMA_TEEAPM_LINK(_pri)            ((0x0f << 8) | _pri)
@@ -156,7 +157,7 @@ typedef struct regdma_link_stats {
     volatile uint32_t   ref: REGDMA_LINK_ENTRY_NUM, /* a bitmap, identifies which entry has referenced the current link */
              reserve: 16-REGDMA_LINK_ENTRY_NUM,
              id: 16; /* REGDMA linked list node unique identifier */
-    volatile uint32_t   module; /* a bitmap used to identify the module to which the current node belongs */
+    volatile int    module; /* a number used to identify the module to which the current node belongs */
 } regdma_link_stats_t;
 
 typedef struct regdma_link_continuous {

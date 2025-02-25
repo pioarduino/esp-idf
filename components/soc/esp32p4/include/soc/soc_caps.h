@@ -665,10 +665,13 @@
 #define SOC_PM_SUPPORT_DEEPSLEEP_CHECK_STUB_ONLY   (1) /*!<Supports CRC only the stub code in RTC memory */
 
 #define SOC_PM_CPU_RETENTION_BY_SW      (1)
+#define SOC_PM_CACHE_RETENTION_BY_PAU   (1)
 
 #define SOC_PM_PAU_LINK_NUM             (4)
 #define SOC_PAU_IN_TOP_DOMAIN           (1)
 #define SOC_CPU_IN_TOP_DOMAIN           (1)
+
+#define SOC_PM_RETENTION_MODULE_NUM     (64)
 
 #define SOC_PM_PAU_REGDMA_UPDATE_CACHE_BEFORE_WAIT_COMPARE  (1)
 
