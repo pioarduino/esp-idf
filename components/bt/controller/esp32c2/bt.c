@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -61,6 +61,12 @@
 
 #include "hal/efuse_ll.h"
 #include "soc/rtc.h"
+
+#if CONFIG_BT_LE_CONTROLLER_LOG_ENABLED
+#if CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+#include "ble_log/ble_log_spi_out.h"
+#endif // CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+#endif // CONFIG_BT_LE_CONTROLLER_LOG_ENABLED
 
 /* Macro definition
  ************************************************************************
@@ -208,6 +214,7 @@ enum log_out_mode {
     LOG_DUMP_MEMORY,
     LOG_ASYNC_OUT,
     LOG_STORAGE_TO_FLASH,
+    LOG_SPI_OUT,
 };
 
 bool log_is_inited = false;
@@ -216,6 +223,8 @@ uint8_t log_output_mode = LOG_DUMP_MEMORY;
 #else
 #if CONFIG_BT_LE_CONTROLLER_LOG_STORAGE_ENABLE
 uint8_t log_output_mode = LOG_STORAGE_TO_FLASH;
+#elif CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+uint8_t log_output_mode = LOG_SPI_OUT;
 #else
 uint8_t log_output_mode = LOG_ASYNC_OUT;
 #endif // CONFIG_BT_LE_CONTROLLER_LOG_STORAGE_ENABLE
@@ -263,6 +272,13 @@ esp_err_t esp_bt_controller_log_init(uint8_t log_output_mode)
             }
 #endif // CONFIG_BT_LE_CONTROLLER_LOG_STORAGE_ENABLE
             break;
+        case LOG_SPI_OUT:
+            task_create = true;
+#if CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+            ble_log_spi_out_init();
+            bt_controller_log_interface = ble_log_spi_out_write_esp;
+#endif // CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+            break;
         default:
             assert(0);
     }
@@ -278,6 +294,9 @@ esp_err_t esp_bt_controller_log_init(uint8_t log_output_mode)
 void esp_bt_ontroller_log_deinit(void)
 {
     ble_log_deinit_async();
+#if CONFIG_BT_LE_CONTROLLER_LOG_SPI_OUT_ENABLED
+    ble_log_spi_out_deinit();
+#endif
     log_is_inited = false;
 }
 
@@ -435,6 +454,21 @@ void esp_ble_controller_log_dump_all(bool output)
         portEXIT_CRITICAL_SAFE(&spinlock);
     }
 }
+#if CONFIG_BT_LE_CONTROLLER_LOG_TASK_WDT_USER_HANDLER_ENABLE
+void esp_task_wdt_isr_user_handler(void)
+{
+    esp_ble_controller_log_dump_all(true);
+}
+#endif // CONFIG_BT_LE_CONTROLLER_LOG_TASK_WDT_USER_HANDLER_ENABLE
+
+#if CONFIG_BT_LE_CONTROLLER_LOG_WRAP_PANIC_HANDLER_ENABLE
+void __real_esp_panic_handler(void *info);
+void __wrap_esp_panic_handler (void *info)
+{
+    esp_ble_controller_log_dump_all(true);
+    __real_esp_panic_handler(info);
+}
+#endif // CONFIG_BT_LE_CONTROLLER_LOG_WRAP_PANIC_HANDLER_ENABLE
 #endif // CONFIG_BT_LE_CONTROLLER_LOG_ENABLED
 
 /* This variable tells if BLE is running */
@@ -1145,9 +1179,17 @@ esp_err_t esp_ble_tx_power_set(esp_ble_power_type_t power_type, esp_power_level_
 
     switch (power_type) {
     case ESP_BLE_PWR_TYPE_DEFAULT:
-    case ESP_BLE_PWR_TYPE_ADV:
-    case ESP_BLE_PWR_TYPE_SCAN:
         if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0, power_level) == 0) {
+            stat = ESP_OK;
+        }
+        break;
+    case ESP_BLE_PWR_TYPE_ADV:
+        if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_ADV, 0xFF, power_level) == 0) {
+            stat = ESP_OK;
+        }
+        break;
+    case ESP_BLE_PWR_TYPE_SCAN:
+        if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_SCAN, 0, power_level) == 0) {
             stat = ESP_OK;
         }
         break;
@@ -1177,9 +1219,13 @@ esp_err_t esp_ble_tx_power_set_enhanced(esp_ble_enhanced_power_type_t power_type
     esp_err_t stat = ESP_FAIL;
     switch (power_type) {
     case ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT:
+        if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0, power_level) == 0) {
+            stat = ESP_OK;
+        }
+        break;
     case ESP_BLE_ENHANCED_PWR_TYPE_SCAN:
     case ESP_BLE_ENHANCED_PWR_TYPE_INIT:
-        if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0, power_level) == 0) {
+        if (ble_txpwr_set(ESP_BLE_ENHANCED_PWR_TYPE_SCAN, 0, power_level) == 0) {
             stat = ESP_OK;
         }
         break;
@@ -1202,10 +1248,14 @@ esp_power_level_t esp_ble_tx_power_get(esp_ble_power_type_t power_type)
     int tx_level = 0;
 
     switch (power_type) {
-    case ESP_BLE_PWR_TYPE_ADV:
-    case ESP_BLE_PWR_TYPE_SCAN:
     case ESP_BLE_PWR_TYPE_DEFAULT:
         tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0);
+        break;
+    case ESP_BLE_PWR_TYPE_ADV:
+        tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_ADV, 0);
+        break;
+    case ESP_BLE_PWR_TYPE_SCAN:
+        tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_SCAN, 0);
         break;
     case ESP_BLE_PWR_TYPE_CONN_HDL0:
     case ESP_BLE_PWR_TYPE_CONN_HDL1:
@@ -1235,9 +1285,11 @@ esp_power_level_t esp_ble_tx_power_get_enhanced(esp_ble_enhanced_power_type_t po
 
     switch (power_type) {
     case ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT:
+        tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0);
+        break;
     case ESP_BLE_ENHANCED_PWR_TYPE_SCAN:
     case ESP_BLE_ENHANCED_PWR_TYPE_INIT:
-        tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_DEFAULT, 0);
+        tx_level = ble_txpwr_get(ESP_BLE_ENHANCED_PWR_TYPE_SCAN, 0);
         break;
     case ESP_BLE_ENHANCED_PWR_TYPE_ADV:
     case ESP_BLE_ENHANCED_PWR_TYPE_CONN:
