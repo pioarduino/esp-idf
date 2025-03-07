@@ -247,6 +247,7 @@ static void start_other_core(void)
         REG_CLR_BIT(SYSTEM_CORE_1_CONTROL_0_REG, SYSTEM_CONTROL_CORE_1_RESETING);
     }
 #endif
+
     ets_set_appcpu_boot_addr((uint32_t)call_start_cpu1);
 
     bool cpus_up = false;
