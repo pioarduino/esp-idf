@@ -191,6 +191,9 @@ static void reset_complete(void)
 
     if (controller->supports_ble()) {
         btm_ble_white_list_init(controller->get_ble_white_list_size());
+        #if (BLE_50_FEATURE_SUPPORT == TRUE)
+        btm_ble_periodic_adv_list_init(controller->get_ble_periodic_adv_list_size());
+        #endif //#if (BLE_50_FEATURE_SUPPORT == TRUE)
         l2c_link_processs_ble_num_bufs(controller->get_acl_buffer_count_ble());
     }
 #endif
@@ -727,6 +730,14 @@ void btm_vsc_complete (UINT8 *p, UINT16 opcode, UINT16 evt_len,
             STREAM_TO_UINT8(status, p);
             if (ble_cb && ble_cb->set_csa_support_cmpl_cb) {
                 ble_cb->set_csa_support_cmpl_cb(status);
+            }
+            break;
+        }
+        case HCI_VENDOR_BLE_SET_EVT_MASK: {
+            uint8_t status;
+            STREAM_TO_UINT8(status, p);
+            if (ble_cb && ble_cb->set_vendor_evt_mask_cmpl_cb) {
+                ble_cb->set_vendor_evt_mask_cmpl_cb(status);
             }
             break;
         }

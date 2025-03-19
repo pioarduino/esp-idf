@@ -202,6 +202,8 @@ typedef void (tBTM_SET_RPA_TIMEOUT_CMPL_CBACK) (UINT8 status);
 
 typedef void (tBTM_ADD_DEV_TO_RESOLVING_LIST_CMPL_CBACK) (UINT8 status);
 
+typedef void (tBTM_BLE_VENDOR_HCI_EVT_CBACK) (UINT8 subevt_code, UINT8 param_len, UINT8 *params);
+
 /*****************************************************************************
 **  DEVICE DISCOVERY - Inquiry, Remote Name, Discovery, Class of Device
 *****************************************************************************/
@@ -2947,7 +2949,9 @@ tBTM_STATUS BTM_BleReadAdvTxPower(tBTM_CMPL_CB *p_cb);
 
 void BTM_BleGetWhiteListSize(uint16_t *length);
 
-
+#if (BLE_50_FEATURE_SUPPORT == TRUE)
+void BTM_BleGetPeriodicAdvListSize(uint8_t *size);
+#endif //#if (BLE_50_FEATURE_SUPPORT == TRUE)
 /*******************************************************************************
 **
 ** Function         BTM_ReadLinkQuality
