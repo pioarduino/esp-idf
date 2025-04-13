@@ -628,23 +628,25 @@ if(CONFIG_BT_ENABLED)
 
     if(NOT (CONFIG_BT_LE_CRYPTO_STACK_MBEDTLS OR CONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS))
         list(APPEND include_dirs
-                porting/ext/tinycrypt/include
+                common/tinycrypt/include
+                common/tinycrypt/port
             )
-        list(APPEND srcs "porting/ext/tinycrypt/src/utils.c"
-                "porting/ext/tinycrypt/src/sha256.c"
-                "porting/ext/tinycrypt/src/ecc.c"
-                "porting/ext/tinycrypt/src/ctr_prng.c"
-                "porting/ext/tinycrypt/src/ctr_mode.c"
-                "porting/ext/tinycrypt/src/aes_decrypt.c"
-                "porting/ext/tinycrypt/src/aes_encrypt.c"
-                "porting/ext/tinycrypt/src/ccm_mode.c"
-                "porting/ext/tinycrypt/src/ecc_dsa.c"
-                "porting/ext/tinycrypt/src/cmac_mode.c"
-                "porting/ext/tinycrypt/src/ecc_dh.c"
-                "porting/ext/tinycrypt/src/hmac_prng.c"
-                "porting/ext/tinycrypt/src/ecc_platform_specific.c"
-                "porting/ext/tinycrypt/src/hmac.c"
-                "porting/ext/tinycrypt/src/cbc_mode.c")
+        list(APPEND srcs "common/tinycrypt/src/utils.c"
+                "common/tinycrypt/src/sha256.c"
+                "common/tinycrypt/src/ecc.c"
+                "common/tinycrypt/src/ctr_prng.c"
+                "common/tinycrypt/src/ctr_mode.c"
+                "common/tinycrypt/src/aes_decrypt.c"
+                "common/tinycrypt/src/aes_encrypt.c"
+                "common/tinycrypt/src/ccm_mode.c"
+                "common/tinycrypt/src/ecc_dsa.c"
+                "common/tinycrypt/src/cmac_mode.c"
+                "common/tinycrypt/src/ecc_dh.c"
+                "common/tinycrypt/src/hmac_prng.c"
+                "common/tinycrypt/src/ecc_platform_specific.c"
+                "common/tinycrypt/src/hmac.c"
+                "common/tinycrypt/src/cbc_mode.c"
+                "common/tinycrypt/port/esp_tinycrypt_port.c")
     endif()
 
     if(CONFIG_BT_NIMBLE_ENABLED)
@@ -856,12 +858,27 @@ if(CONFIG_BT_ENABLED)
 
 endif()
 
+
+set(bt_priv_requires
+    nvs_flash
+    soc
+    esp_pm
+    esp_phy
+    esp_coex
+    mbedtls
+    esp_driver_uart
+    vfs
+    esp_ringbuf
+    esp_driver_spi
+    esp_driver_gpio
+    esp_gdbstub
+)
+
 idf_component_register(SRCS "${srcs}"
                        INCLUDE_DIRS "${include_dirs}"
                        PRIV_INCLUDE_DIRS "${priv_include_dirs}"
                        REQUIRES esp_timer esp_wifi
-                       PRIV_REQUIRES nvs_flash soc esp_pm esp_phy esp_coex mbedtls esp_driver_uart vfs esp_ringbuf
-                                     esp_driver_spi esp_driver_gpio
+                       PRIV_REQUIRES "${bt_priv_requires}"
                        LDFRAGMENTS "${ldscripts}")
 
 if(CONFIG_BT_ENABLED)
@@ -893,17 +910,21 @@ if(CONFIG_BT_ENABLED)
         endif()
         if(CONFIG_IDF_TARGET_ESP32C6)
             add_prebuilt_library(libble_app
-                "${CMAKE_CURRENT_LIST_DIR}/controller/lib_esp32c6/esp32c6-bt-lib/esp32c6/libble_app.a")
+                "${CMAKE_CURRENT_LIST_DIR}/controller/lib_esp32c6/esp32c6-bt-lib/esp32c6/libble_app.a"
+                REQUIRES esp_phy)
         elseif(CONFIG_IDF_TARGET_ESP32C61)
             add_prebuilt_library(libble_app
-                "${CMAKE_CURRENT_LIST_DIR}/controller/lib_esp32c6/esp32c6-bt-lib/esp32c61/libble_app.a")
+                "${CMAKE_CURRENT_LIST_DIR}/controller/lib_esp32c6/esp32c6-bt-lib/esp32c61/libble_app.a"
+                REQUIRES esp_phy)
         else()
             if(CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY AND CONFIG_IDF_TARGET_ESP32C2)
                 add_prebuilt_library(libble_app
-                    "controller/lib_${target_name}/${target_name}-bt-lib/libble_app_flash.a")
+                    "controller/lib_${target_name}/${target_name}-bt-lib/libble_app_flash.a"
+                    REQUIRES esp_phy)
             else()
                 add_prebuilt_library(libble_app
-                    "controller/lib_${target_name}/${target_name}-bt-lib/libble_app.a")
+                    "controller/lib_${target_name}/${target_name}-bt-lib/libble_app.a"
+                    REQUIRES esp_phy)
             endif()
         endif()
         target_link_libraries(${COMPONENT_LIB} PRIVATE libble_app)
