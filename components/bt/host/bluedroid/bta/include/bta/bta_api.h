@@ -451,6 +451,8 @@ typedef tBTM_TX_POWER_RESULTS tBTA_TX_POWER_RESULTS;
 
 typedef tBTM_RSSI_RESULTS tBTA_RSSI_RESULTS;
 
+typedef tBTM_BLE_CH_MAP_RESULTS tBTA_BLE_CH_MAP_RESULTS;
+
 typedef tBTM_SET_AFH_CHANNELS_RESULTS tBTA_SET_AFH_CHANNELS_RESULTS;
 typedef tBTM_BLE_SET_CHANNELS_RESULTS tBTA_BLE_SET_CHANNELS_RESULTS;
 
@@ -1587,15 +1589,16 @@ typedef struct {
 
 typedef struct {
     UINT8 filter_policy;
-    #if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
+#if (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
     UINT8 reports_disabled;
     UINT8 filter_duplicates;
-    #endif
+#endif // (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
     UINT8 sid;
     tBLE_ADDR_TYPE addr_type;
     BD_ADDR addr;
     UINT16 skip;
     UINT16 sync_timeout;
+    UINT8 sync_cte_type;
 } tBTA_DM_BLE_Periodic_Sync_Params;
 
 typedef struct {
@@ -2067,6 +2070,7 @@ extern void BTA_DmBleReadAdvTxPower(tBTA_CMPL_CB *cmpl_cb);
 #endif  ///BLE_INCLUDED == TRUE
 
 extern void BTA_DmReadRSSI(BD_ADDR remote_addr, tBTA_TRANSPORT transport, tBTA_CMPL_CB *cmpl_cb);
+extern void BTA_DmBleReadChannelMap(BD_ADDR remote_device, tBTA_CMPL_CB *p_callback);
 
 /*******************************************************************************
 **

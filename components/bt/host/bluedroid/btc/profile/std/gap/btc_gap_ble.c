@@ -935,6 +935,29 @@ static void btc_read_ble_rssi_cmpl_callback(void *p_data)
     }
 }
 
+static void btc_ble_read_channel_map_callback(void *p_data)
+{
+    tBTA_BLE_CH_MAP_RESULTS *result = (tBTA_BLE_CH_MAP_RESULTS *)p_data;
+    esp_ble_gap_cb_param_t param;
+    bt_status_t ret;
+    btc_msg_t msg = {0};
+
+    msg.sig = BTC_SIG_API_CB;
+    msg.pid = BTC_PID_GAP_BLE;
+    msg.act = ESP_GAP_BLE_READ_CHANNEL_MAP_COMPLETE_EVT;
+
+    param.read_ble_channel_map_cmpl.status = btc_btm_status_to_esp_status(result->status);
+    memcpy(param.read_ble_channel_map_cmpl.channel_map, result->channel_map, 5);
+    memcpy(param.read_ble_channel_map_cmpl.remote_addr, result->rem_bda, sizeof(BD_ADDR));
+
+    ret = btc_transfer_context(&msg, &param, sizeof(esp_ble_gap_cb_param_t), NULL, NULL);
+
+    if (ret != BT_STATUS_SUCCESS) {
+        BTC_TRACE_ERROR("%s btc_transfer_context failed\n", __func__);
+    }
+}
+
+
 #if (BLE_50_FEATURE_SUPPORT == TRUE)
 static void btc_ble_5_gap_callback(tBTA_DM_BLE_5_GAP_EVENT event,
                                                 tBTA_DM_BLE_5_GAP_CB_PARAMS *params)
@@ -2184,6 +2207,9 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
     case BTC_GAP_BLE_ACT_READ_RSSI:
         BTA_DmReadRSSI(arg->read_rssi.remote_addr, BTA_TRANSPORT_LE, btc_read_ble_rssi_cmpl_callback);
         break;
+    case BTC_GAP_BLE_READ_CHANNEL_MAP:
+        BTA_DmBleReadChannelMap(arg->read_channel_map.bd_addr, btc_ble_read_channel_map_callback);
+        break;
 #if (BLE_42_FEATURE_SUPPORT == TRUE)
     case BTC_GAP_BLE_ACT_SET_CONN_PARAMS:
         BTA_DmSetBlePrefConnParams(arg->set_conn_params.bd_addr, arg->set_conn_params.min_conn_int,
@@ -2467,10 +2493,13 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
         params.addr_type = arg_5->periodic_adv_create_sync.params.addr_type;
         params.skip = arg_5->periodic_adv_create_sync.params.skip;
         params.sync_timeout = arg_5->periodic_adv_create_sync.params.sync_timeout;
-        #if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
+#if (BLE_FEAT_CTE_EN == TRUE)
+        params.sync_cte_type = arg_5->periodic_adv_create_sync.params.sync_cte_type;
+#endif // #if (BLE_FEAT_CTE_EN == TRUE)
+#if (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
         params.reports_disabled = arg_5->periodic_adv_create_sync.params.reports_disabled;
         params.filter_duplicates = arg_5->periodic_adv_create_sync.params.filter_duplicates;
-        #endif
+#endif // (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
 
         memcpy(params.addr, arg_5->periodic_adv_create_sync.params.addr, sizeof(BD_ADDR));
         BTC_TRACE_DEBUG("BTC_GAP_BLE_PERIODIC_ADV_CREATE_SYNC");

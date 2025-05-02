@@ -245,6 +245,7 @@ typedef enum {
     ESP_GAP_BLE_SUBRATE_REQUEST_COMPLETE_EVT,                    /*!< when subrate request command complete, the event comes */
     ESP_GAP_BLE_SUBRATE_CHANGE_EVT,                              /*!< when Connection Subrate Update procedure has completed and some parameters of the specified connection have changed, the event comes */
     ESP_GAP_BLE_SET_HOST_FEATURE_CMPL_EVT,                       /*!< When host feature set complete, the event comes */
+    ESP_GAP_BLE_READ_CHANNEL_MAP_COMPLETE_EVT,                   /*!< When BLE channel map result is received, the event comes */
     ESP_GAP_BLE_EVT_MAX,                                         /*!< when maximum advertising event complete, the event comes */
 } esp_gap_ble_cb_event_t;
 
@@ -981,19 +982,27 @@ typedef struct {
     esp_ble_gap_sync_t filter_policy;       /*!< Configures the filter policy for periodic advertising sync:
                                                  0: Use Advertising SID, Advertiser Address Type, and Advertiser Address parameters to determine the advertiser to listen to.
                                                  1: Use the Periodic Advertiser List to determine the advertiser to listen to. */
-    #if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
+#if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
     esp_ble_gap_sync_t reports_disabled;    /*!< Supported only by esp32c2, esp32c6, and esp32h2; can be set by menuconfig:
                                                  0: Reporting initially enabled.
                                                  1: Reporting initially disabled. */
     esp_ble_gap_sync_t filter_duplicates;   /*!< Supported only by esp32c2, esp32c6, and esp32h2; can be set by menuconfig:
                                                  0: Duplicate filtering initially disabled.
                                                  1: Duplicate filtering initially enabled. */
-    #endif
+#endif // (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
     uint8_t sid;                            /*!< SID of the periodic advertising */
     esp_ble_addr_type_t addr_type;          /*!< Address type of the periodic advertising */
     esp_bd_addr_t addr;                     /*!< Address of the periodic advertising */
     uint16_t skip;                          /*!< Maximum number of periodic advertising events that can be skipped */
     uint16_t sync_timeout;                  /*!< Synchronization timeout */
+#if (CONFIG_BT_BLE_FEAT_CTE_EN)
+    uint8_t sync_cte_type;                  /*!< Whether to only synchronize to periodic advertising with certain types of CTE (Constant Tone Extension)
+                                                bit 0: Do not sync to packets with an AoA CTE
+                                                bit 1: Do not sync to packets with an AoD CTE with 1 μs slots
+                                                bit 2: Do not sync to packets with an AoD CTE with 2 μs slots
+                                                bit 3: Do not sync to packets with a type 3 CTE (currently reserved for future use)
+                                                bit 4: Do not sync to packets without a CTE */
+#endif // BT_BLE_FEAT_CTE_EN
 } esp_ble_gap_periodic_adv_sync_params_t;
 
 /**
@@ -1331,6 +1340,14 @@ typedef union {
                                                          if the RSSI cannot be read, the RSSI metric shall be set to 127. */
         esp_bd_addr_t remote_addr;                  /*!< The remote device address */
     } read_rssi_cmpl;                               /*!< Event parameter of ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT */
+    /**
+     * @brief ESP_GAP_BLE_READ_CHANNEL_MAP_COMPLETE_EVT
+     */
+    struct ble_read_ble_channel_map_cmpl_evt_param {
+        esp_bt_status_t status;                     /*!< Status of the read channel map operation */
+        uint8_t channel_map[ESP_GAP_BLE_CHANNELS_LEN]; /*!< The BLE channel map, represented as a 5-byte array */
+        esp_bd_addr_t remote_addr;                  /*!< The remote device address */
+    } read_ble_channel_map_cmpl;                         /*!< Event parameter of ESP_GAP_BLE_READ_CHANNEL_MAP_COMPLETE_EVT */
     /**
      * @brief ESP_GAP_BLE_UPDATE_WHITELIST_COMPLETE_EVT
      */
@@ -1857,7 +1874,8 @@ esp_err_t esp_ble_gap_set_scan_params(esp_ble_scan_params_t *scan_params);
 /**
  * @brief           This procedure keep the device scanning the peer device which advertising on the air
  *
- * @param[in]       duration: Keeping the scanning time, the unit is second.
+ * @param[in]       duration: The scanning duration in seconds.
+ *                            Set to 0 for continuous scanning until explicitly stopped.
  *
  * @return
  *                  - ESP_OK : success
@@ -2200,6 +2218,7 @@ esp_err_t esp_ble_gap_config_scan_rsp_data_raw(uint8_t *raw_data, uint32_t raw_d
  *                  - other  : failed
  */
 esp_err_t esp_ble_gap_read_rssi(esp_bd_addr_t remote_addr);
+
 #if (BLE_42_FEATURE_SUPPORT == TRUE)
 /**
  * @brief           This function is called to add a device info into the duplicate scan exceptional list.
@@ -2446,6 +2465,18 @@ esp_err_t esp_ble_get_current_conn_params(esp_bd_addr_t bd_addr, esp_gap_conn_pa
 *
 */
 esp_err_t esp_gap_ble_set_channels(esp_gap_ble_channels channels);
+
+/**
+* @brief           This function is used to read the current channel map
+*                  for the connection identified by remote address.
+*
+* @param[in]       bd_addr : BD address of the peer device
+*
+* @return            - ESP_OK : success
+*                    - other  : failed
+*
+*/
+esp_err_t esp_ble_gap_read_channel_map(esp_bd_addr_t bd_addr);
 
 /**
 * @brief           This function is called to authorized a link after Authentication(MITM protection)
