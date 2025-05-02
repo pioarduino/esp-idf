@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2021 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -66,11 +66,11 @@ extern "C" {
  */
 #define RTC_CNTL_DBIAS_HP_VOLT         (RTC_CNTL_DBIAS_1V25 - efuse_ll_get_vol_level_hp_inv())
 #ifdef CONFIG_ESPTOOLPY_FLASHFREQ_80M
-#define DIG_DBIAS_80M_160M  RTC_CNTL_DBIAS_HP_VOLT
+#define DIG_DBIAS_80M_160M  RTC_CNTL_DBIAS_1V25
 #else
 #define DIG_DBIAS_80M_160M  RTC_CNTL_DBIAS_1V10
 #endif
-#define DIG_DBIAS_240M      RTC_CNTL_DBIAS_HP_VOLT
+#define DIG_DBIAS_240M      RTC_CNTL_DBIAS_1V25
 #define DIG_DBIAS_XTAL      RTC_CNTL_DBIAS_1V10
 #define DIG_DBIAS_2M        RTC_CNTL_DBIAS_1V00
 
@@ -178,6 +178,11 @@ void rtc_clk_32k_enable(bool en);
  * @brief Configure 32 kHz XTAL oscillator to accept external clock signal
  */
 void rtc_clk_32k_enable_external(void);
+
+/**
+ * @brief Disable 32 kHz XTAL oscillator input.
+ */
+void rtc_clk_32k_disable_external(void);
 
 /**
  * @brief Get the state of 32k XTAL oscillator
