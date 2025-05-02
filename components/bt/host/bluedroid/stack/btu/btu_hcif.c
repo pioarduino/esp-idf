@@ -1153,7 +1153,9 @@ static void btu_hcif_hdl_command_complete (UINT16 opcode, UINT8 *p, UINT16 evt_l
     case HCI_READ_RSSI:
         btm_read_rssi_complete (p);
         break;
-
+    case HCI_BLE_READ_CHNL_MAP:
+        btm_read_channel_map_complete (p);
+        break;
     case HCI_READ_TRANSMIT_POWER_LEVEL:
 #if (BLE_HOST_READ_TX_POWER_EN == TRUE)
         btm_read_tx_power_complete(p, FALSE);
@@ -2566,7 +2568,7 @@ static void btu_ble_periodic_adv_report_evt(UINT8 *p, UINT8 evt_len)
     STREAM_TO_UINT16(adv_report.sync_handle, p);
     STREAM_TO_UINT8(adv_report.tx_power, p);
     STREAM_TO_UINT8(adv_report.rssi, p);
-    STREAM_TO_UINT8(unused, p);
+    STREAM_TO_UINT8(adv_report.cte_type, p);
     STREAM_TO_UINT8(adv_report.data_status, p);
     STREAM_TO_UINT8(adv_report.data_length, p);
 

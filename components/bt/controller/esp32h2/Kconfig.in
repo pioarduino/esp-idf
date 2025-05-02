@@ -519,6 +519,23 @@ config BT_LE_LL_SCA
     help
         Sleep clock accuracy of our device (in ppm)
 
+config BT_LE_LL_PEER_SCA_SET_ENABLE
+    bool "Enable to set constant peer SCA"
+    default n
+    help
+        Enable setting of constant peer SCA, use this if peer device has SCA larger than 500 PPM.
+        Enable this option, the controller will always use BT_LE_LL_PEER_SCA as the peer SCA value
+        to calculate the window widening instead of the value received from peer device.
+
+
+config BT_LE_LL_PEER_SCA
+    int "Constant peer sleep clock accuracy value"
+    range 0 10000
+    depends on BT_LE_LL_PEER_SCA_SET_ENABLE
+    default 0
+    help
+        Set the sleep clock accuracy of peer device
+
 config BT_LE_MAX_CONNECTIONS
     int "Maximum number of concurrent connections"
     depends on !BT_NIMBLE_ENABLED
@@ -822,3 +839,7 @@ config BT_LE_CTRL_ADV_DATA_LENGTH_ZERO_AUX
         When this option is enabled, auxiliary packets will be present in the events of
         'Non-Connectable and Non-Scannable' regardless of whether the advertising length is 0.
         If this option is not enabled, auxiliary packets will only be present when the advertising length is not 0.
+
+config BT_LE_RXBUF_OPT_ENABLED
+    bool "Enable rxbuf optimization feature"
+    default y

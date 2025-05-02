@@ -445,6 +445,23 @@ config BT_LE_LL_SCA
     help
         Sleep clock accuracy of our device (in ppm)
 
+config BT_LE_LL_PEER_SCA_SET_ENABLE
+    bool "Enable to set constant peer SCA"
+    default n
+    help
+        Enable setting of constant peer SCA, use this if peer device has SCA larger than 500 PPM.
+        Enable this option, the controller will always use BT_LE_LL_PEER_SCA as the peer SCA value
+        to calculate the window widening instead of the value received from peer device.
+
+
+config BT_LE_LL_PEER_SCA
+    int "Constant peer sleep clock accuracy value"
+    range 0 10000
+    depends on BT_LE_LL_PEER_SCA_SET_ENABLE
+    default 0
+    help
+        Set the sleep clock accuracy of peer device
+
 config BT_LE_MAX_CONNECTIONS
     int "Maximum number of concurrent connections"
     depends on !BT_NIMBLE_ENABLED
@@ -681,6 +698,11 @@ config BT_LE_PLACE_CONN_RELATED_INTO_IRAM
     bool "Place the connection-related code into IRAM"
     depends on BT_CTRL_RUN_IN_FLASH_ONLY
     default n
+
+config BT_LE_PLACE_SLEEP_RELATED_INTO_IRAM
+    bool
+    depends on BT_CTRL_RUN_IN_FLASH_ONLY && BT_LE_SLEEP_ENABLE
+    default y
 
 config BT_LE_CTRL_CHECK_CONNECT_IND_ACCESS_ADDRESS
     bool "Enable enhanced Access Address check in CONNECT_IND"

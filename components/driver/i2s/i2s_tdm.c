@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -62,7 +62,8 @@ static esp_err_t i2s_tdm_calculate_clock(i2s_chan_handle_t handle, const i2s_tdm
     clk_info->mclk_div = clk_info->sclk / clk_info->mclk;
 
     /* Check if the configuration is correct. Use float for check in case the mclk division might be carried up in the fine division calculation */
-    ESP_RETURN_ON_FALSE(clk_info->sclk / (float)clk_info->mclk > min_mclk_div, ESP_ERR_INVALID_ARG, TAG, "sample rate or mclk_multiple is too large for the current clock source");
+    ESP_RETURN_ON_FALSE((float)clk_info->sclk > clk_info->mclk * min_mclk_div, ESP_ERR_INVALID_ARG, TAG, "sample rate is too large");
+    ESP_RETURN_ON_FALSE(clk_info->mclk_div < I2S_LL_CLK_FRAC_DIV_N_MAX, ESP_ERR_INVALID_ARG, TAG, "sample rate is too small");
 
     return ESP_OK;
 }
@@ -111,9 +112,8 @@ static esp_err_t i2s_tdm_set_slot(i2s_chan_handle_t handle, const i2s_tdm_slot_c
     uint32_t buf_size = i2s_get_buf_size(handle, slot_cfg->data_bit_width, handle->dma.frame_num);
     /* The DMA buffer need to re-allocate if the buffer size changed */
     if (handle->dma.buf_size != buf_size) {
-        handle->dma.buf_size = buf_size;
         ESP_RETURN_ON_ERROR(i2s_free_dma_desc(handle), TAG, "failed to free the old dma descriptor");
-        ESP_RETURN_ON_ERROR(i2s_alloc_dma_desc(handle, handle->dma.desc_num, buf_size),
+        ESP_RETURN_ON_ERROR(i2s_alloc_dma_desc(handle, buf_size),
                             TAG, "allocate memory for dma descriptor failed");
     }
     bool is_slave = handle->role == I2S_ROLE_SLAVE;
@@ -141,6 +141,9 @@ static esp_err_t i2s_tdm_set_slot(i2s_chan_handle_t handle, const i2s_tdm_slot_c
     /* Update the mode info: slot configuration */
     i2s_tdm_config_t *tdm_cfg = (i2s_tdm_config_t *)(handle->mode_info);
     memcpy(&(tdm_cfg->slot_cfg), slot_cfg, sizeof(i2s_tdm_slot_config_t));
+    /* Update the slot bit width to the actual slot bit width */
+    tdm_cfg->slot_cfg.slot_bit_width = (int)tdm_cfg->slot_cfg.slot_bit_width < (int)tdm_cfg->slot_cfg.data_bit_width ?
+                                       tdm_cfg->slot_cfg.data_bit_width : tdm_cfg->slot_cfg.slot_bit_width;
 
     return ESP_OK;
 }
@@ -333,7 +336,7 @@ esp_err_t i2s_channel_reconfig_tdm_slot(i2s_chan_handle_t handle, const i2s_tdm_
 
     /* If the slot bit width changed, then need to update the clock */
     uint32_t slot_bits = slot_cfg->slot_bit_width == I2S_SLOT_BIT_WIDTH_AUTO ? slot_cfg->data_bit_width : slot_cfg->slot_bit_width;
-    if (tdm_cfg->slot_cfg.slot_bit_width == slot_bits) {
+    if (tdm_cfg->slot_cfg.slot_bit_width != slot_bits) {
         ESP_GOTO_ON_ERROR(i2s_tdm_set_clock(handle, &tdm_cfg->clk_cfg), err, TAG, "update clock failed");
     }
 
