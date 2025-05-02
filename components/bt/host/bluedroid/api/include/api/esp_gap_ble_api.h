@@ -982,19 +982,27 @@ typedef struct {
     esp_ble_gap_sync_t filter_policy;       /*!< Configures the filter policy for periodic advertising sync:
                                                  0: Use Advertising SID, Advertiser Address Type, and Advertiser Address parameters to determine the advertiser to listen to.
                                                  1: Use the Periodic Advertiser List to determine the advertiser to listen to. */
-    #if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
+#if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
     esp_ble_gap_sync_t reports_disabled;    /*!< Supported only by esp32c2, esp32c6, and esp32h2; can be set by menuconfig:
                                                  0: Reporting initially enabled.
                                                  1: Reporting initially disabled. */
     esp_ble_gap_sync_t filter_duplicates;   /*!< Supported only by esp32c2, esp32c6, and esp32h2; can be set by menuconfig:
                                                  0: Duplicate filtering initially disabled.
                                                  1: Duplicate filtering initially enabled. */
-    #endif
+#endif // (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
     uint8_t sid;                            /*!< SID of the periodic advertising */
     esp_ble_addr_type_t addr_type;          /*!< Address type of the periodic advertising */
     esp_bd_addr_t addr;                     /*!< Address of the periodic advertising */
     uint16_t skip;                          /*!< Maximum number of periodic advertising events that can be skipped */
     uint16_t sync_timeout;                  /*!< Synchronization timeout */
+#if (CONFIG_BT_BLE_FEAT_CTE_EN)
+    uint8_t sync_cte_type;                  /*!< Whether to only synchronize to periodic advertising with certain types of CTE (Constant Tone Extension)
+                                                bit 0: Do not sync to packets with an AoA CTE
+                                                bit 1: Do not sync to packets with an AoD CTE with 1 μs slots
+                                                bit 2: Do not sync to packets with an AoD CTE with 2 μs slots
+                                                bit 3: Do not sync to packets with a type 3 CTE (currently reserved for future use)
+                                                bit 4: Do not sync to packets without a CTE */
+#endif // BT_BLE_FEAT_CTE_EN
 } esp_ble_gap_periodic_adv_sync_params_t;
 
 /**
@@ -1866,7 +1874,8 @@ esp_err_t esp_ble_gap_set_scan_params(esp_ble_scan_params_t *scan_params);
 /**
  * @brief           This procedure keep the device scanning the peer device which advertising on the air
  *
- * @param[in]       duration: Keeping the scanning time, the unit is second.
+ * @param[in]       duration: The scanning duration in seconds.
+ *                            Set to 0 for continuous scanning until explicitly stopped.
  *
  * @return
  *                  - ESP_OK : success
@@ -2810,6 +2819,17 @@ esp_err_t esp_ble_gap_periodic_adv_remove_dev_from_list(esp_ble_addr_type_t addr
 esp_err_t esp_ble_gap_periodic_adv_clear_dev(void);
 
 /**
+ * @brief            Retrieve the capacity of the periodic advertiser list in the controller.
+ *
+ * @param[out]       size: Pointer to a variable where the capacity of the periodic advertiser list will be stored.
+ *
+ * @return
+ *                     - ESP_OK : Success
+ *                     - Others : Failure
+ */
+esp_err_t esp_ble_gap_get_periodic_list_size(uint8_t *size);
+
+/**
 * @brief           This function is used to set aux connection parameters
 *
 * @param[in]       addr : device address
@@ -2827,7 +2847,6 @@ esp_err_t esp_ble_gap_prefer_ext_connect_params_set(esp_bd_addr_t addr,
                                                     const esp_ble_gap_conn_params_t *phy_1m_conn_params,
                                                     const esp_ble_gap_conn_params_t *phy_2m_conn_params,
                                                     const esp_ble_gap_conn_params_t *phy_coded_conn_params);
-
 #endif //#if (BLE_50_FEATURE_SUPPORT == TRUE)
 
 #if (BLE_FEAT_PERIODIC_ADV_SYNC_TRANSFER == TRUE)

@@ -31,7 +31,7 @@ extern "C" {
 
 // If ISR handler is allowed to run whilst cache is disabled,
 // Make sure all the code and related variables used by the handler are in the SRAM
-#if CONFIG_I2S_ISR_IRAM_SAFE
+#if CONFIG_I2S_ISR_IRAM_SAFE || CONFIG_GDMA_ISR_IRAM_SAFE
 #define I2S_INTR_ALLOC_FLAGS    (ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_INTRDISABLED | ESP_INTR_FLAG_SHARED)
 #define I2S_MEM_ALLOC_CAPS      (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
 #else
@@ -191,7 +191,6 @@ esp_err_t i2s_free_dma_desc(i2s_chan_handle_t handle);
  * @brief Allocate memory for I2S DMA descriptor and DMA buffer
  *
  * @param handle        I2S channel handle
- * @param num           Number of DMA descriptors
  * @param bufsize       The DMA buffer size
  *
  * @return
@@ -199,7 +198,7 @@ esp_err_t i2s_free_dma_desc(i2s_chan_handle_t handle);
  *      - ESP_ERR_INVALID_ARG   NULL pointer or bufsize is too big
  *      - ESP_ERR_NO_MEM        No memory for DMA descriptor and DMA buffer
  */
-esp_err_t i2s_alloc_dma_desc(i2s_chan_handle_t handle, uint32_t num, uint32_t bufsize);
+esp_err_t i2s_alloc_dma_desc(i2s_chan_handle_t handle, uint32_t bufsize);
 
 /**
  * @brief Get DMA buffer size

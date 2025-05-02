@@ -228,6 +228,9 @@ typedef struct {
     uint8_t ignore_wl_for_direct_adv;           /*!< Ignore the white list for directed advertising */
     uint8_t csa2_select;                        /*!< Select CSA#2 */
     uint8_t ble_aa_check;                       /*!< True if adds a verification step for the Access Address within the CONNECT_IND PDU; false otherwise. Configurable in menuconfig */
+    uint8_t ble_llcp_disc_flag;                 /*!< Flag indicating whether the Controller disconnects after Instant Passed (0x28) error occurs. Configurable in menuconfig.
+                                                        - The Controller does not disconnect after Instant Passed (0x28) by default. */
+    uint16_t scan_backoff_upperlimitmax;        /*!< The value of upperlimitmax is 2^n, The maximum value is 256 */
     uint8_t vhci_enabled;                       /*!< VHCI mode is enabled */
     uint32_t config_magic;                      /*!< Configuration magic value */
 } esp_bt_controller_config_t;
@@ -276,6 +279,8 @@ typedef struct {
     .ignore_wl_for_direct_adv   = 0,                                                    \
     .csa2_select                = DEFAULT_BT_LE_50_FEATURE_SUPPORT,                     \
     .ble_aa_check               = DEFAULT_BT_LE_CTRL_CHECK_CONNECT_IND_ACCESS_ADDRESS,  \
+    .ble_llcp_disc_flag         = BT_LE_CTRL_LLCP_DISC_FLAG,                            \
+    .scan_backoff_upperlimitmax = BT_CTRL_SCAN_BACKOFF_UPPERLIMITMAX,                   \
     .vhci_enabled               = DEFAULT_BT_LE_VHCI_ENABLED,                           \
     .config_magic = CONFIG_MAGIC,                                                       \
 }
@@ -433,11 +438,13 @@ extern int esp_ble_hw_get_static_addr(esp_ble_addr_t *addr);
 void esp_ble_controller_log_dump_all(bool output);
 #endif // CONFIG_BT_LE_CONTROLLER_LOG_ENABLED
 
-#if CONFIG_PM_ENABLE
 modem_clock_lpclk_src_t esp_bt_get_lpclk_src(void);
 
 void esp_bt_set_lpclk_src(modem_clock_lpclk_src_t clk_src);
-#endif // CONFIG_PM_ENABLE
+
+uint32_t esp_bt_get_lpclk_freq(void);
+
+void esp_bt_set_lpclk_freq(uint32_t clk_freq);
 
 #ifdef __cplusplus
 }

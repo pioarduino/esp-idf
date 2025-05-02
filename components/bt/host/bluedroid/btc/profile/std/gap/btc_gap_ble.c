@@ -1693,6 +1693,13 @@ static void btc_ble_dtm_enhance_rx_start(uint8_t rx_channel, uint8_t phy, uint8_
 }
 #endif // #if (BLE_50_DTM_TEST_EN == TRUE)
 
+#if (BLE_50_EXTEND_SYNC_EN == TRUE)
+void btc_get_periodic_list_size(uint8_t *size)
+{
+    BTM_BleGetPeriodicAdvListSize(size);
+    return;
+}
+#endif // #if (BLE_50_EXTEND_SYNC_EN == TRUE)
 #if ((BLE_42_DTM_TEST_EN == TRUE) || (BLE_50_DTM_TEST_EN == TRUE))
 static void btc_ble_dtm_stop(tBTA_DTM_CMD_CMPL_CBACK *p_dtm_cmpl_cback)
 {
@@ -2486,10 +2493,13 @@ void btc_gap_ble_call_handler(btc_msg_t *msg)
         params.addr_type = arg_5->periodic_adv_create_sync.params.addr_type;
         params.skip = arg_5->periodic_adv_create_sync.params.skip;
         params.sync_timeout = arg_5->periodic_adv_create_sync.params.sync_timeout;
-        #if (CONFIG_BT_BLE_FEAT_CREATE_SYNC_ENH)
+#if (BLE_FEAT_CTE_EN == TRUE)
+        params.sync_cte_type = arg_5->periodic_adv_create_sync.params.sync_cte_type;
+#endif // #if (BLE_FEAT_CTE_EN == TRUE)
+#if (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
         params.reports_disabled = arg_5->periodic_adv_create_sync.params.reports_disabled;
         params.filter_duplicates = arg_5->periodic_adv_create_sync.params.filter_duplicates;
-        #endif
+#endif // (BLE_FEAT_CREATE_SYNC_ENH == TRUE)
 
         memcpy(params.addr, arg_5->periodic_adv_create_sync.params.addr, sizeof(BD_ADDR));
         BTC_TRACE_DEBUG("BTC_GAP_BLE_PERIODIC_ADV_CREATE_SYNC");
