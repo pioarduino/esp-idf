@@ -115,13 +115,6 @@ menu "USB-OTG"
         menu "Downstream Port configuration"
             depends on USB_HOST_HUBS_SUPPORTED
 
-            config USB_HOST_EXT_PORT_SUPPORT_LS
-                depends on IDF_EXPERIMENTAL_FEATURES
-                bool "Support LS"
-                default n
-                help
-                    Enables support of Low-speed devices, connected through the external Hub.
-
             config USB_HOST_EXT_PORT_RESET_ATTEMPTS
                 depends on IDF_EXPERIMENTAL_FEATURES
                 # Invisible config option
@@ -181,6 +174,16 @@ menu "USB-OTG"
 
             If enabled, the enumeration filter callback can be set via 'usb_host_config_t' when calling
             'usb_host_install()'.
+
+    config USB_HOST_DWC_DMA_CAP_MEMORY_IN_PSRAM
+        depends on IDF_TARGET_ESP32P4 && SPIRAM
+        bool "Allocate USB_DWC DMA capable memory in PSRAM"
+        default n
+        help
+            In the ESP32P4, the USB-DWC internal DMA can access external RAM. Enabling this configuration can save
+            internal RAM by allocating the memory buffers used by the USB-DWC peripheral's DMA to external RAM.
+            However, it introduces minor performance degradation due to the overhead of accessing external RAM.
+        # Todo: IDF-11368 (aligned memory alloc size)
 
     # Hidden or compatibility options
     config USB_OTG_SUPPORTED
