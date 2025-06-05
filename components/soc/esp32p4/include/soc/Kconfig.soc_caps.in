@@ -511,6 +511,10 @@ config SOC_CPU_HAS_HWLOOP
     bool
     default y
 
+config SOC_CPU_HAS_HWLOOP_STATE_BUG
+    bool
+    default y
+
 config SOC_CPU_HAS_PIE
     bool
     default y
@@ -724,6 +728,10 @@ config SOC_RTCIO_HOLD_SUPPORTED
     default y
 
 config SOC_RTCIO_WAKE_SUPPORTED
+    bool
+    default y
+
+config SOC_RTCIO_EDGE_WAKE_SUPPORTED
     bool
     default y
 
@@ -1306,6 +1314,10 @@ config SOC_USB_OTG_PERIPH_NUM
 config SOC_USB_UTMI_PHY_NUM
     int
     default 1
+
+config SOC_USB_UTMI_PHY_NO_POWER_OFF_ISO
+    bool
+    default y
 
 config SOC_PARLIO_GROUPS
     int
