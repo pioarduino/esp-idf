@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2025 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -39,6 +39,31 @@ extern "C" {
                     Part 1 APIs (See @Backgrounds on top of this file)
 -------------------------------------------------------------------------------*/
 #if CONFIG_SPIRAM_FETCH_INSTRUCTIONS
+
+/**
+ * @brief Calculates the size of memory that would be used for copying flash texts into PSRAM (in bytes)
+ *
+ * @return size_t size of memory that would be used for copying flash texts into PSRAM (in bytes)
+ */
+size_t mmu_psram_get_text_segment_length(void);
+
+/**
+ * @brief Get the start and size of the instruction segment alignment gap
+ *
+ * @param[out] gap_start Start of the gap
+ * @param[out] gap_size  Size of the gap
+ */
+void mmu_psram_get_instruction_alignment_gap_info(uint32_t *gap_start, uint32_t *gap_size);
+
+/**
+ * @brief Check if the pointer is in the xip psram instruction region
+ *
+ * @param[in] p Pointer to check
+ *
+ * @return true if the pointer is in the instruction region, false otherwise
+ */
+bool mmu_psram_check_ptr_addr_in_xip_psram_instruction_region(const void *p);
+
 /**
  * @brief Copy Flash texts to PSRAM
  *
@@ -50,6 +75,22 @@ esp_err_t mmu_config_psram_text_segment(uint32_t start_page, uint32_t psram_size
 #endif  //#if CONFIG_SPIRAM_FETCH_INSTRUCTIONS
 
 #if CONFIG_SPIRAM_RODATA
+
+/**
+ * @brief Get the start and size of the rodata segment alignment gap
+ *
+ * @param[out] gap_start Start of the gap
+ * @param[out] gap_size  Size of the gap
+ */
+void mmu_psram_get_rodata_alignment_gap_info(uint32_t *gap_start, uint32_t *gap_size);
+
+/**
+ * @brief Calculates the size of memory that would be used for copying flash rodata into PSRAM (in bytes)
+ *
+ * @return size_t size of memory that would be used for copying flash rodata into PSRAM (in bytes)
+ */
+size_t mmu_psram_get_rodata_segment_length(void);
+
 /**
  * @brief Copy Flash rodata to PSRAM
  *
@@ -58,6 +99,15 @@ esp_err_t mmu_config_psram_text_segment(uint32_t start_page, uint32_t psram_size
  * @param[out] out_page      Used pages
  */
 esp_err_t mmu_config_psram_rodata_segment(uint32_t start_page, uint32_t psram_size, uint32_t *out_page);
+
+/**
+ * @brief Check if the pointer is in the xip psram rodata region
+ *
+ * @param[in] p Pointer to check
+ *
+ * @return true if the pointer is in the rodata region, false otherwise
+ */
+bool mmu_psram_check_ptr_addr_in_xip_psram_rodata_region(const void *p);
 #endif  //#if CONFIG_SPIRAM_RODATA
 
 /*----------------------------------------------------------------------------
