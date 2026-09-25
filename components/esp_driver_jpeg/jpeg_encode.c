@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -42,6 +43,7 @@ static void s_jpeg_enc_config_picture_color_space(jpeg_encoder_handle_t encoder_
 static void s_jpeg_enc_select_sample_mode(jpeg_encoder_handle_t encoder_engine);
 static void s_encoder_error_log_print(uint32_t status);
 static esp_err_t jpeg_enc_validate_sub_sample(jpeg_enc_src_type_t color_space, jpeg_down_sampling_type_t sub_sample);
+static esp_err_t jpeg_enc_check_inbuf_size(uint32_t width, uint32_t height, uint32_t bit_depth, uint32_t inbuf_size);
 
 static void jpeg_encoder_isr_handle_default(void *arg)
 {
@@ -65,6 +67,7 @@ static void jpeg_encoder_isr_handle_default(void *arg)
 static esp_err_t s_jpeg_set_header_info(jpeg_encoder_handle_t encoder_engine)
 {
     encoder_engine->header_info->header_len = 0;
+    encoder_engine->header_info->header_buf_overflow = false;
     ESP_RETURN_ON_ERROR(emit_soi_marker(encoder_engine->header_info), TAG, "marker emit failed");
     ESP_RETURN_ON_ERROR(emit_app0_marker(encoder_engine->header_info), TAG, "marker emit failed");
     ESP_RETURN_ON_ERROR(emit_dqt_marker(encoder_engine->header_info), TAG, "marker emit failed");
@@ -100,6 +103,19 @@ static esp_err_t jpeg_enc_validate_sub_sample(jpeg_enc_src_type_t color_space, j
     return ESP_OK;
 }
 
+static esp_err_t jpeg_enc_check_inbuf_size(uint32_t width, uint32_t height, uint32_t bit_depth, uint32_t inbuf_size)
+{
+    ESP_RETURN_ON_FALSE(width > 0 && height > 0 && bit_depth > 0, ESP_ERR_INVALID_ARG, TAG, "invalid image geometry");
+    uint64_t required_bits = (uint64_t)width * height * bit_depth;
+    ESP_RETURN_ON_FALSE((required_bits % 8) == 0, ESP_ERR_INVALID_ARG, TAG, "image size is not byte aligned");
+    uint64_t required_size = required_bits / 8;
+    ESP_RETURN_ON_FALSE(required_size <= inbuf_size, ESP_ERR_INVALID_ARG, TAG,
+                        "input buffer is too small for width=%" PRIu32 " height=%" PRIu32 " bit_depth=%" PRIu32
+                        " (need %" PRIu64 ", got %" PRIu32 ")",
+                        width, height, bit_depth, required_size, inbuf_size);
+    return ESP_OK;
+}
+
 esp_err_t jpeg_new_encoder_engine(const jpeg_encode_engine_cfg_t *enc_eng_cfg, jpeg_encoder_handle_t *ret_encoder)
 {
 #if CONFIG_JPEG_ENABLE_DEBUG_LOG
@@ -132,7 +148,7 @@ esp_err_t jpeg_new_encoder_engine(const jpeg_encode_engine_cfg_t *enc_eng_cfg, j
 
     ESP_GOTO_ON_ERROR(jpeg_check_intr_priority(encoder_engine->codec_base, enc_eng_cfg->intr_priority), err, TAG, "set group interrupt priority failed");
     if (enc_eng_cfg->intr_priority) {
-        ESP_RETURN_ON_FALSE(1 << (enc_eng_cfg->intr_priority) & JPEG_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, TAG, "invalid interrupt priority:%d", enc_eng_cfg->intr_priority);
+        ESP_GOTO_ON_FALSE(1 << (enc_eng_cfg->intr_priority) & JPEG_ALLOW_INTR_PRIORITY_MASK, ESP_ERR_INVALID_ARG, err, TAG, "invalid interrupt priority:%d", enc_eng_cfg->intr_priority);
     }
     int isr_flags = JPEG_INTR_ALLOC_FLAG;
     if (enc_eng_cfg->intr_priority) {
@@ -147,7 +163,8 @@ esp_err_t jpeg_new_encoder_engine(const jpeg_encode_engine_cfg_t *enc_eng_cfg, j
     };
     ESP_ERROR_CHECK(dma2d_acquire_pool(&dma2d_group_config, &encoder_engine->dma2d_group_handle));
 
-    encoder_engine->trans_desc = (dma2d_trans_t *)heap_caps_calloc(1, SIZEOF_DMA2D_TRANS_T, JPEG_MEM_ALLOC_CAPS);
+    // always allocate memory from internal memory because the dma2d transaction descriptor contains atomic variable
+    encoder_engine->trans_desc = (dma2d_trans_t *)heap_caps_calloc(1, SIZEOF_DMA2D_TRANS_T, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     ESP_GOTO_ON_FALSE(encoder_engine->trans_desc, ESP_ERR_NO_MEM, err, TAG, "No memory for dma2d descriptor");
 
     encoder_engine->header_info = (jpeg_enc_header_info_t*)heap_caps_calloc(1, sizeof(jpeg_enc_header_info_t), JPEG_MEM_ALLOC_CAPS);
@@ -177,7 +194,10 @@ esp_err_t jpeg_encoder_process(jpeg_encoder_handle_t encoder_engine, const jpeg_
     ESP_RETURN_ON_FALSE(out_size, ESP_ERR_INVALID_ARG, TAG, "jpeg encode picture out_size is null");
     ESP_RETURN_ON_FALSE(((uintptr_t)bit_stream % cache_hal_get_cache_line_size(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_DATA)) == 0, ESP_ERR_INVALID_ARG, TAG, "jpeg encode bit stream is not aligned, please use jpeg_alloc_encoder_mem to malloc your buffer");
     // both the input picture and output bitstream are accessed by the 2D-DMA
-    ESP_RETURN_ON_FALSE(jpeg_check_dma2d_buffer(encode_inbuf) && jpeg_check_dma2d_buffer(bit_stream), ESP_ERR_INVALID_ARG, TAG, "jpeg encode buffer is not 16-byte aligned or not in unencrypted PSRAM, please use jpeg_alloc_encoder_mem to malloc your buffer");
+    size_t encode_inbuf_alignment = dma2d_get_buffer_alignment_constraint(encode_inbuf);
+    size_t bit_stream_alignment = dma2d_get_buffer_alignment_constraint(bit_stream);
+    ESP_RETURN_ON_FALSE(encode_inbuf_alignment <= 1 && bit_stream_alignment <= 1, ESP_ERR_INVALID_ARG, TAG,
+                        "jpeg encode buffer doesn't satisfy DMA2D alignment constraints, please use jpeg_alloc_encoder_mem to malloc your buffer");
 
     esp_err_t ret = ESP_OK;
 
@@ -240,9 +260,14 @@ esp_err_t jpeg_encoder_process(jpeg_encoder_handle_t encoder_engine, const jpeg_
     encoder_engine->header_info->origin_h = encode_cfg->width;
     encoder_engine->header_info->origin_v = encode_cfg->height;
     encoder_engine->header_info->header_buf = bit_stream;
+    encoder_engine->header_info->header_buf_size = outbuf_size;
 
     s_jpeg_enc_config_picture_color_space(encoder_engine);
     s_jpeg_enc_select_sample_mode(encoder_engine);
+    /* bytes_per_pixel holds bit depth; reject before programming TX DMA. */
+    ESP_GOTO_ON_ERROR(jpeg_enc_check_inbuf_size(encode_cfg->width, encode_cfg->height,
+                                                encoder_engine->bytes_per_pixel, inbuf_size),
+                      err2, TAG, "input buffer size check failed");
     jpeg_ll_set_picture_height(hal->dev, encoder_engine->header_info->origin_v);
     jpeg_ll_set_picture_width(hal->dev, encoder_engine->header_info->origin_h);
     jpeg_ll_pixel_reverse(hal->dev, encode_cfg->pixel_reverse);
@@ -251,6 +276,7 @@ esp_err_t jpeg_encoder_process(jpeg_encoder_handle_t encoder_engine, const jpeg_
     jpeg_ll_set_qnr_presition(hal->dev, 0);
     ESP_GOTO_ON_ERROR(s_jpeg_set_header_info(encoder_engine), err2, TAG, "set header failed");
     jpeg_hal_set_quantization_coefficient(hal, encoder_engine->header_info->m_quantization_tables[0], encoder_engine->header_info->m_quantization_tables[1]);
+    /* Need at least one byte of payload room after a complete header. */
     ESP_GOTO_ON_FALSE(outbuf_size > encoder_engine->header_info->header_len, ESP_ERR_INVALID_ARG, err2, TAG, "output buffer is too small for jpeg header");
     payload_buf_size = outbuf_size - encoder_engine->header_info->header_len;
 

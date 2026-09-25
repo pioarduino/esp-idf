@@ -311,6 +311,13 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
         if (p_ccb == NULL) {
             osi_free (p_msg);
         } else {
+#if (BLE_L2CAP_COC_INCLUDED == TRUE)
+            /* LE CoC data plane only; BR/EDR dynamic channels use l2c_csm / l2c_fcr below */
+            if (p_lcb->transport == BT_TRANSPORT_LE && l2c_ble_le_coc_is_chan(p_ccb)) {
+                l2c_ble_le_coc_data_ind(p_ccb, p_msg);
+                return;
+            }
+#endif
             if (p_lcb->transport == BT_TRANSPORT_LE) {
                 l2c_link_check_send_pkts (p_ccb->p_lcb, NULL, NULL);
             }
@@ -358,8 +365,9 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
     tL2CAP_CFG_INFO cfg_info;
     UINT16          rej_reason, rej_mtu, lcid, rcid, info_type;
     tL2C_CCB        *p_ccb;
+    tL2C_CCB        *p_next_ccb;
     tL2C_RCB        *p_rcb;
-    BOOLEAN         cfg_rej, cfg_bad, info_bad, pkt_size_rej = FALSE;
+    BOOLEAN         cfg_rej, cfg_bad, pkt_size_rej = FALSE;
     UINT16          cfg_rej_len, cmd_len;
     UINT16          result;
     tL2C_CONN_INFO  ci;
@@ -460,8 +468,10 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
                 memcpy (ci.bd_addr, p_lcb->remote_bd_addr, sizeof(BD_ADDR));
 
                 /* For all channels, send the event through their FSMs */
-                for (p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb; p_ccb = p_ccb->p_next_ccb) {
+                for (p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb;) {
+                    p_next_ccb = p_ccb->p_next_ccb;
                     l2c_csm_execute (p_ccb, L2CEVT_L2CAP_INFO_RSP, &ci);
+                    p_ccb = p_next_ccb;
                 }
             }
             break;
@@ -534,14 +544,14 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
             break;
 
         case L2CAP_CMD_CONFIG_REQ:
+            if (cmd_len < L2CAP_CONFIG_REQ_LEN) {
+                L2CAP_TRACE_WARNING ("L2CAP - cfg req too short, cmd_len: %d", cmd_len);
+                break;
+            }
             p_cfg_end = p + cmd_len;
             cfg_rej = FALSE;
             cfg_rej_len = 0;
 
-            if ((p_cfg_end - p) < L2CAP_CONFIG_REQ_LEN) {
-                L2CAP_TRACE_WARNING ("L2CAP - cfg req too short, cmd_len: %d", cmd_len);
-                break;
-            }
             STREAM_TO_UINT16 (lcid, p);
             STREAM_TO_UINT16 (cfg_info.flags, p);
 
@@ -666,13 +676,12 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
             break;
 
         case L2CAP_CMD_CONFIG_RSP:
-            p_cfg_end = p + cmd_len;
-            cfg_bad = FALSE;
-
-            if ((p_cfg_end - p) < L2CAP_CONFIG_RSP_LEN) {
+            if (cmd_len < L2CAP_CONFIG_RSP_LEN) {
                 L2CAP_TRACE_WARNING ("L2CAP - cfg rsp too short, cmd_len: %d", cmd_len);
                 break;
             }
+            p_cfg_end = p + cmd_len;
+            cfg_bad = FALSE;
             STREAM_TO_UINT16 (lcid, p);
             STREAM_TO_UINT16 (cfg_info.flags, p);
             STREAM_TO_UINT16 (cfg_info.result, p);
@@ -869,10 +878,11 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
             break;
 
         case L2CAP_CMD_INFO_RSP:
-            info_bad = FALSE;
-            p_info_end = p + cmd_len;
+        {
+            BOOLEAN info_bad = FALSE;
 
-            if ((p_info_end - p) < L2CAP_INFO_RSP_LEN) {
+            p_info_end = p + cmd_len;
+            if ((p + L2CAP_INFO_RSP_LEN) > p_info_end) {
                 L2CAP_TRACE_WARNING ("L2CAP - cmd info rsp too short, cmd_len: %d", cmd_len);
                 break;
             }
@@ -937,15 +947,14 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
                     }
                 }
 #endif
-
-            if (info_bad) {
-                break;
             }
 
             ci.status = HCI_SUCCESS;
             memcpy (ci.bd_addr, p_lcb->remote_bd_addr, sizeof(BD_ADDR));
-            for (p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb; p_ccb = p_ccb->p_next_ccb) {
+            for (p_ccb = p_lcb->ccb_queue.p_first_ccb; p_ccb;) {
+                p_next_ccb = p_ccb->p_next_ccb;
                 l2c_csm_execute (p_ccb, L2CEVT_L2CAP_INFO_RSP, &ci);
+                p_ccb = p_next_ccb;
             }
         }
         break;
@@ -1147,11 +1156,41 @@ void l2c_process_timeout (TIMER_LIST_ENT *p_tle)
          * re-issue the connection attempt now. */
         l2c_link_create_conn_retry ((tL2C_LCB *)p_tle->param);
         break;
+#endif  ///CLASSIC_BT_INCLUDED == TRUE
 
-    case BTU_TTYPE_L2CAP_CHNL:
-        l2c_csm_execute (((tL2C_CCB *)p_tle->param), L2CEVT_TIMEOUT, NULL);
+    case BTU_TTYPE_L2CAP_CHNL: {
+#if (BLE_L2CAP_COC_INCLUDED == TRUE)
+        tL2C_CCB *p_ccb = (tL2C_CCB *)p_tle->param;
+        /* LE CoC/ECFC channels do not use the classic state machine; a per-CCB
+         * BTU_TTYPE_L2CAP_CHNL timer is their connect/reconfigure response
+         * timeout. Route it to the CoC handler. */
+        if (p_ccb != NULL && p_ccb->le_coc_active) {
+            l2c_ble_le_coc_channel_timeout(p_ccb);
+            break;
+        }
+        /* Keep the NULL handling consistent with the CoC check above: the classic
+         * state machine dereferences p_ccb unconditionally, so bail out here
+         * instead of passing a NULL CCB down to l2c_csm_execute. */
+        if (p_ccb == NULL) {
+            L2CAP_TRACE_WARNING("L2CAP channel timeout with NULL CCB");
+            break;
+        }
+#if (CLASSIC_BT_INCLUDED == TRUE)
+        l2c_csm_execute (p_ccb, L2CEVT_TIMEOUT, NULL);
+#else
+        /* p_ccb may be unused when BT_STACK_NO_LOG strips the trace macro. */
+        L2CAP_TRACE_WARNING("Unhandled L2CAP channel timeout for CCB %p", p_ccb);
+        UNUSED(p_ccb);
+#endif
+#elif (CLASSIC_BT_INCLUDED == TRUE)
+        l2c_csm_execute ((tL2C_CCB *)p_tle->param, L2CEVT_TIMEOUT, NULL);
+#else
+        L2CAP_TRACE_WARNING("Unhandled L2CAP channel timeout");
+#endif
         break;
+    }
 
+#if (CLASSIC_BT_INCLUDED == TRUE)
     case BTU_TTYPE_L2CAP_FCR_ACK:
         l2c_csm_execute (((tL2C_CCB *)p_tle->param), L2CEVT_ACK_TIMEOUT, NULL);
         break;

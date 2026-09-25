@@ -131,8 +131,7 @@ void BTA_DmSetDeviceName(const char *p_name, tBT_DEVICE_TYPE name_type)
     if ((p_msg = (tBTA_DM_API_SET_NAME *) osi_malloc(sizeof(tBTA_DM_API_SET_NAME))) != NULL) {
         p_msg->hdr.event = BTA_DM_API_SET_NAME_EVT;
         /* truncate the name if needed */
-        BCM_STRNCPY_S((char *)p_msg->name, p_name, BD_NAME_LEN);
-        p_msg->name[BD_NAME_LEN] = '\0';
+        BCM_STRLCPY_S((char *)p_msg->name, p_name, BD_NAME_LEN + 1);
         p_msg->name_type = name_type;
 
         bta_sys_sendmsg(p_msg);
@@ -584,7 +583,6 @@ void BTA_DmWriteBredrTxPwrLvl(tBTM_TX_PWR_LVL_TYPE type, INT8 tx_power, tBTA_CMP
 *******************************************************************************/
 void BTA_DmSetVisibility(tBTA_DM_DISC disc_mode, tBTA_DM_CONN conn_mode, UINT8 pairable_mode, UINT8 conn_filter )
 {
-
     tBTA_DM_API_SET_VISIBILITY    *p_msg;
 
     if ((p_msg = (tBTA_DM_API_SET_VISIBILITY *) osi_malloc(sizeof(tBTA_DM_API_SET_VISIBILITY))) != NULL) {
@@ -594,11 +592,8 @@ void BTA_DmSetVisibility(tBTA_DM_DISC disc_mode, tBTA_DM_CONN conn_mode, UINT8 p
         p_msg->pair_mode = pairable_mode;
         p_msg->conn_paired_only = conn_filter;
 
-
         bta_sys_sendmsg(p_msg);
     }
-
-
 }
 #endif // #if (CLASSIC_BT_INCLUDED == TRUE)
 
@@ -616,7 +611,6 @@ void BTA_DmSetVisibility(tBTA_DM_DISC disc_mode, tBTA_DM_CONN conn_mode, UINT8 p
 *******************************************************************************/
 void BTA_DmSearch(tBTA_DM_INQ *p_dm_inq, tBTA_SERVICE_MASK services, tBTA_DM_SEARCH_CBACK *p_cback)
 {
-
     tBTA_DM_API_SEARCH    *p_msg;
 
     if ((p_msg = (tBTA_DM_API_SEARCH *) osi_malloc(sizeof(tBTA_DM_API_SEARCH))) != NULL) {
@@ -629,7 +623,6 @@ void BTA_DmSearch(tBTA_DM_INQ *p_dm_inq, tBTA_SERVICE_MASK services, tBTA_DM_SEA
         p_msg->rs_res  = BTA_DM_RS_NONE;
         bta_sys_sendmsg(p_msg);
     }
-
 }
 
 
@@ -1261,10 +1254,32 @@ void BTA_DmAddBleKey (BD_ADDR bd_addr, tBTA_LE_KEY_VALUE *p_le_key, tBTA_LE_KEY_
 **                  dev_type         - Remote device's device type.
 **                  auth_mode        - auth mode
 **                  addr_type        - LE device address type.
+**                  is_pseudo_bond   - (pseudo bond only) TRUE when NVS section is
+**                                     keyed by a Host pseudo; tagged on BTU thread.
 **
 ** Returns          void
 **
 *******************************************************************************/
+#if (BLE_INCLUDED == TRUE && SMP_INCLUDED == TRUE && BLE_PERIPH_PSEUDO_ADDR_BOND == TRUE)
+void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, int auth_mode,
+                        tBT_DEVICE_TYPE dev_type, BOOLEAN is_pseudo_bond)
+{
+    tBTA_DM_API_ADD_BLE_DEVICE *p_msg;
+
+    if ((p_msg = (tBTA_DM_API_ADD_BLE_DEVICE *) osi_malloc(sizeof(tBTA_DM_API_ADD_BLE_DEVICE))) != NULL) {
+        memset (p_msg, 0, sizeof(tBTA_DM_API_ADD_BLE_DEVICE));
+
+        p_msg->hdr.event = BTA_DM_API_ADD_BLEDEVICE_EVT;
+        bdcpy(p_msg->bd_addr, bd_addr);
+        p_msg->addr_type = addr_type;
+        p_msg->auth_mode = auth_mode;
+        p_msg->dev_type = dev_type;
+        p_msg->is_pseudo_bond = is_pseudo_bond;
+
+        bta_sys_sendmsg(p_msg);
+    }
+}
+#else
 void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, int auth_mode, tBT_DEVICE_TYPE dev_type)
 {
     tBTA_DM_API_ADD_BLE_DEVICE *p_msg;
@@ -1281,6 +1296,7 @@ void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, int auth_mode
         bta_sys_sendmsg(p_msg);
     }
 }
+#endif
 /*******************************************************************************
 **
 ** Function         BTA_DmBlePasskeyReply

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 #include "sys/queue.h"
 #include "esp_private/dma2d.h"
@@ -162,7 +163,9 @@ typedef struct {
 
 typedef struct {
     uint8_t *header_buf;                           // Pointer to the header of jpeg header buffer
+    uint32_t header_buf_size;                      // Capacity of header_buf in bytes
     uint32_t header_len;                           // Record for header length
+    bool header_buf_overflow;                      // Set when emit exceeds header_buf_size
     uint32_t m_quantization_tables[2][JPEG_QUANTIZATION_TABLE_LEN];         // quantization tables
     uint8_t num_components;                        // number of components
     uint32_t origin_h;                             // horizontal of original picture
@@ -261,18 +264,6 @@ esp_err_t jpeg_isr_deregister(jpeg_codec_handle_t jpeg_codec, jpeg_isr_handler_t
  * @return esp_err_t Returns ESP_OK if the interrupt priority meets the requirements, or an error code on failure
  */
 esp_err_t jpeg_check_intr_priority(jpeg_codec_handle_t jpeg_codec, int intr_priority);
-
-/**
- * @brief Validate a user buffer that will be accessed by the 2D-DMA
- *
- * The buffer must be 16-byte aligned. When CONFIG_SPIRAM_ENC_EXEMPT is enabled,
- * a PSRAM buffer must reside in the unencrypted carve-out, since the 2D-DMA
- * cannot access encrypted PSRAM. Internal RAM buffers are always accepted.
- *
- * @param buffer Buffer pointer provided by the user
- * @return true if the buffer can be used by the 2D-DMA, false otherwise
- */
-bool jpeg_check_dma2d_buffer(const void *buffer);
 
 /**
  * @brief Create sleep retention link

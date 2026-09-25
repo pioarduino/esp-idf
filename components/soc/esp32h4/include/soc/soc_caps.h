@@ -65,7 +65,7 @@
 #define SOC_LEDC_SUPPORTED              1
 #define SOC_I2C_SUPPORTED               1
 #define SOC_SYSTIMER_SUPPORTED          1
-// #define SOC_SUPPORT_COEXISTENCE         1    // TODO: [ESP32H4] IDF-12251 IDF-12252 IDF-12253
+#define SOC_SUPPORT_COEXISTENCE         1
 #define SOC_AES_SUPPORTED               1
 #define SOC_SHA_SUPPORTED               1
 #define SOC_HMAC_SUPPORTED              1
@@ -378,6 +378,7 @@
 #define SOC_SPI_PERIPH_NUM                  3
 #define SOC_SPI_MAXIMUM_BUFFER_SIZE         64
 #define SOC_SPI_SUPPORT_SLAVE_HD_VER2       1
+#define SOC_SPI_SUPPORT_SLEEP_RETENTION     1
 
 /*-------------------------- SPI MEM CAPS ---------------------------------------*/
 #define SOC_SPI_MEM_SUPPORT_AUTO_WAIT_IDLE                (1)
@@ -513,7 +514,6 @@
 
 #define SOC_PM_PAU_LINK_NUM                 (4)
 #define SOC_PM_PAU_REGDMA_LINK_CONFIGURABLE (1)
-#define SOC_PM_RETENTION_MODULE_NUM         (64)
 
 #define SOC_PM_TOP_DEPENDS_ON_RTC_PERIPH    (1) // In ESP32H4, RTC_PERIPH should be pd only together with TOP, otherwise there is some current leak.
 #define SOC_PM_BBPLL_PD_IN_MODEM_STATE      (1)
@@ -571,6 +571,9 @@
 /*-------------------------- USB CAPS ----------------------------------------*/
 #define SOC_USB_OTG_PERIPH_NUM          (1U)
 #define SOC_USB_FSLS_PHY_NUM            (1U)
+
+/*------------------------------------- DEBUG CAPS -------------------------------------*/
+#define SOC_DEBUG_HAVE_OCD_STUB_BINS    (1)
 
 /*---------------------------------- ASRC CAPS ----------------------------------*/
 #define SOC_ASRC_SUPPORTED (1)

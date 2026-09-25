@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,7 +30,8 @@ typedef struct {
                                                 *   the waveform will distort at high frequency due to the hardware limitation.
                                                 *   Typically not suggest to set the frequency higher than 200 KHz
                                                 */
-    dac_cosine_clk_src_t        clk_src;        /*!< The clock source of the cosine wave generator, currently only support `DAC_COSINE_CLK_SRC_DEFAULT` */
+    dac_cosine_clk_src_t        clk_src;        /*!< The clock source of the cosine wave generator.
+                                                     Set to 0 to use `DAC_COSINE_CLK_SRC_DEFAULT`. */
     dac_cosine_atten_t          atten;          /*!< The attenuation of cosine wave amplitude */
     dac_cosine_phase_t          phase;          /*!< The phase of cosine wave, can only support DAC_COSINE_PHASE_0 or DAC_COSINE_PHASE_180, default as 0 while setting an unsupported phase */
     int8_t                      offset;         /*!< The DC offset of cosine wave */
@@ -89,6 +90,14 @@ esp_err_t dac_cosine_start(dac_cosine_handle_t handle);
  *      - ESP_OK                Stop the cosine wave success
  */
 esp_err_t dac_cosine_stop(dac_cosine_handle_t handle);
+
+/**
+ * @brief Get the DAC code bit width of a cosine wave channel
+ *
+ * @param[in]  handle       The DAC cosine wave channel handle
+ * @return                  The DAC code bit width, 0 if the input parameter is invalid
+ */
+uint8_t dac_cosine_get_bitwidth(dac_cosine_handle_t handle);
 
 #endif // SOC_DAC_SUPPORTED
 

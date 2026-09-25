@@ -283,6 +283,14 @@ examples/peripherals/i3c/i3c_lsm6dscx:
     - esp_hal_i3c
     - soc
 
+examples/peripherals/isp/dma_input:
+  disable:
+    - if: SOC_ISP_SUPPORTED != 1
+  depends_components:
+    - esp_driver_dma
+    - esp_driver_isp
+    - soc
+
 examples/peripherals/isp/multi_pipelines:
   disable:
     - if: SOC_MIPI_CSI_SUPPORTED != 1
@@ -312,6 +320,15 @@ examples/peripherals/jpeg/jpeg_encode:
     - esp_driver_dma
     - esp_hal_jpeg
     - esp_driver_jpeg
+    - soc
+
+examples/peripherals/lcd/dsi_hdmi_bridge:
+  disable:
+    - if: SOC_MIPI_DSI_SUPPORTED != 1
+  depends_components:
+    - esp_driver_dma
+    - esp_hal_lcd
+    - esp_lcd
     - soc
 
 examples/peripherals/lcd/i2c_oled:
@@ -380,10 +397,6 @@ examples/peripherals/lcd/tjpgd:
 examples/peripherals/ledc:
   disable:
     - if: SOC_LEDC_SUPPORTED != 1
-  disable_test:
-    - if: IDF_TARGET in ["esp32h4"]
-      temporary: true
-      reason: cannot pass # TODO: IDF-15610
   depends_components:
     - esp_driver_ledc
     - esp_hal_ledc

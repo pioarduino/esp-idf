@@ -1,6 +1,6 @@
 idf_build_get_property(idf_path IDF_PATH)
 
-set(priv_requires bootloader_support esp_driver_gptimer esp_tee esp_timer mbedtls spi_flash)
+set(priv_requires bootloader_support esp_driver_gptimer esp_system esp_tee esp_timer mbedtls spi_flash)
 # Test FW related
 list(APPEND priv_requires nvs_flash test_utils unity)
 # TEE related
@@ -31,8 +31,7 @@ endif()
 
 # SHA
 if(CONFIG_SOC_SHA_SUPPORTED)
-    list(APPEND srcs "${mbedtls_test_srcs_dir}/test_sha.c"
-                    "${mbedtls_test_srcs_dir}/test_sha_perf.c")
+    list(APPEND srcs "${mbedtls_test_srcs_dir}/test_sha_perf.c")
 endif()
 
 # Mixed

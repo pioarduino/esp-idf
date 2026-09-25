@@ -43,9 +43,8 @@ typedef struct {
                                                  *   Typically not suggest to set the frequency higher than 2 MHz, otherwise the severe distortion will appear
                                                  */
     int8_t                      offset;         /*!< The offset of the DAC digital data. Range -128~127 */
-    dac_continuous_digi_clk_src_t    clk_src;        /*!< The clock source of digital controller, which can affect the range of supported frequency
-                                                 *   Currently `DAC_DIGI_CLK_SRC_DEFAULT` and `DAC_DIGI_CLK_SRC_APLL` are available
-                                                 */
+    dac_continuous_digi_clk_src_t    clk_src;   /*!< The clock source of digital controller, which can affect the range of supported frequency.
+                                                     Set to 0 to use `DAC_DIGI_CLK_SRC_DEFAULT`.*/
     dac_continuous_channel_mode_t    chan_mode;      /*!< The channel mode of continuous mode, only take effect when multiple channels enabled, depends converting the buffer alternately or simultaneously */
 } dac_continuous_config_t;
 
@@ -154,7 +153,7 @@ esp_err_t dac_continuous_disable(dac_continuous_handle_t handle);
  *      - ESP_ERR_TIMEOUT       Waiting for semaphore or message queue timeout
  *      - ESP_OK                Success to output the acyclic DAC data
  */
-esp_err_t dac_continuous_write(dac_continuous_handle_t handle, uint8_t *buf, size_t buf_size, size_t *bytes_loaded, int timeout_ms);
+esp_err_t dac_continuous_write(dac_continuous_handle_t handle, const uint8_t *buf, size_t buf_size, size_t *bytes_loaded, int timeout_ms);
 
 /**
  * @brief Write DAC continuous data cyclically
@@ -177,7 +176,7 @@ esp_err_t dac_continuous_write(dac_continuous_handle_t handle, uint8_t *buf, siz
  *      - ESP_ERR_INVALID_STATE The DAC continuous mode has not been enabled yet
  *      - ESP_OK                Success to output the cyclic DAC data
  */
-esp_err_t dac_continuous_write_cyclically(dac_continuous_handle_t handle, uint8_t *buf, size_t buf_size, size_t *bytes_loaded);
+esp_err_t dac_continuous_write_cyclically(dac_continuous_handle_t handle, const uint8_t *buf, size_t buf_size, size_t *bytes_loaded);
 
 /**
  * @brief Stop the cyclical conversion triggered by 'dac_continuous_write_cyclically'
@@ -257,6 +256,14 @@ esp_err_t dac_continuous_write_asynchronously(dac_continuous_handle_t handle,
                                               const uint8_t *data,
                                               size_t data_len,
                                               size_t *bytes_loaded);
+
+/**
+ * @brief Get the DAC code bit width of the continuous channel group
+ *
+ * @param[in]  handle       The DAC continuous channel handle
+ * @return                  The DAC code bit width, 0 if the input parameter is invalid
+ */
+uint8_t dac_continuous_get_bitwidth(dac_continuous_handle_t handle);
 
 #endif // SOC_DAC_SUPPORTED
 
