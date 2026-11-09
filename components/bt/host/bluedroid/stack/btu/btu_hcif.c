@@ -811,33 +811,6 @@ UINT8 btu_hcif_send_cmd_sync (UINT8 controller_id, BT_HDR *p_buf)
 }
 #endif // ((BLE_50_FEATURE_SUPPORT == TRUE) || (BLE_42_FEATURE_SUPPORT == TRUE))
 
-/*******************************************************************************
-**
-** Function         btu_hcif_send_host_rdy_for_data
-**
-** Description      This function is called to check if it can send commands
-**                  to the Host Controller. It may be passed the address of
-**                  a packet to send.
-**
-** Returns          void
-**
-*******************************************************************************/
-void btu_hcif_send_host_rdy_for_data(void)
-{
-    UINT16      num_pkts[MAX_L2CAP_LINKS + 4];      /* 3 SCO connections */
-    UINT16      handles[MAX_L2CAP_LINKS + 4];
-    UINT8       num_ents;
-
-    /* Get the L2CAP numbers */
-    num_ents = l2c_link_pkts_rcvd (num_pkts, handles);
-
-    /* Get the SCO numbers */
-    /* No SCO for now ?? */
-
-    if (num_ents) {
-        btsnd_hcic_host_num_xmitted_pkts (num_ents, handles, num_pkts);
-    }
-}
 #if (CLASSIC_BT_INCLUDED == TRUE)
 /*******************************************************************************
 **
@@ -1862,6 +1835,11 @@ static void btu_hcif_hdl_command_status (UINT16 opcode, UINT8 status, UINT8 *p_c
                 if (p_cmd != NULL) {
                     p_cmd++;
                     STREAM_TO_BDADDR (bd_addr, p_cmd);
+#if (CLASSIC_BT_INCLUDED == TRUE)
+                    if (btm_acl_drop_failed_page(bd_addr, status)) {
+                        break;
+                    }
+#endif // (CLASSIC_BT_INCLUDED == TRUE)
 #if (SMP_INCLUDED == TRUE)
                     btm_sec_connected (bd_addr, HCI_INVALID_HANDLE, status, 0);
 #endif  ///SMP_INCLUDED == TRUE
