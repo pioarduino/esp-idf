@@ -263,7 +263,7 @@ void usb_dwc_hal_get_mps_limits(usb_dwc_hal_context_t *hal, usb_hal_fifo_mps_lim
     HAL_ASSERT(hal->flags.fifo_sizes_set);
 
     const usb_dwc_hal_fifo_config_t *fifo_config = &(hal->fifo_config);
-    mps_limits->in_mps = (fifo_config->rx_fifo_lines - 2) * 4; // Two lines are reserved for status quadlets internally by USB_DWC
+    mps_limits->in_mps = (fifo_config->rx_fifo_lines - USB_DWC_HAL_RX_FIFO_STATUS_LINES) * 4;
     mps_limits->non_periodic_out_mps = fifo_config->nptx_fifo_lines * 4;
     mps_limits->periodic_out_mps = fifo_config->ptx_fifo_lines * 4;
 }
@@ -442,14 +442,31 @@ bool usb_dwc_hal_chan_request_halt(usb_dwc_hal_chan_t *chan_obj)
     if (chan_obj->flags.active) {
         /*
         Request a halt so long as the channel's active flag is set.
+        ChEna and ChDis (R/W1S): Their combination determines how the core interprets a write to HCCHARn (DWC_otg Programming Guide, section 3.5 "Halting a Channel"):
+        ChEna | ChDis | Meaning
+        ------+-------+------------------------------------------------------------------
+          1   |   0   | Normal - channel running
+          1   |   1   | Halt request: flush posted requests, finish the in-flight USB transaction, raise ChHltd, core clears both bits
+          0   |   1   | Request queue flush, NOT a halt. The core processes a disable on the channel's turn during arbitration, so a channel that is not enabled never gets it processed: no ChHltd
+          0   |   0   | Channel idle/disabled
+
         - If the underlying hardware channel is already halted but the channel is pending interrupt handling,
-        disabling the channel will have no effect (i.e., no channel interrupt is generated).
+        disabling the channel will have no effect (i.e., no channel interrupt is generated). Moreover, CHDIS must
+        NOT be written in this case:
+            - The documented halt sequence is ChDis and ChEna written together; writing ChDis alone to a channel
+            whose ChEna is already 0 is a request queue flush, not a halt (DWC_otg Programming Guide, section 3.5
+            "Halting a Channel").
+            - The core processes a disable request on the channel's turn during arbitration, so a channel that is
+            already halted never gets its disable processed: no ChHltd interrupt is generated and CHDIS is never
+            cleared (DWC_otg Programming Guide section 3.5, DWC_otg Databook, section 5.4.37 HCCHARn).
         - If the underlying channel is currently active, disabling the channel will trigger a channel interrupt.
 
         Regardless, setting the "halt_requested" should cause "usb_dwc_hal_chan_decode_intr()" to report the
         USB_DWC_HAL_CHAN_EVENT_HALT_REQ event when channel interrupt is handled (pending or triggered).
         */
-        usb_dwc_ll_hcchar_disable_chan(chan_obj->regs);
+        if (usb_dwc_ll_hcchar_chan_is_enabled(chan_obj->regs)) {
+            usb_dwc_ll_hcchar_disable_chan(chan_obj->regs);
+        }
         chan_obj->flags.halt_requested = 1;
         return false;
     } else {
