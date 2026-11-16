@@ -187,9 +187,7 @@ static u8 * wpa_ft_gen_req_ies(struct wpa_sm *sm, size_t *len,
 	pos = (u8 *) (rsnie + 1);
 
 	/* Group Suite Selector */
-	if (sm->group_cipher != WPA_CIPHER_CCMP &&
-	    sm->group_cipher != WPA_CIPHER_GCMP &&
-	    sm->group_cipher != WPA_CIPHER_TKIP) {
+	if (!wpa_cipher_valid_group(sm->group_cipher)) {
 		wpa_printf(MSG_WARNING, "FT: Invalid group cipher (%d)",
 			   sm->group_cipher);
 		os_free(buf);
@@ -225,6 +223,10 @@ static u8 * wpa_ft_gen_req_ies(struct wpa_sm *sm, size_t *len,
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_PSK);
 	else if (sm->key_mgmt == WPA_KEY_MGMT_FT_SAE)
 		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE);
+#ifdef CONFIG_WPA3_SAE
+	else if (sm->key_mgmt == WPA_KEY_MGMT_FT_SAE_EXT_KEY)
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_FT_SAE_EXT_KEY);
+#endif /* CONFIG_WPA3_SAE */
 	else {
 		wpa_printf(MSG_WARNING, "FT: Invalid key management type (%d)",
 			   sm->key_mgmt);
@@ -236,9 +238,16 @@ static u8 * wpa_ft_gen_req_ies(struct wpa_sm *sm, size_t *len,
 	/* RSN Capabilities */
 	capab = 0;
 #ifdef CONFIG_IEEE80211W
-	if (sm->mgmt_group_cipher == WPA_CIPHER_AES_128_CMAC)
+	if (sm->pmf_cfg.capable) {
 		capab |= WPA_CAPABILITY_MFPC;
+		if (sm->pmf_cfg.required || wpa_key_mgmt_sae(sm->key_mgmt))
+			capab |= WPA_CAPABILITY_MFPR;
+	}
 #endif /* CONFIG_IEEE80211W */
+	if (sm->spp_sup.capable)
+		capab |= WPA_CAPABILITY_SPP_CAPABLE;
+	if (sm->spp_sup.require)
+		capab |= WPA_CAPABILITY_SPP_REQUIRED;
 	WPA_PUT_LE16(pos, capab);
 	pos += 2;
 
@@ -341,12 +350,13 @@ static u8 * wpa_ft_gen_req_ies(struct wpa_sm *sm, size_t *len,
 							       ric_ies_len);
                 if (rsnxe_len)
                     ftie->mic_control[1] += 1;
-		if (wpa_ft_mic(kck, kck_len, sm->own_addr, target_ap, 5,
+		if (wpa_ft_mic(sm->key_mgmt, kck, kck_len, sm->own_addr, target_ap, 5,
 			       ((u8 *) mdie) - 2, 2 + sizeof(*mdie),
 			       ftie_pos, 2 + *ftie_len,
 			       (u8 *) rsnie, 2 + rsnie->len,
-                               rsnxe_len ? rsnxe : NULL, rsnxe_len, ric_ies,
-			       ric_ies_len, ftie->mic) < 0) {
+			       ric_ies, ric_ies_len,
+			       rsnxe_len ? rsnxe : NULL, rsnxe_len,
+			       ftie->mic) < 0) {
 			wpa_printf(MSG_INFO, "FT: Failed to calculate MIC");
 			os_free(buf);
 			return NULL;
@@ -564,11 +574,16 @@ int wpa_ft_process_response(struct wpa_sm *sm, const u8 *ies, size_t ies_len,
 				    sm->ptk.kck, sm->ptk.kck_len, bssid,
 				    ric_ies, ric_ies_len,
 				    parse.mdie ? parse.mdie - 2 : NULL);
-	if (ft_ies) {
-		wpa_sm_update_ft_ies(sm, sm->mobility_domain,
-				     ft_ies, ft_ies_len, false);
-		os_free(ft_ies);
+	if (ft_ies == NULL) {
+		wpa_printf(MSG_INFO, "FT: Failed to generate Reassociation Request IEs");
+		return -1;
 	}
+	if (wpa_sm_update_ft_ies(sm, sm->mobility_domain,
+				 ft_ies, ft_ies_len, false) < 0) {
+		os_free(ft_ies);
+		return -1;
+	}
+	os_free(ft_ies);
 
 	wpa_sm_mark_authenticated(sm, bssid);
 	ret = wpa_ft_install_ptk(sm, bssid);
@@ -694,9 +709,12 @@ static int wpa_ft_process_gtk_subelem(struct wpa_sm *sm, const u8 *gtk_elem,
 static int wpa_ft_process_igtk_subelem(struct wpa_sm *sm, const u8 *igtk_elem,
 				       size_t igtk_elem_len)
 {
-	u8 igtk[WPA_IGTK_LEN];
+	u8 igtk[WPA_IGTK_MAX_LEN];
+	size_t igtk_len;
 
-	if (sm->mgmt_group_cipher != WPA_CIPHER_AES_128_CMAC)
+	if (sm->mgmt_group_cipher != WPA_CIPHER_AES_128_CMAC &&
+	    sm->mgmt_group_cipher != WPA_CIPHER_BIP_GMAC_128 &&
+	    sm->mgmt_group_cipher != WPA_CIPHER_BIP_GMAC_256)
 		return 0;
 
 	if (igtk_elem == NULL) {
@@ -707,35 +725,41 @@ static int wpa_ft_process_igtk_subelem(struct wpa_sm *sm, const u8 *igtk_elem,
 	wpa_hexdump_key(MSG_DEBUG, "FT: Received IGTK in Reassoc Resp",
 			igtk_elem, igtk_elem_len);
 
-	if (igtk_elem_len != 2 + 6 + 1 + WPA_IGTK_LEN + 8) {
+	igtk_len = wpa_cipher_key_len(sm->mgmt_group_cipher);
+	if (igtk_len == 0 || igtk_len > WPA_IGTK_MAX_LEN) {
+		wpa_printf(MSG_DEBUG, "FT: Unsupported IGTK length %lu",
+			   (unsigned long) igtk_len);
+		return -1;
+	}
+	if (igtk_elem_len != 2 + 6 + 1 + igtk_len + 8) {
 		wpa_printf(MSG_DEBUG, "FT: Invalid IGTK sub-elem "
 			   "length %lu", (unsigned long) igtk_elem_len);
 		return -1;
 	}
-	if (igtk_elem[8] != WPA_IGTK_LEN) {
+	if (igtk_elem[8] != igtk_len) {
 		wpa_printf(MSG_DEBUG, "FT: Invalid IGTK sub-elem Key Length "
 			   "%d", igtk_elem[8]);
 		return -1;
 	}
 
-	if (aes_unwrap(sm->ptk.kek, sm->ptk.kek_len, WPA_IGTK_LEN / 8,
+	if (aes_unwrap(sm->ptk.kek, sm->ptk.kek_len, igtk_len / 8,
 		       igtk_elem + 9, igtk)) {
 		wpa_printf(MSG_WARNING, "FT: AES unwrap failed - could not "
 			   "decrypt IGTK");
 		return -1;
 	}
 
-	/* KeyID[2] | IPN[6] | Key Length[1] | Key[16+8] */
+	/* KeyID[2] | IPN[6] | Key Length[1] | Key[igtk_len+8] */
 
 	wpa_hexdump_key(MSG_DEBUG, "FT: IGTK from Reassoc Resp ", igtk,
-			WPA_IGTK_LEN);
+			igtk_len);
 #ifdef ESP_SUPPLICANT
 	wifi_wpa_igtk_t igtk_drv;
 
 	os_memset(&igtk_drv, 0, sizeof(igtk_drv));
 	os_memcpy(igtk_drv.keyid, igtk_elem, 2);
 	os_memcpy(igtk_drv.pn, igtk_elem + 2, 6);
-	os_memcpy(igtk_drv.igtk, igtk, WPA_IGTK_LEN);
+	os_memcpy(igtk_drv.igtk, igtk, igtk_len);
 	if (esp_wifi_set_igtk_internal(WIFI_IF_STA, &igtk_drv) < 0) {
 		forced_memzero(&igtk_drv, sizeof(igtk_drv));
 		forced_memzero(igtk, sizeof(igtk));
@@ -745,13 +769,16 @@ static int wpa_ft_process_igtk_subelem(struct wpa_sm *sm, const u8 *igtk_elem,
 	}
 	forced_memzero(&igtk_drv, sizeof(igtk_drv));
 #else
-        keyidx = WPA_GET_LE16(igtk_elem);
-	if (wpa_sm_set_key(&(sm->install_gtk), WIFI_WPA_ALG_IGTK, sm->bssid, keyidx, 0,
-			   (u8 *)(igtk_elem + 2), 6, igtk, WPA_IGTK_LEN, sm->key_entry_valid) < 0) {
-		forced_memzero(igtk, sizeof(igtk));
-		wpa_printf(MSG_WARNING, "WPA: Failed to set IGTK to the "
-			   "driver.");
-		return -1;
+	{
+		u16 keyidx = WPA_GET_LE16(igtk_elem);
+
+		if (wpa_sm_set_key(&(sm->install_gtk), WIFI_WPA_ALG_IGTK, sm->bssid, keyidx, 0,
+				   (u8 *)(igtk_elem + 2), 6, igtk, igtk_len, sm->key_entry_valid) < 0) {
+			forced_memzero(igtk, sizeof(igtk));
+			wpa_printf(MSG_WARNING, "WPA: Failed to set IGTK to the "
+				   "driver.");
+			return -1;
+		}
 	}
 #endif
 	forced_memzero(igtk, sizeof(igtk));
@@ -867,13 +894,13 @@ int wpa_ft_validate_reassoc_resp(struct wpa_sm *sm, const u8 *ies,
 		return -1;
 	}
 
-	if (wpa_ft_mic(sm->ptk.kck, sm->ptk.kck_len, sm->own_addr, src_addr, 6,
+	if (wpa_ft_mic(sm->key_mgmt, sm->ptk.kck, sm->ptk.kck_len, sm->own_addr, src_addr, 6,
 		       parse.mdie - 2, parse.mdie_len + 2,
 		       parse.ftie - 2, parse.ftie_len + 2,
 		       parse.rsn - 2, parse.rsn_len + 2,
-                       parse.rsnxe ? parse.rsnxe - 2 : NULL,
-                       parse.rsnxe ? parse.rsnxe_len + 2 : 0,
 		       parse.ric, parse.ric_len,
+		       parse.rsnxe ? parse.rsnxe - 2 : NULL,
+		       parse.rsnxe ? parse.rsnxe_len + 2 : 0,
 		       mic) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to calculate MIC");
 		return -1;
@@ -886,7 +913,6 @@ int wpa_ft_validate_reassoc_resp(struct wpa_sm *sm, const u8 *ies,
 		return -1;
 	}
 
-	sm->ft_reassoc_completed = 1;
 	if (wpa_ft_process_gtk_subelem(sm, parse.gtk, parse.gtk_len) < 0)
 		return -1;
 
@@ -902,6 +928,7 @@ int wpa_ft_validate_reassoc_resp(struct wpa_sm *sm, const u8 *ies,
 			return -1;
 		sm->set_ptk_after_assoc = 0;
 	}
+	sm->ft_reassoc_completed = 1;
 
 	if (parse.ric) {
 		wpa_hexdump(MSG_MSGDUMP, "FT: RIC Response",

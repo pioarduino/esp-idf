@@ -217,7 +217,7 @@ static void print_flash_info(const esp_image_header_t *bootloader_hdr)
 
 static void IRAM_ATTR bootloader_init_flash_configure(void)
 {
-    bootloader_configure_spi_pins(1);
+    bootloader_configure_spi_pins(2);
     bootloader_flash_cs_timing_config();
 }
 
@@ -245,6 +245,10 @@ esp_err_t bootloader_init_spi_flash(void)
 
 #if CONFIG_ESPTOOLPY_FLASHMODE_QIO || CONFIG_ESPTOOLPY_FLASHMODE_QOUT
     bootloader_enable_qio_mode();
+#endif
+
+#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
+    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
 #endif
 
     print_flash_info(&bootloader_image_hdr);
@@ -305,7 +309,7 @@ void bootloader_flash_hardware_init(void)
         .spi_size = ESP_IMAGE_FLASH_SIZE_2MB,
     };
 
-    bootloader_configure_spi_pins(1);
+    bootloader_configure_spi_pins(2);
     bootloader_flash_set_spi_mode(&hdr);
     bootloader_flash_clock_config(&hdr);
     // TODO: set proper dummy output
@@ -313,6 +317,10 @@ void bootloader_flash_hardware_init(void)
 
     bootloader_spi_flash_resume();
     bootloader_flash_unlock();
+
+#if CONFIG_BOOTLOADER_CACHE_32BIT_ADDR_QUAD_FLASH
+    bootloader_flash_32bits_address_map_enable(bootloader_flash_get_spi_mode());
+#endif
 
     cache_hal_disable(CACHE_LL_LEVEL_EXT_MEM, CACHE_TYPE_ALL);
     update_flash_config(&hdr);

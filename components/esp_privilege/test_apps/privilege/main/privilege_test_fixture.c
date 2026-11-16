@@ -4,35 +4,146 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* Runs code in U-mode on the calling task for the tests */
-#include <assert.h>
-#include "esp_macros.h"
+/* Memory of domains that the tests allocate, map and free */
+
+#include <string.h>
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "riscv/rv_utils.h"
+#include "esp_privilege_umode_domain.h"
 #include "privilege_test_fixture.h"
+#include "umode_elf.h"
 
-#define PRIVILEGE_MIN_STACK_SIZE 256
+#define TEST_DOMAIN_ALLOCATIONS 32
 
-esp_err_t test_privilege_call(esp_privilege_user_fn_t entry, uint32_t arg0, uint32_t arg1,
-                              void *user_stack, size_t user_stack_size, int *ret)
+/* A two-page stack, one unmapped guard page above the program */
+#define TEST_APP_STACK_SIZE (2 * ESP_PRIVILEGE_UMODE_DOMAIN_PAGE_SIZE)
+
+/* Memory that test_domain_map() allocated, freed by test_domain_destroy() */
+typedef struct {
+    esp_privilege_umode_domain_handle_t domain;
+    void *memory;
+} test_allocation_t;
+
+static test_allocation_t s_allocations[TEST_DOMAIN_ALLOCATIONS];
+static portMUX_TYPE s_allocations_lock = portMUX_INITIALIZER_UNLOCKED;
+
+/* Record memory that test_domain_destroy() frees. Returns NULL if the table is full. */
+static test_allocation_t *track_allocation(esp_privilege_umode_domain_handle_t domain, void *memory)
 {
-    assert(entry != NULL && user_stack != NULL && user_stack_size >= PRIVILEGE_MIN_STACK_SIZE);
-    /* The U-mode code must be preemptible. It runs with interrupts enabled at the base interrupt level */
-    assert(xPortCanYield() && (RV_READ_CSR(mstatus) & MSTATUS_MIE) != 0 &&
-           xTaskGetSchedulerState() == taskSCHEDULER_RUNNING);
-    /* Delegation is per core, so verify it on every core that runs U-mode code */
-    assert(RV_READ_CSR(medeleg) == 0);
-    assert(RV_READ_CSR(mideleg) == 0);
+    test_allocation_t *slot = NULL;
+    portENTER_CRITICAL(&s_allocations_lock);
+    for (size_t i = 0; i < TEST_DOMAIN_ALLOCATIONS && !slot; i++) {
+        if (!s_allocations[i].memory) {
+            slot = &s_allocations[i];
+            slot->domain = domain;
+            slot->memory = memory;
+        }
+    }
+    portEXIT_CRITICAL(&s_allocations_lock);
+    return slot;
+}
 
-    void *user_sp = (void *)ESP_ALIGN_DOWN((uintptr_t)user_stack + user_stack_size, 16);
-    const uint64_t result = esp_privilege_call_user_code(entry, arg0, arg1, user_sp, 0, NULL);
-    /* The high word is the fault status, never a value of the U-mode code */
-    if ((result >> 32) != 0) {
-        return ESP_FAIL;
+static void untrack_allocation(test_allocation_t *slot)
+{
+    if (slot) {
+        portENTER_CRITICAL(&s_allocations_lock);
+        slot->domain = NULL;
+        slot->memory = NULL;
+        portEXIT_CRITICAL(&s_allocations_lock);
     }
-    if (ret != NULL) {
-        *ret = (int)(uint32_t)result;
+}
+
+esp_err_t test_domain_map(esp_privilege_umode_domain_handle_t domain, uint32_t address, size_t size, uint32_t permissions,
+                          const void *initial, size_t initial_size, uint32_t caps, void **memory)
+{
+    if (initial_size > size || (initial_size && !initial)) {
+        return ESP_ERR_INVALID_ARG;
     }
+    if (caps == 0) {
+        caps = (permissions & ESP_PRIVILEGE_UMODE_DOMAIN_EXECUTE) ? MALLOC_CAP_INTERNAL | MALLOC_CAP_EXEC :
+               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    }
+    uint8_t *allocation = heap_caps_aligned_alloc(ESP_PRIVILEGE_UMODE_DOMAIN_PAGE_SIZE, size, caps);
+    if (!allocation) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (initial_size) {
+        memcpy(allocation, initial, initial_size);
+    }
+    memset(allocation + initial_size, 0, size - initial_size);
+    test_allocation_t *slot = track_allocation(domain, allocation);
+    esp_err_t err = slot ? esp_privilege_umode_domain_map(domain, address, allocation, size, permissions) : ESP_ERR_NO_MEM;
+    if (err != ESP_OK) {
+        untrack_allocation(slot);
+        heap_caps_free(allocation);
+        return err;
+    }
+    if (memory) {
+        *memory = allocation;
+    }
+    return ESP_OK;
+}
+
+esp_err_t test_domain_destroy(esp_privilege_umode_domain_handle_t domain)
+{
+    esp_err_t err = esp_privilege_umode_domain_destroy(domain);
+    if (err != ESP_OK) {
+        return err;
+    }
+    for (size_t i = 0; i < TEST_DOMAIN_ALLOCATIONS; i++) {
+        void *memory = NULL;
+        portENTER_CRITICAL(&s_allocations_lock);
+        if (s_allocations[i].domain == domain) {
+            memory = s_allocations[i].memory;
+            s_allocations[i].domain = NULL;
+            s_allocations[i].memory = NULL;
+        }
+        portEXIT_CRITICAL(&s_allocations_lock);
+        heap_caps_free(memory);
+    }
+    return ESP_OK;
+}
+
+esp_err_t test_domain_load_app(const uint8_t *elf, size_t size, esp_privilege_umode_domain_handle_t *domain)
+{
+    if (!domain) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *domain = NULL;
+    esp_privilege_umode_domain_handle_t created = NULL;
+    esp_err_t err = esp_privilege_umode_domain_create(&created);
+    if (err != ESP_OK) {
+        return err;
+    }
+    umode_elf_image_t image;
+    err = umode_elf_load(created, elf, size, TEST_APP_BASE, &image);
+    /* Hand the program memory to the table, so that test_domain_destroy() frees it after the domain */
+    for (size_t i = 0; i < image.count && err == ESP_OK; i++) {
+        if (track_allocation(created, image.memory[i])) {
+            image.memory[i] = NULL;
+        } else {
+            err = ESP_ERR_NO_MEM;
+        }
+    }
+    const uint32_t stack = image.end + ESP_PRIVILEGE_UMODE_DOMAIN_PAGE_SIZE;
+    if (err == ESP_OK) {
+        err = test_domain_map(created, stack, TEST_APP_STACK_SIZE, ESP_PRIVILEGE_UMODE_DOMAIN_READ | ESP_PRIVILEGE_UMODE_DOMAIN_WRITE,
+                              NULL, 0, 0, NULL);
+    }
+    if (err == ESP_OK) {
+        /* Without linker relaxation the program does not use gp, and it has no thread-local storage */
+        const esp_privilege_umode_domain_entry_t start = {
+            .entry = image.entry, .stack = stack, .stack_size = TEST_APP_STACK_SIZE,
+        };
+        err = esp_privilege_umode_domain_finalize(created, &start);
+    }
+    if (err != ESP_OK) {
+        if (test_domain_destroy(created) == ESP_OK) {
+            /* Frees what was not handed to the table yet; heap_caps_free() ignores the NULL entries */
+            umode_elf_free(&image);
+        }
+        return err;
+    }
+    *domain = created;
     return ESP_OK;
 }
